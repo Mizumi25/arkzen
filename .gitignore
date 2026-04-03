@@ -16,18 +16,25 @@
 **/bootstrap/cache/
 **/database/database.sqlite
 
-# Arkzen generated (rebuilt automatically on engine start)
+# Arkzen generated — rebuilt automatically on engine start
+# These are all outputs of the engine, never hand-written source
 engine/frontend/arkzen/generated/
 engine/frontend/app/*/
-engine/backend/app/Models/Arkzen/
-engine/backend/app/Http/Controllers/Arkzen/InventoryController.php
-engine/backend/database/migrations/arkzen/
-engine/backend/database/seeders/Inventory*
-engine/backend/routes/modules/
 
 # Keep engine base page and layout
 !engine/frontend/app/layout.tsx
 !engine/frontend/app/page.tsx
+
+# Backend generated — all of /Arkzen/ is engine output, NOT source
+engine/backend/app/Models/Arkzen/
+engine/backend/app/Http/Controllers/Arkzen/
+engine/backend/app/Http/Requests/Arkzen/
+engine/backend/database/migrations/arkzen/
+engine/backend/database/seeders/arkzen/
+engine/backend/routes/modules/
+
+# Keep the engine controller — it IS hand-written source
+!engine/backend/app/Http/Controllers/Arkzen/ArkzenEngineController.php
 
 # Environment files
 **/.env.local

@@ -4,7 +4,7 @@
 // ARKZEN GENERATED REQUEST — TaskStoreRequest
 // Validates store requests for Task.
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-03T04:50:36.256961Z
+// Generated: 2026-04-03T06:33:49.161425Z
 // ============================================================
 
 namespace App\Http\Requests\Arkzen;

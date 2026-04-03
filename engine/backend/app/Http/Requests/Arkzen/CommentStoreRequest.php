@@ -4,7 +4,7 @@
 // ARKZEN GENERATED REQUEST — CommentStoreRequest
 // Validates store requests for Comment.
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-03T04:50:36.260167Z
+// Generated: 2026-04-03T06:33:49.163517Z
 // ============================================================
 
 namespace App\Http\Requests\Arkzen;

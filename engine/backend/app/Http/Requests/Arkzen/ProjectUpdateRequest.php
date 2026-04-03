@@ -4,7 +4,7 @@
 // ARKZEN GENERATED REQUEST — ProjectUpdateRequest
 // Validates update requests for Project.
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-03T04:50:36.254217Z
+// Generated: 2026-04-03T06:33:49.158840Z
 // ============================================================
 
 namespace App\Http\Requests\Arkzen;
