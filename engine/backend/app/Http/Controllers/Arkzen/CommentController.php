@@ -3,7 +3,7 @@
 // ============================================================
 // ARKZEN GENERATED CONTROLLER — CommentController
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-03T06:33:49.188239Z
+// Generated: 2026-04-03T07:08:11.794411Z
 // ============================================================
 
 namespace App\Http\Controllers\Arkzen;
