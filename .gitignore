@@ -1,0 +1,44 @@
+# All node_modules everywhere
+**/node_modules/
+
+# All vendor folders everywhere
+**/vendor/
+
+# Next.js
+**/.next/
+
+# Laravel
+**/.env
+**/storage/logs/*.log
+**/storage/framework/cache/
+**/storage/framework/sessions/
+**/storage/framework/views/
+**/bootstrap/cache/
+**/database/database.sqlite
+
+# Arkzen generated (rebuilt automatically on engine start)
+engine/frontend/arkzen/generated/
+engine/frontend/app/*/
+engine/backend/app/Models/Arkzen/
+engine/backend/app/Http/Controllers/Arkzen/InventoryController.php
+engine/backend/database/migrations/arkzen/
+engine/backend/database/seeders/Inventory*
+engine/backend/routes/modules/
+
+# Keep engine base page and layout
+!engine/frontend/app/layout.tsx
+!engine/frontend/app/page.tsx
+
+# Environment files
+**/.env.local
+**/.env.production
+
+# Exported projects (developer decides what to push per project)
+projects/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

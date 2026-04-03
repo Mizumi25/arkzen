@@ -1,0 +1,142 @@
+<?php
+
+// ============================================================
+// ARKZEN ENGINE — NOTIFICATION BUILDER
+// Generates Laravel Notification classes.
+// Declared in @arkzen:notifications section.
+//
+// Supports channels: database, mail, broadcast
+// ============================================================
+
+namespace App\Arkzen\Builders;
+
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
+
+class NotificationBuilder
+{
+    public static function build(array $module): void
+    {
+        $notifications = $module['notifications'] ?? [];
+        if (empty($notifications)) return;
+
+        File::ensureDirectoryExists(app_path('Notifications/Arkzen'));
+
+        foreach ($notifications as $name => $config) {
+            self::buildNotification($name, $config);
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    // BUILD SINGLE NOTIFICATION
+    // ─────────────────────────────────────────────
+
+    private static function buildNotification(string $name, array $config): void
+    {
+        $className = self::toClassName($name);
+        $channels  = $config['channels'] ?? ['database'];
+        $message   = $config['message']  ?? "You have a new notification.";
+        $subject   = $config['subject']  ?? $className;
+        $filePath  = app_path("Notifications/Arkzen/{$className}.php");
+
+        $channelList    = self::generateChannelList($channels);
+        $channelMethods = self::generateChannelMethods($channels, $message, $subject);
+
+        $content = "<?php
+
+// ============================================================
+// ARKZEN GENERATED NOTIFICATION — {$className}
+// Channels: " . implode(', ', $channels) . "
+// DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
+// Generated: " . now()->toISOString() . "
+// ============================================================
+
+namespace App\Notifications\Arkzen;
+
+use Illuminate\Bus\Queueable;
+use Illuminate\Notifications\Notification;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\MailMessage;
+
+class {$className} extends Notification implements ShouldQueue
+{
+    use Queueable;
+
+    public function __construct(
+        public readonly array \$data = []
+    ) {}
+
+    public function via(object \$notifiable): array
+    {
+        return {$channelList};
+    }
+
+{$channelMethods}
+
+    public function toArray(object \$notifiable): array
+    {
+        return array_merge([
+            'type'    => '{$className}',
+            'message' => '{$message}',
+        ], \$this->data);
+    }
+}
+";
+
+        File::put($filePath, $content);
+        Log::info("[Arkzen Notification] ✓ Notification created: {$className}");
+    }
+
+    // ─────────────────────────────────────────────
+    // GENERATE CHANNEL LIST
+    // ─────────────────────────────────────────────
+
+    private static function generateChannelList(array $channels): string
+    {
+        $mapped = array_map(fn($c) => match($c) {
+            'mail'      => "'mail'",
+            'database'  => "'database'",
+            'broadcast' => "'broadcast'",
+            default     => "'{$c}'",
+        }, $channels);
+
+        return '[' . implode(', ', $mapped) . ']';
+    }
+
+    // ─────────────────────────────────────────────
+    // GENERATE CHANNEL METHODS
+    // ─────────────────────────────────────────────
+
+    private static function generateChannelMethods(array $channels, string $message, string $subject): string
+    {
+        $methods = [];
+
+        if (in_array('mail', $channels)) {
+            $methods[] = "    public function toMail(object \$notifiable): MailMessage
+    {
+        return (new MailMessage)
+            ->subject('{$subject}')
+            ->line('{$message}')
+            ->action('View', url('/'))
+            ->line('Thank you for using our application.');
+    }";
+        }
+
+        if (in_array('broadcast', $channels)) {
+            $methods[] = "    public function toBroadcast(object \$notifiable): array
+    {
+        return [
+            'message' => '{$message}',
+            'data'    => \$this->data,
+        ];
+    }";
+        }
+
+        return implode("\n\n", $methods);
+    }
+
+    private static function toClassName(string $name): string
+    {
+        return str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $name))) . 'Notification';
+    }
+}
