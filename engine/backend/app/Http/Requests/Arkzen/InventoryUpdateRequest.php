@@ -4,7 +4,7 @@
 // ARKZEN GENERATED REQUEST — InventoryUpdateRequest
 // Validates update requests for Inventory.
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-04T03:26:57.361348Z
+// Generated: 2026-04-04T04:02:04.371024Z
 // ============================================================
 
 namespace App\Http\Requests\Arkzen;
