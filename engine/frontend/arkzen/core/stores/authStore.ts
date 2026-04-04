@@ -1,19 +1,20 @@
 // ============================================================
-// ARKZEN ENGINE — GLOBAL AUTH STORE v3.0 (PER-TATEMONO AUTH)
+// ARKZEN ENGINE — GLOBAL AUTH STORE v4.0 (COOKIE + PER-TATEMONO)
 //
-// CHANGES v3.0:
+// CHANGES v4.0:
+//   - Token now written to cookie on login/register so
+//     middleware.ts can read it server-side for instant
+//     redirects — no hydration flash.
+//   - Cookie name: arkzen-auth-{slug}
+//   - Cookie cleared on logout.
+//
+// CHANGES v3.0 (kept):
 //   - Auth endpoints are now tatemono-scoped:
 //       /api/{tatemono-slug}/auth/login
 //       /api/{tatemono-slug}/auth/register
 //       etc.
-//   - useAuthStore() now requires the tatemono slug so it hits
-//     the correct isolated backend. Each tatemono has its own
-//     users table and token table — there is no shared user pool.
-//   - Convenience factory: createAuthStore(slug) returns a store
-//     bound to that tatemono's endpoints.
-//   - The default export useAuthStore is kept for backward compat
-//     but reads the slug from window.__ARKZEN_TATEMONO__ which
-//     each tatemono's layout sets on mount.
+//   - Each tatemono has its own users table and token table —
+//     there is no shared user pool.
 //
 // CHANGES v2.0 (kept):
 //   - safeJson() handles non-JSON responses gracefully.
@@ -36,10 +37,29 @@ declare global {
   }
 }
 
-function getAuthBase(slug?: string): string {
-  const s = slug ?? (typeof window !== 'undefined' ? window.__ARKZEN_TATEMONO__ : undefined)
-  if (!s) throw new Error('[Arkzen] window.__ARKZEN_TATEMONO__ is not set. Did you forget to set it in your tatemono layout?')
-  return `/api/${s}/auth`
+function getSlug(): string {
+  const s = typeof window !== 'undefined' ? window.__ARKZEN_TATEMONO__ : undefined
+  if (!s) throw new Error('[Arkzen] window.__ARKZEN_TATEMONO__ is not set. Did you forget to call setActiveTatemono() in your tatemono?')
+  return s
+}
+
+function getAuthBase(): string {
+  return `/api/${getSlug()}/auth`
+}
+
+// ─────────────────────────────────────────────
+// COOKIE HELPERS
+// Writes/clears the per-tatemono auth cookie so middleware.ts
+// can read it server-side before any page renders.
+// Cookie name: arkzen-auth-{slug}
+// ─────────────────────────────────────────────
+
+function setCookie(slug: string, token: string): void {
+  document.cookie = `arkzen-auth-${slug}=${token}; path=/; SameSite=Lax`
+}
+
+function clearCookie(slug: string): void {
+  document.cookie = `arkzen-auth-${slug}=; path=/; max-age=0`
 }
 
 // ─────────────────────────────────────────────
@@ -126,6 +146,7 @@ export const useAuthStore = create<AuthState>()(
           }
 
           set({ user: data.user, token: data.token, isAuthenticated: true })
+          setCookie(getSlug(), data.token)
         } finally {
           set({ isLoading: false })
         }
@@ -153,6 +174,7 @@ export const useAuthStore = create<AuthState>()(
           }
 
           set({ user: data.user, token: data.token, isAuthenticated: true })
+          setCookie(getSlug(), data.token)
         } finally {
           set({ isLoading: false })
         }
@@ -174,6 +196,7 @@ export const useAuthStore = create<AuthState>()(
           // Logout locally even if request fails
         } finally {
           set({ user: null, token: null, isAuthenticated: false })
+          clearCookie(getSlug())
         }
       },
 
@@ -206,11 +229,13 @@ export const useAuthStore = create<AuthState>()(
       // ── Manual setToken (for SSO / custom flows) ──
       setToken: (token, user) => {
         set({ token, user, isAuthenticated: true })
+        setCookie(getSlug(), token)
       },
 
       // ── Clear (used internally by logout) ────
       clear: () => {
         set({ user: null, token: null, isAuthenticated: false })
+        clearCookie(getSlug())
       },
     }),
 

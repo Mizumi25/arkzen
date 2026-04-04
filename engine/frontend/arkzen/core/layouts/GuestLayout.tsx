@@ -45,26 +45,43 @@ export const GuestLayout: React.FC<GuestLayoutProps> = ({
   const router                              = useRouter()
   const pathname                            = usePathname()
   const { isAuthenticated, fetchMe, token } = useAuthStore()
-
-  // Either prop triggers the guard — guestOnly is just an alias
   const shouldGuard = redirectIfAuth || guestOnly
 
+  // ── Add this ──
+  const [checking, setChecking] = React.useState(shouldGuard)
+
   useEffect(() => {
-    if (!shouldGuard) return
+    if (!shouldGuard) { setChecking(false); return }
+
+    if (useAuthStore.getState().isAuthenticated) {
+      const segments = pathname.split('/').filter(Boolean)
+      const tatemono = segments[0] ?? ''
+      router.replace(redirectTo ?? (tatemono ? `/${tatemono}/dashboard` : '/dashboard'))
+      return
+    }
 
     const check = async () => {
       if (token && !isAuthenticated) await fetchMe()
-
       if (useAuthStore.getState().isAuthenticated) {
-        const segments      = pathname.split('/').filter(Boolean)
-        const tatemono      = segments[0] ?? ''
-        const dashboardPage = redirectTo ?? (tatemono ? `/${tatemono}/dashboard` : '/dashboard')
-        router.replace(dashboardPage)
+        const segments = pathname.split('/').filter(Boolean)
+        const tatemono = segments[0] ?? ''
+        router.replace(redirectTo ?? (tatemono ? `/${tatemono}/dashboard` : '/dashboard'))
+      } else {
+        setChecking(false) // ← not authenticated, safe to show the page
       }
     }
 
     check()
   }, [shouldGuard, token])
+
+  // ── Block render until we know auth state ──
+  if (checking) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-neutral-50">
+      <div className="w-5 h-5 border-2 border-neutral-300 border-t-neutral-700 rounded-full animate-spin" />
+    </div>
+  )
+}
 
   return (
     <div className={className}>
