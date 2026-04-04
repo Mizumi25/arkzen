@@ -4,7 +4,7 @@
 // ARKZEN GENERATED REQUEST — TaskUpdateRequest
 // Validates update requests for Task.
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-03T07:08:11.788939Z
+// Generated: 2026-04-04T01:29:21.732575Z
 // ============================================================
 
 namespace App\Http\Requests\Arkzen;
@@ -23,6 +23,8 @@ class TaskUpdateRequest extends FormRequest
         return [
             'title' => 'sometimes|string|max:255',
             'status' => 'sometimes|in:todo,in_progress,review,done',
+            'priority' => 'sometimes|in:low,medium,high,urgent',
+            'assigned_to' => 'nullable|exists:users,id',
             'completed_at' => 'nullable|date',
         ];
     }

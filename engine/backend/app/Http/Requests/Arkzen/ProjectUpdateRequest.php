@@ -4,7 +4,7 @@
 // ARKZEN GENERATED REQUEST — ProjectUpdateRequest
 // Validates update requests for Project.
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-03T07:08:11.786955Z
+// Generated: 2026-04-04T01:29:21.730624Z
 // ============================================================
 
 namespace App\Http\Requests\Arkzen;
@@ -23,7 +23,7 @@ class ProjectUpdateRequest extends FormRequest
         return [
             'name' => 'sometimes|string|max:255',
             'status' => 'sometimes|in:active,planning,completed,on_hold',
-            'progress' => 'sometimes|integer|min:0|max:100',
+            'priority' => 'sometimes|in:low,medium,high,urgent',
         ];
     }
 

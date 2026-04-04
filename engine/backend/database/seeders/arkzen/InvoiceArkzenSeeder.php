@@ -3,7 +3,7 @@
 // ============================================================
 // ARKZEN GENERATED SEEDER — InvoiceArkzenSeeder
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-03T07:08:12.028062Z
+// Generated: 2026-04-03T09:57:13.023377Z
 // ============================================================
 
 namespace Database\Seeders\Arkzen;

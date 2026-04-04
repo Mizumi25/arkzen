@@ -3,7 +3,7 @@
 // ============================================================
 // ARKZEN GENERATED SEEDER — ProjectArkzenSeeder
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-03T07:08:11.801260Z
+// Generated: 2026-04-04T01:29:21.752200Z
 // ============================================================
 
 namespace Database\Seeders\Arkzen;
@@ -20,9 +20,9 @@ class ProjectArkzenSeeder extends Seeder
         DB::table('projects')->insert([
             [
                 'name' => 'Website Redesign',
-                'description' => 'Complete website overhaul with new design system',
+                'description' => 'Complete overhaul of company website',
                 'status' => 'active',
-                'progress' => 65,
+                'priority' => 'high',
                 'created_at' => now(),
                 'updated_at' => now()
             ],
@@ -30,7 +30,7 @@ class ProjectArkzenSeeder extends Seeder
                 'name' => 'Mobile App Development',
                 'description' => 'iOS and Android mobile application',
                 'status' => 'active',
-                'progress' => 30,
+                'priority' => 'high',
                 'created_at' => now(),
                 'updated_at' => now()
             ],
@@ -38,7 +38,15 @@ class ProjectArkzenSeeder extends Seeder
                 'name' => 'CRM Integration',
                 'description' => 'Connect existing systems with new CRM',
                 'status' => 'planning',
-                'progress' => 10,
+                'priority' => 'medium',
+                'created_at' => now(),
+                'updated_at' => now()
+            ],
+            [
+                'name' => 'Data Migration',
+                'description' => 'Migrate legacy data to new system',
+                'status' => 'on_hold',
+                'priority' => 'low',
                 'created_at' => now(),
                 'updated_at' => now()
             ]

@@ -4,7 +4,7 @@
 // ARKZEN GENERATED REQUEST — TaskStoreRequest
 // Validates store requests for Task.
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-03T07:08:11.788491Z
+// Generated: 2026-04-04T01:29:21.731680Z
 // ============================================================
 
 namespace App\Http\Requests\Arkzen;
@@ -25,6 +25,7 @@ class TaskStoreRequest extends FormRequest
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'priority' => 'required|in:low,medium,high,urgent',
+            'assigned_to' => 'nullable|exists:users,id',
             'due_date' => 'nullable|date',
         ];
     }

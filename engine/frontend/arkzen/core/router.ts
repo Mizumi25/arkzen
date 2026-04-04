@@ -184,6 +184,57 @@ function generateCustomLayouts(tatemono: ParsedTatemono, baseDir: string): void 
 // MAIN REGISTER — creates one route per page
 // ─────────────────────────────────────────────
 
+// ─────────────────────────────────────────────
+// GENERATE ROOT REDIRECT — v5.1
+//
+// Problem: When a tatemono has no page named "index", the router
+// creates app/{name}/_components.tsx but no app/{name}/page.tsx.
+// Visiting /{name} returns a Next.js 404.
+//
+// Fix: If no index page exists, auto-generate a root page.tsx that
+// immediately redirects to the correct landing page:
+//   - First guest page (if auth: true) → login page
+//   - First auth page (if auth: false or no guest page)
+//   - First page overall as final fallback
+//
+// This is a Next.js server redirect so there is no flash — the
+// browser never renders the root URL at all.
+// ─────────────────────────────────────────────
+
+function generateRootRedirect(tatemono: ParsedTatemono): string {
+  const pages    = tatemono.pages
+  const hasIndex = pages.some(p => p.name === 'index')
+  if (hasIndex) return '' // root is already a real page — nothing needed
+
+  // Pick the best landing page
+  const firstGuest = pages.find(p => p.layout === 'guest')
+  const firstAuth  = pages.find(p => p.layout === 'auth')
+  const firstPage  = pages[0]
+
+  // If auth is enabled, the landing page should be the login (guest) page
+  const target = tatemono.meta.auth
+    ? (firstGuest ?? firstAuth ?? firstPage)
+    : (firstAuth  ?? firstGuest ?? firstPage)
+
+  if (!target) return ''
+
+  const destination = `/${tatemono.meta.name}/${target.name}`
+
+  return `// ============================================================
+// ARKZEN GENERATED ROOT REDIRECT — ${tatemono.meta.name}
+// Visiting /${tatemono.meta.name} redirects to ${destination}
+// DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
+// Generated: ${new Date().toISOString()}
+// ============================================================
+
+import { redirect } from 'next/navigation'
+
+export default function ArkzenRoot_${toPascalCase(tatemono.meta.name)}() {
+  redirect('${destination}')
+}
+`
+}
+
 export function registerPage(tatemono: ParsedTatemono): void {
   const routerType = detectRouterType()
   const animFnName = tatemono.animation
@@ -216,9 +267,19 @@ export function registerPage(tatemono: ParsedTatemono): void {
     // Write shared _components.tsx at the root of the tatemono folder
     fs.writeFileSync(path.join(tatemonoDir, '_components.tsx'), componentsContent, 'utf-8')
 
+    // v5.1: auto-generate root redirect when no index page is declared
+    const rootRedirect = generateRootRedirect(tatemono)
+    if (rootRedirect) {
+      fs.writeFileSync(path.join(tatemonoDir, 'page.tsx'), rootRedirect, 'utf-8')
+      const target = tatemono.meta.auth
+        ? (tatemono.pages.find(p => p.layout === 'guest') ?? tatemono.pages[0])
+        : tatemono.pages[0]
+      console.log(`[Arkzen Router] ✓ /${tatemono.meta.name} → redirect to /${tatemono.meta.name}/${target?.name}`)
+    }
+
     for (const page of tatemono.pages) {
       if (page.name === 'index') {
-        // Index page: write page.tsx directly in tatemonoDir
+        // Index page: write page.tsx directly in tatemonoDir (overwrites the redirect)
         const pagePath = path.join(tatemonoDir, 'page.tsx')
         const pageContent = generatePageFile(tatemono, page, animFnName, './_components')
         fs.writeFileSync(pagePath, pageContent, 'utf-8')
@@ -237,6 +298,16 @@ export function registerPage(tatemono: ParsedTatemono): void {
     const tatemonoDir = path.join(PAGES_DIR, tatemono.meta.name)
     fs.mkdirSync(tatemonoDir, { recursive: true })
     fs.writeFileSync(path.join(tatemonoDir, '_components.tsx'), componentsContent, 'utf-8')
+
+    // v5.1: auto-generate root redirect when no index page is declared
+    const rootRedirectPages = generateRootRedirect(tatemono)
+    if (rootRedirectPages) {
+      fs.writeFileSync(path.join(tatemonoDir, 'index.tsx'), rootRedirectPages, 'utf-8')
+      const target = tatemono.meta.auth
+        ? (tatemono.pages.find(p => p.layout === 'guest') ?? tatemono.pages[0])
+        : tatemono.pages[0]
+      console.log(`[Arkzen Router] ✓ /${tatemono.meta.name} → redirect to /${tatemono.meta.name}/${target?.name}`)
+    }
 
     for (const page of tatemono.pages) {
       if (page.name === 'index') {

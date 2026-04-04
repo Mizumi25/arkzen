@@ -11,6 +11,10 @@
 //   create   → store
 //   update   → update (owns record OR is admin)
 //   delete   → destroy (owns record OR is admin)
+//
+// FIX v5.1: varName() is now static — was incorrectly called
+//   as $this->varName() inside a static method, causing
+//   BadMethodCallException on every tatemono with policy: true.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -31,15 +35,16 @@ class PolicyBuilder
         $modelName  = $api['model'];
         $policyName = "{$modelName}Policy";
         $filePath   = app_path("Policies/Arkzen/{$policyName}.php");
-        $tableName  = $db['table'] ?? '';
 
         File::ensureDirectoryExists(app_path('Policies/Arkzen'));
 
         // Detect if model has an owner column (user_id, owner_id, created_by)
         $ownerColumn = self::detectOwnerColumn($db['columns'] ?? []);
 
+        // FIX: was $this->varName() — $this does not exist in a static method
+        $varName    = self::varName($modelName);
         $ownerCheck = $ownerColumn
-            ? "\$user->id === \${$this->varName($modelName)}->{$ownerColumn}"
+            ? "\$user->id === \${$varName}->{$ownerColumn}"
             : 'false'; // no ownership concept — admin only
 
         $adminCheck = self::hasRoleColumn($db) ? "\$user->role === 'admin'" : 'false';
@@ -70,7 +75,7 @@ class {$policyName}
     }
 
     // Anyone authenticated can view a single record
-    public function view(User \$user, {$modelName} \${$this->varName($modelName)}): bool
+    public function view(User \$user, {$modelName} \${$varName}): bool
     {
         return true;
     }
@@ -82,13 +87,13 @@ class {$policyName}
     }
 
     // Only owner or admin can update
-    public function update(User \$user, {$modelName} \${$this->varName($modelName)}): bool
+    public function update(User \$user, {$modelName} \${$varName}): bool
     {
         return {$ownerCheck} || {$adminCheck};
     }
 
     // Only owner or admin can delete
-    public function delete(User \$user, {$modelName} \${$this->varName($modelName)}): bool
+    public function delete(User \$user, {$modelName} \${$varName}): bool
     {
         return {$ownerCheck} || {$adminCheck};
     }
@@ -152,7 +157,8 @@ class {$policyName}
         return true;
     }
 
-    private function varName(string $modelName): string
+    // FIX: was `private function` (instance) — must be `private static function`
+    private static function varName(string $modelName): string
     {
         return lcfirst($modelName);
     }

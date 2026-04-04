@@ -3,7 +3,7 @@
 // ============================================================
 // ARKZEN GENERATED CONTROLLER — ProjectController
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-03T07:08:11.792319Z
+// Generated: 2026-04-04T01:29:21.739106Z
 // ============================================================
 
 namespace App\Http\Controllers\Arkzen;
@@ -31,6 +31,9 @@ class ProjectController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
+        if ($request->filled('priority')) {
+            $query->where('priority', $request->priority);
+        }
         $perPage = $request->get('per_page', 15);
         $results = $query->paginate($perPage);
 
@@ -38,7 +41,7 @@ class ProjectController extends Controller
     }
 
     /**
-     * Get single project with tasks
+     * Get single project with tasks and team
      */
     public function show(Project $project): JsonResponse
     {
@@ -54,6 +57,7 @@ class ProjectController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'status' => 'required|in:active,planning,completed,on_hold',
+            'priority' => 'required|in:low,medium,high,urgent',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after:start_date'
         ]);
@@ -71,7 +75,7 @@ class ProjectController extends Controller
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
             'status' => 'sometimes|in:active,planning,completed,on_hold',
-            'progress' => 'sometimes|integer|min:0|max:100'
+            'priority' => 'sometimes|in:low,medium,high,urgent'
         ]);
 
         $project->update($validated);
@@ -86,6 +90,6 @@ class ProjectController extends Controller
     {
         $project->delete();
 
-        return response()->json(['message' => 'Project deleted successfully']);
+        return response()->json(['message' => 'Project deleted']);
     }
 }

@@ -3,7 +3,7 @@
 // ============================================================
 // ARKZEN GENERATED CONTROLLER — InvoiceController
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-03T07:08:11.793767Z
+// Generated: 2026-04-03T09:57:12.722999Z
 // ============================================================
 
 namespace App\Http\Controllers\Arkzen;

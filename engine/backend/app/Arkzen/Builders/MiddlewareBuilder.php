@@ -1,18 +1,17 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — MIDDLEWARE BUILDER
-// Reads middleware declarations from @arkzen:api and
-// generates or configures Laravel middleware accordingly.
+// ARKZEN ENGINE — MIDDLEWARE BUILDER v5.1
 //
-// Supported built-in middleware aliases:
-//   auth        → requires valid Sanctum token
-//   throttle    → rate limiting (uses throttle config)
-//   verified    → requires email verified
-//   role:X      → requires user to have role X (custom)
+// FIX: "auth:sanctum" was falling through to generateCustomMiddleware()
+//   which produced Auth:sanctum.php — a file with a colon in its name
+//   (illegal on Windows, invalid PHP class name). Sanctum middleware is
+//   a Laravel built-in alias — it must never be stubbed as a file.
 //
-// Usage in tatemono @arkzen:api:
-//   middleware: [auth, throttle:60,1]
+// The fix adds "auth:sanctum" and "auth" explicitly to $builtIn so
+// resolve() maps them directly and never reaches generateCustomMiddleware().
+//
+// All built-in middleware strings are now normalised in one place.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -24,20 +23,30 @@ class MiddlewareBuilder
 {
     // ─────────────────────────────────────────────
     // KNOWN BUILT-IN MIDDLEWARE
-    // These are resolved directly by Laravel — no file needed
+    // These are resolved directly by Laravel — no file needed.
+    //
+    // FIX: "auth:sanctum" is now listed here explicitly so it is
+    //   never passed to generateCustomMiddleware().
+    //   Previously only "auth" was listed; "auth:sanctum" written
+    //   directly in a tatemono would slip through to the stub
+    //   generator and produce the broken Auth:sanctum.php file.
     // ─────────────────────────────────────────────
 
     private static array $builtIn = [
-        'auth'      => 'auth:sanctum',
-        'throttle'  => 'throttle',
-        'verified'  => 'verified',
-        'cors'      => 'cors',
+        'auth'          => 'auth:sanctum',   // shorthand → Sanctum
+        'auth:sanctum'  => 'auth:sanctum',   // FIX: explicit passthrough
+        'throttle'      => 'throttle',
+        'verified'      => 'verified',
+        'cors'          => 'cors',
+        'api'           => 'api',
+        'web'           => 'web',
+        'cache.headers' => 'cache.headers',
     ];
 
     // ─────────────────────────────────────────────
     // BUILD
-    // Resolves middleware list and generates any custom ones
-    // Returns the final resolved middleware array for RouteRegistrar
+    // Resolves middleware list and generates any custom ones.
+    // Returns the final resolved middleware array for RouteRegistrar.
     // ─────────────────────────────────────────────
 
     public static function build(array $module): array
@@ -65,7 +74,7 @@ class MiddlewareBuilder
 
     private static function resolve(string $mw, array $module): string
     {
-        // throttle:60,1 — pass through with params
+        // throttle:60,1 — pass through with params intact
         if (str_starts_with($mw, 'throttle')) {
             return $mw;
         }
@@ -76,17 +85,15 @@ class MiddlewareBuilder
             return $mw;
         }
 
-        // auth — map to sanctum
-        if ($mw === 'auth') {
-            return 'auth:sanctum';
-        }
-
-        // Known built-in — map it
+        // FIX: check the full builtIn map BEFORE falling through.
+        // This catches "auth:sanctum" (written directly in a tatemono)
+        // as well as "auth" (shorthand). Neither should ever become a file.
         if (isset(self::$builtIn[$mw])) {
             return self::$builtIn[$mw];
         }
 
-        // Unknown — generate a stub custom middleware
+        // Unknown — generate a stub custom middleware.
+        // This path is intentionally AFTER all built-in checks.
         self::generateCustomMiddleware($mw);
         return $mw;
     }
@@ -150,13 +157,28 @@ PHP;
 
     // ─────────────────────────────────────────────
     // GENERATE CUSTOM MIDDLEWARE STUB
-    // For any unrecognized middleware string
+    // For any unrecognized middleware string.
+    //
+    // FIX: This method is now only reached AFTER all built-in checks
+    //   pass, so "auth:sanctum" and friends can never reach here.
+    //   The className derivation also sanitises colons and special
+    //   characters so the generated filename is always valid.
     // ─────────────────────────────────────────────
 
     private static function generateCustomMiddleware(string $name): void
     {
-        $className = str_replace('-', '', ucwords($name, '-'));
-        $path      = app_path("Http/Middleware/{$className}.php");
+        // Sanitise: strip anything that's not alphanumeric or hyphen/underscore
+        // "auth:sanctum" → would become "Authsanctum" — but this path is
+        // never reached for built-in middleware anymore (see resolve()).
+        $safeName  = preg_replace('/[^a-zA-Z0-9\-_]/', '', $name);
+        $className = str_replace(['-', '_'], '', ucwords($safeName, '-_'));
+
+        if (empty($className)) {
+            Log::warning("[Arkzen Middleware] ⚠ Could not derive class name for middleware: {$name} — skipping.");
+            return;
+        }
+
+        $path = app_path("Http/Middleware/{$className}.php");
 
         if (File::exists($path)) {
             return;
