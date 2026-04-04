@@ -2,8 +2,9 @@
 
 // ============================================================
 // ARKZEN ENGINE — FACTORY BUILDER
-// Generates Laravel Model Factory classes for testing data.
-// Auto-generates fake data definitions from column types.
+// PATCHED v5.1: Tatemono-slug folder isolation
+//   Before: database/factories/Arkzen/InventoryFactory.php
+//   After:  database/factories/Arkzen/inventory-management/InventoryFactory.php
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -15,16 +16,16 @@ class FactoryBuilder
 {
     public static function build(array $module): void
     {
-        $api = $module['api'];
-        $db  = $module['database'];
+        $api  = $module['api'];
+        $db   = $module['database'];
+        $name = $module['name'];                                    // tatemono slug
 
-        // Only build factory if factory: true declared in @arkzen:api
         if (empty($api['factory'])) return;
 
-        $modelName = $api['model'];
-        $filePath  = database_path("factories/Arkzen/{$modelName}Factory.php");
+        $modelName  = $api['model'];
+        $filePath   = database_path("factories/Arkzen/{$name}/{$modelName}Factory.php");
 
-        File::ensureDirectoryExists(database_path('factories/Arkzen'));
+        File::ensureDirectoryExists(database_path("factories/Arkzen/{$name}"));
 
         $definition = self::generateDefinition($db['columns'] ?? []);
 
@@ -32,13 +33,14 @@ class FactoryBuilder
 
 // ============================================================
 // ARKZEN GENERATED FACTORY — {$modelName}Factory
+// Tatemono: {$name}
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace Database\Factories\Arkzen;
+namespace Database\Factories\Arkzen\\{$name};
 
-use App\Models\Arkzen\\{$modelName};
+use App\Models\Arkzen\\{$name}\\{$modelName};
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 class {$modelName}Factory extends Factory
@@ -55,13 +57,8 @@ class {$modelName}Factory extends Factory
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Factory] ✓ Factory created: {$modelName}Factory");
+        Log::info("[Arkzen Factory] ✓ Factory created: {$name}/{$modelName}Factory");
     }
-
-    // ─────────────────────────────────────────────
-    // GENERATE FAKER DEFINITIONS
-    // Maps column types to appropriate faker methods
-    // ─────────────────────────────────────────────
 
     private static function generateDefinition(array $columns): string
     {
@@ -70,8 +67,7 @@ class {$modelName}Factory extends Factory
         foreach ($columns as $name => $config) {
             if (!empty($config['primary'])) continue;
             if (in_array($name, ['created_at', 'updated_at', 'deleted_at'])) continue;
-
-            $faker = self::getFaker($name, $config);
+            $faker   = self::getFaker($name, $config);
             $lines[] = "            '{$name}' => {$faker},";
         }
 
@@ -82,7 +78,6 @@ class {$modelName}Factory extends Factory
     {
         $type = $config['type'] ?? 'string';
 
-        // Name-based detection first
         $nameFakers = [
             'name'        => 'fake()->name()',
             'title'       => 'fake()->sentence(3)',
@@ -96,16 +91,15 @@ class {$modelName}Factory extends Factory
             'image'       => 'fake()->imageUrl()',
             'image_path'  => 'fake()->imageUrl()',
             'color'       => 'fake()->hexColor()',
-            'status'      => 'fake()->randomElement([\'active\', \'inactive\'])',
-            'priority'    => 'fake()->randomElement([\'low\', \'medium\', \'high\'])',
-            'role'        => 'fake()->randomElement([\'user\', \'admin\'])',
+            'status'      => "fake()->randomElement(['active', 'inactive'])",
+            'priority'    => "fake()->randomElement(['low', 'medium', 'high'])",
+            'role'        => "fake()->randomElement(['user', 'admin'])",
         ];
 
         foreach ($nameFakers as $namePart => $faker) {
             if (str_contains(strtolower($name), $namePart)) return $faker;
         }
 
-        // Type-based detection
         return match($type) {
             'integer', 'bigInteger' => 'fake()->numberBetween(1, 1000)',
             'decimal', 'float'      => 'fake()->randomFloat(2, 1, 10000)',

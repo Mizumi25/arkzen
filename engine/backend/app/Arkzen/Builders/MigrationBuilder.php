@@ -2,8 +2,14 @@
 
 // ============================================================
 // ARKZEN ENGINE — MIGRATION BUILDER
-// Generates Laravel migration files from tatemono
-// database section, then runs them automatically
+// PATCHED v5.1: Tatemono-slug folder isolation + table prefix + isolated DB
+//   Before: migrations/arkzen/2026_create_inventories_table.php
+//           Schema::create('inventories', ...)
+//   After:  migrations/arkzen/inventory-management/2026_create_..._table.php
+//           Schema::connection('inventory_management')->create('inventory_management_inventories', ...)
+//
+// Each tatemono gets its own SQLite file:
+//   database/arkzen/inventory-management.sqlite
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -12,6 +18,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Config;
 
 class MigrationBuilder
 {
@@ -41,37 +48,65 @@ class MigrationBuilder
 
     public static function build(array $module): void
     {
+        $name      = $module['name'];                               // tatemono slug
         $db        = $module['database'];
-        $tableName = $db['table'];
+        $tableName = ModelBuilder::prefixedTable($name, $db['table']);
+        $dbConn    = ModelBuilder::slugToConnection($name);
         $timestamp = date('Y_m_d_His');
 
-        // If table already exists in DB, check for new columns only
-        if (Schema::hasTable($tableName)) {
-            self::buildUpdateMigration($module);
+        // Ensure the isolated SQLite file exists and is configured
+        self::ensureDatabase($name, $dbConn);
+
+        // Check table on the correct connection
+        if (Schema::connection($dbConn)->hasTable($tableName)) {
+            self::buildUpdateMigration($module, $tableName, $dbConn, $name);
             return;
         }
 
-        // Table doesn't exist — create fresh migration
         $className = self::toClassName($tableName);
         $fileName  = "{$timestamp}_create_{$tableName}_table.php";
-        $filePath  = database_path("migrations/arkzen/{$fileName}");
+        $filePath  = database_path("migrations/arkzen/{$name}/{$fileName}");
 
-        File::ensureDirectoryExists(database_path('migrations/arkzen'));
+        File::ensureDirectoryExists(database_path("migrations/arkzen/{$name}"));
 
-        $content = self::generateCreateMigration($className, $db);
+        $content = self::generateCreateMigration($className, $db, $tableName, $dbConn);
         File::put($filePath, $content);
-        Log::info("[Arkzen Migration] ✓ Migration created: {$fileName}");
+        Log::info("[Arkzen Migration] ✓ Migration created: {$name}/{$fileName}");
 
-        self::runMigration($filePath);
+        self::runMigration($filePath, $name);
+    }
+
+    // ─────────────────────────────────────────────
+    // ENSURE ISOLATED SQLITE DB EXISTS + CONFIGURED
+    // ─────────────────────────────────────────────
+
+    public static function ensureDatabase(string $tatSlug, string $dbConn): void
+    {
+        $dbDir  = database_path('arkzen');
+        $dbFile = "{$dbDir}/{$tatSlug}.sqlite";
+
+        File::ensureDirectoryExists($dbDir);
+
+        if (!file_exists($dbFile)) {
+            file_put_contents($dbFile, '');
+            Log::info("[Arkzen DB] ✓ Created isolated DB: database/arkzen/{$tatSlug}.sqlite");
+        }
+
+        // Register connection at runtime so migrations and models can use it
+        Config::set("database.connections.{$dbConn}", [
+            'driver'   => 'sqlite',
+            'database' => $dbFile,
+            'prefix'   => '',
+            'foreign_key_constraints' => true,
+        ]);
     }
 
     // ─────────────────────────────────────────────
     // GENERATE CREATE MIGRATION
     // ─────────────────────────────────────────────
 
-    private static function generateCreateMigration(string $className, array $db): string
+    private static function generateCreateMigration(string $className, array $db, string $tableName, string $dbConn): string
     {
-        $tableName   = $db['table'];
         $columns     = self::generateColumns($db['columns']);
         $indexes     = self::generateIndexes($db['indexes'] ?? []);
         $timestamps  = $db['timestamps']  ? "\n            \$table->timestamps();"  : '';
@@ -81,6 +116,7 @@ class MigrationBuilder
 
 // ============================================================
 // ARKZEN GENERATED MIGRATION — {$tableName}
+// Connection: {$dbConn}
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: " . now()->toISOString() . "
 // ============================================================
@@ -91,16 +127,18 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    protected \$connection = '{$dbConn}';
+
     public function up(): void
     {
-        Schema::create('{$tableName}', function (Blueprint \$table) {
+        Schema::connection('{$dbConn}')->create('{$tableName}', function (Blueprint \$table) {
 {$columns}{$indexes}{$timestamps}{$softDeletes}
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('{$tableName}');
+        Schema::connection('{$dbConn}')->dropIfExists('{$tableName}');
     }
 };
 ";
@@ -192,35 +230,30 @@ return new class extends Migration
 
     // ─────────────────────────────────────────────
     // UPDATE MIGRATION
-    // Only runs when tatemono has NEW columns not yet in DB
     // ─────────────────────────────────────────────
 
-    private static function buildUpdateMigration(array $module): void
+    private static function buildUpdateMigration(array $module, string $tableName, string $dbConn, string $name): void
     {
-        $db        = $module['database'];
-        $tableName = $db['table'];
+        $db = $module['database'];
 
-        // Find columns that don't exist in the table yet
         $newColumns = [];
-        foreach ($db['columns'] as $name => $config) {
-            // Skip primary key — always exists
+        foreach ($db['columns'] as $colName => $config) {
             if (!empty($config['primary'])) continue;
-            if (!Schema::hasColumn($tableName, $name)) {
-                $newColumns[$name] = $config;
+            if (!Schema::connection($dbConn)->hasColumn($tableName, $colName)) {
+                $newColumns[$colName] = $config;
             }
         }
 
-        // Nothing new — skip entirely, no migration needed
         if (empty($newColumns)) {
-            Log::info("[Arkzen Migration] Table '{$tableName}' is up to date. No migration needed.");
+            Log::info("[Arkzen Migration] Table '{$tableName}' on '{$dbConn}' is up to date.");
             return;
         }
 
         $timestamp = date('Y_m_d_His');
         $fileName  = "{$timestamp}_update_{$tableName}_table.php";
-        $filePath  = database_path("migrations/arkzen/{$fileName}");
+        $filePath  = database_path("migrations/arkzen/{$name}/{$fileName}");
 
-        File::ensureDirectoryExists(database_path('migrations/arkzen'));
+        File::ensureDirectoryExists(database_path("migrations/arkzen/{$name}"));
 
         $columns = self::generateColumns($newColumns);
 
@@ -228,6 +261,7 @@ return new class extends Migration
 
 // ============================================================
 // ARKZEN GENERATED UPDATE MIGRATION — {$tableName}
+// Connection: {$dbConn}
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
@@ -237,9 +271,11 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    protected \$connection = '{$dbConn}';
+
     public function up(): void
     {
-        Schema::table('{$tableName}', function (Blueprint \$table) {
+        Schema::connection('{$dbConn}')->table('{$tableName}', function (Blueprint \$table) {
 {$columns}
         });
     }
@@ -252,25 +288,25 @@ return new class extends Migration
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Migration] ✓ Update migration created: {$fileName}");
+        Log::info("[Arkzen Migration] ✓ Update migration: {$name}/{$fileName}");
 
-        self::runMigration($filePath);
+        self::runMigration($filePath, $name);
     }
 
     // ─────────────────────────────────────────────
     // RUN MIGRATION
     // ─────────────────────────────────────────────
 
-    private static function runMigration(string $filePath): void
+    private static function runMigration(string $filePath, string $name): void
     {
-        Log::info("[Arkzen Migration] Running migration...");
+        Log::info("[Arkzen Migration] Running migration for: {$name}");
 
         Artisan::call('migrate', [
             '--path'  => str_replace(base_path() . '/', '', $filePath),
             '--force' => true,
         ]);
 
-        Log::info("[Arkzen Migration] ✓ Migration executed successfully");
+        Log::info("[Arkzen Migration] ✓ Migration executed: {$name}");
     }
 
     // ─────────────────────────────────────────────

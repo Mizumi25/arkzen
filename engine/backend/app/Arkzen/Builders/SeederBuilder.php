@@ -2,11 +2,11 @@
 
 // ============================================================
 // ARKZEN ENGINE — SEEDER BUILDER
-// Generates and runs seeders if tatemono declares seed data.
-//
-// FIX: require_once the seeder file before calling db:seed
-// because composer dump-autoload never runs at runtime,
-// so newly generated files aren't in the autoload classmap.
+// PATCHED v5.1: Tatemono-slug folder isolation + prefixed table + isolated DB
+//   Before: database/seeders/arkzen/InventoryArkzenSeeder.php
+//           DB::table('inventories')
+//   After:  database/seeders/arkzen/inventory-management/InventoryArkzenSeeder.php
+//           DB::connection('inventory_management')->table('inventory_management_inventories')
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -14,7 +14,6 @@ namespace App\Arkzen\Builders;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 
 class SeederBuilder
 {
@@ -28,10 +27,12 @@ class SeederBuilder
             return;
         }
 
-        $tableName  = $db['table'];
+        $name       = $module['name'];                              // tatemono slug
+        $tableName  = ModelBuilder::prefixedTable($name, $db['table']);
+        $dbConn     = ModelBuilder::slugToConnection($name);
         $modelName  = $module['api']['model'];
         $seederName = "{$modelName}ArkzenSeeder";
-        $seederDir  = database_path('seeders/arkzen');
+        $seederDir  = database_path("seeders/arkzen/{$name}");
         $filePath   = "{$seederDir}/{$seederName}.php";
 
         File::ensureDirectoryExists($seederDir);
@@ -42,11 +43,12 @@ class SeederBuilder
 
 // ============================================================
 // ARKZEN GENERATED SEEDER — {$seederName}
+// Tatemono: {$name}  |  Connection: {$dbConn}
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace Database\Seeders\Arkzen;
+namespace Database\Seeders\Arkzen\\{$name};
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -55,9 +57,9 @@ class {$seederName} extends Seeder
 {
     public function run(): void
     {
-        DB::table('{$tableName}')->truncate();
+        DB::connection('{$dbConn}')->table('{$tableName}')->truncate();
 
-        DB::table('{$tableName}')->insert([
+        DB::connection('{$dbConn}')->table('{$tableName}')->insert([
 {$seedData}
         ]);
     }
@@ -65,14 +67,10 @@ class {$seederName} extends Seeder
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Seeder] ✓ Seeder created: {$seederName}");
+        Log::info("[Arkzen Seeder] ✓ Seeder created: {$name}/{$seederName}");
 
-        self::runSeeder($seederName, $filePath);
+        self::runSeeder($seederName, $filePath, $name);
     }
-
-    // ─────────────────────────────────────────────
-    // GENERATE SEED DATA
-    // ─────────────────────────────────────────────
 
     private static function generateSeedData(array $seeder, array $columns): string
     {
@@ -93,26 +91,18 @@ class {$seederName} extends Seeder
         return implode(",\n", $rows);
     }
 
-    // ─────────────────────────────────────────────
-    // RUN SEEDER
-    // FIXED: require_once the file directly so PHP knows
-    // the class exists without needing composer dump-autoload
-    // ─────────────────────────────────────────────
-
-    private static function runSeeder(string $seederName, string $filePath): void
+    private static function runSeeder(string $seederName, string $filePath, string $name): void
     {
-        Log::info("[Arkzen Seeder] Running seeder: {$seederName}");
+        Log::info("[Arkzen Seeder] Running seeder: {$name}/{$seederName}");
 
-        // CRITICAL FIX — load the file into PHP's runtime class map
-        // before calling Artisan. Without this, the class doesn't exist
-        // because composer dump-autoload never ran after file creation.
+        // Load file into PHP runtime before Artisan can see the class
         require_once $filePath;
 
         Artisan::call('db:seed', [
-            '--class' => "Database\\Seeders\\Arkzen\\{$seederName}",
+            '--class' => "Database\\Seeders\\Arkzen\\{$name}\\{$seederName}",
             '--force' => true,
         ]);
 
-        Log::info("[Arkzen Seeder] ✓ Seeder executed successfully");
+        Log::info("[Arkzen Seeder] ✓ Seeder executed: {$name}/{$seederName}");
     }
 }

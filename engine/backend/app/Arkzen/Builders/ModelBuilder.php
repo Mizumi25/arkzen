@@ -2,7 +2,11 @@
 
 // ============================================================
 // ARKZEN ENGINE — MODEL BUILDER
-// Generates Laravel Eloquent model from tatemono data
+// PATCHED v5.1: Tatemono-slug folder isolation + table prefix + isolated DB
+//   Before: Models/Arkzen/Inventory.php        table: inventories
+//   After:  Models/Arkzen/inventory-management/Inventory.php
+//           table: inventory_management_inventories
+//           connection: inventory-management  (own SQLite)
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -14,16 +18,18 @@ class ModelBuilder
 {
     public static function build(array $module): void
     {
+        $name      = $module['name'];                               // tatemono slug
         $modelName = $module['api']['model'];
-        $tableName = $module['database']['table'];
+        $tableName = self::prefixedTable($name, $module['database']['table']);
         $db        = $module['database'];
-        $filePath  = app_path("Models/Arkzen/{$modelName}.php");
+        $filePath  = app_path("Models/Arkzen/{$name}/{$modelName}.php");
+        $dbConn    = self::slugToConnection($name);
 
-        File::ensureDirectoryExists(app_path('Models/Arkzen'));
+        File::ensureDirectoryExists(app_path("Models/Arkzen/{$name}"));
 
         $fillable         = self::generateFillable($db['columns']);
         $casts            = self::generateCasts($db['columns']);
-        $relations        = self::generateRelations($db['columns'], $module['databases'] ?? [], $tableName);
+        $relations        = self::generateRelations($db['columns'], $module['databases'] ?? [], $module['database']['table'], $name);
         $softDeletes      = $db['softDeletes'] ? "use Illuminate\\Database\\Eloquent\\SoftDeletes;\n" : '';
         $softDeletesTrait = $db['softDeletes'] ? "\n    use SoftDeletes;" : '';
 
@@ -31,11 +37,12 @@ class ModelBuilder
 
 // ============================================================
 // ARKZEN GENERATED MODEL — {$modelName}
+// Tatemono: {$name}
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace App\Models\Arkzen;
+namespace App\Models\Arkzen\\{$name};
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -43,6 +50,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 class {$modelName} extends Model
 {
     use HasFactory;{$softDeletesTrait}
+
+    protected \$connection = '{$dbConn}';
 
     protected \$table = '{$tableName}';
 
@@ -59,7 +68,30 @@ class {$modelName} extends Model
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Model] ✓ Model created: {$modelName}");
+        Log::info("[Arkzen Model] ✓ Model created: {$name}/{$modelName}");
+    }
+
+    // ─────────────────────────────────────────────
+    // TABLE PREFIX
+    // inventory-management + inventories → inventory_management_inventories
+    // ─────────────────────────────────────────────
+
+    public static function prefixedTable(string $tatSlug, string $rawTable): string
+    {
+        $prefix = str_replace('-', '_', $tatSlug);
+        // avoid double-prefix if already prefixed (rebuild scenario)
+        if (str_starts_with($rawTable, $prefix . '_')) return $rawTable;
+        return $prefix . '_' . $rawTable;
+    }
+
+    // ─────────────────────────────────────────────
+    // CONNECTION NAME
+    // inventory-management → inventory_management
+    // ─────────────────────────────────────────────
+
+    public static function slugToConnection(string $tatSlug): string
+    {
+        return str_replace('-', '_', $tatSlug);
     }
 
     // ─────────────────────────────────────────────
@@ -106,49 +138,44 @@ class {$modelName} extends Model
 
     // ─────────────────────────────────────────────
     // RELATIONS
-    // Detects foreign keys and generates belongsTo.
-    // Also generates hasMany for tables that reference this one.
+    // Uses prefixed table names + slug-namespaced model paths
     // ─────────────────────────────────────────────
 
-    private static function generateRelations(array $columns, array $allDatabases, string $currentTable): string
+    private static function generateRelations(array $columns, array $allDatabases, string $rawCurrentTable, string $tatSlug): string
     {
-        $relations = [];
+        $relations    = [];
+        $currentTable = self::prefixedTable($tatSlug, $rawCurrentTable);
 
         // belongsTo — from foreign key columns on this model
         foreach ($columns as $name => $config) {
             if (empty($config['foreign'])) continue;
 
             [$refTable] = explode('.', $config['foreign']);
-
+            $prefixedRef  = self::prefixedTable($tatSlug, $refTable);
             $relatedModel = self::tableToModel($refTable);
             $methodName   = str_replace('_id', '', $name);
 
             $relations[] = "    public function {$methodName}()
     {
-        return \$this->belongsTo(\\App\\Models\\Arkzen\\{$relatedModel}::class, '{$name}');
+        return \$this->belongsTo(\\App\\Models\\Arkzen\\{$tatSlug}\\{$relatedModel}::class, '{$name}');
     }";
         }
 
-        // hasMany — detect other tables that foreign key into this one
+        // hasMany — detect other tables in same tatemono that foreign key into this one
         foreach ($allDatabases as $db) {
-            // Skip the current table itself
-            if ($db['table'] === $currentTable) continue;
-            
+            if ($db['table'] === $rawCurrentTable) continue;
+
             foreach ($db['columns'] as $col => $cfg) {
                 if (empty($cfg['foreign'])) continue;
                 [$refTable] = explode('.', $cfg['foreign']);
-                
-                // If another table references our table, add hasMany
-                if ($refTable === $currentTable) {
+
+                if ($refTable === $rawCurrentTable) {
                     $relatedModel = self::tableToModel($db['table']);
-                    // Convert column name to method name (e.g., project_id -> projects)
-                    $methodName = str_replace('_id', '', $col);
-                    // Pluralize for hasMany
-                    $methodName = self::pluralize($methodName);
-                    
+                    $methodName   = self::pluralize(str_replace('_id', '', $col));
+
                     $relations[] = "    public function {$methodName}()
     {
-        return \$this->hasMany(\\App\\Models\\Arkzen\\{$relatedModel}::class, '{$col}');
+        return \$this->hasMany(\\App\\Models\\Arkzen\\{$tatSlug}\\{$relatedModel}::class, '{$col}');
     }";
                 }
             }
@@ -165,13 +192,8 @@ class {$modelName} extends Model
 
     private static function pluralize(string $word): string
     {
-        // Simple pluralization for common cases
-        if (str_ends_with($word, 'y')) {
-            return substr($word, 0, -1) . 'ies';
-        }
-        if (str_ends_with($word, 's')) {
-            return $word . 'es';
-        }
+        if (str_ends_with($word, 'y')) return substr($word, 0, -1) . 'ies';
+        if (str_ends_with($word, 's')) return $word . 'es';
         return $word . 's';
     }
 }

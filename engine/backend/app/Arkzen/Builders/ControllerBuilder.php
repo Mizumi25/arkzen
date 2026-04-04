@@ -2,7 +2,12 @@
 
 // ============================================================
 // ARKZEN ENGINE — CONTROLLER BUILDER
-// Generates Laravel API controller from tatemono api section
+// PATCHED v5.1: Tatemono-slug folder isolation
+//   Before: Controllers/Arkzen/InventoryController.php
+//   After:  Controllers/Arkzen/inventory-management/InventoryController.php
+//
+// Namespace is kept flat (App\Http\Controllers\Arkzen) so Laravel
+// can resolve it — the slug folder is physical only, not in namespace.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -15,12 +20,13 @@ class ControllerBuilder
     public static function build(array $module): void
     {
         $api            = $module['api'];
+        $name           = $module['name'];                          // tatemono slug e.g. inventory-management
         $controllerName = $api['controller'];
         $modelName      = $api['model'];
         $endpoints      = $api['endpoints'];
-        $filePath       = app_path("Http/Controllers/Arkzen/{$controllerName}.php");
+        $filePath       = app_path("Http/Controllers/Arkzen/{$name}/{$controllerName}.php");
 
-        File::ensureDirectoryExists(app_path('Http/Controllers/Arkzen'));
+        File::ensureDirectoryExists(app_path("Http/Controllers/Arkzen/{$name}"));
 
         $methods = self::generateMethods($modelName, $endpoints);
 
@@ -28,6 +34,7 @@ class ControllerBuilder
 
 // ============================================================
 // ARKZEN GENERATED CONTROLLER — {$controllerName}
+// Tatemono: {$name}
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: " . now()->toISOString() . "
 // ============================================================
@@ -35,7 +42,7 @@ class ControllerBuilder
 namespace App\Http\Controllers\Arkzen;
 
 use Illuminate\Routing\Controller;
-use App\Models\Arkzen\\{$modelName};
+use App\Models\Arkzen\\{$name}\\{$modelName};
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
@@ -46,7 +53,7 @@ class {$controllerName} extends Controller
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Controller] ✓ Controller created: {$controllerName}");  // FIXED: was missing closing )
+        Log::info("[Arkzen Controller] ✓ Controller created: {$name}/{$controllerName}");
     }
 
     // ─────────────────────────────────────────────

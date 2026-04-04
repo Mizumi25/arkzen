@@ -1,12 +1,9 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — ENGINE CONTROLLER v5.0
-// Key changes:
-//   - remove() uses full payload: models[], controllers[], tables[]
-//     instead of guessing from tatemono name
-//   - Handles complete cleanup of all associated files
-//   - Engine version bumped to 5.0.0
+// ARKZEN ENGINE — ENGINE CONTROLLER v5.1
+// PATCHED: remove() now deletes slug-namespaced folders entirely.
+//          build() registers isolated DB connection before migrations.
 // ============================================================
 
 namespace App\Http\Controllers\Arkzen;
@@ -43,7 +40,7 @@ class ArkzenEngineController extends Controller
         return response()->json([
             'status'  => 'ok',
             'engine'  => 'Arkzen Backend Engine',
-            'version' => '5.0.0',
+            'version' => '5.1.0',
         ]);
     }
 
@@ -84,7 +81,13 @@ class ArkzenEngineController extends Controller
             ]);
         }
 
-        // ── PHASE 1: Migrations (topological order handled by frontend parser) ──
+        // ── PHASE 0: Register isolated DB connections ──
+        // Must happen before ANY migration or model usage
+        Log::info("[Arkzen] Phase 0: Register isolated DB connections");
+        $dbConn = ModelBuilder::slugToConnection($name);
+        MigrationBuilder::ensureDatabase($name, $dbConn);
+
+        // ── PHASE 1: Migrations ───────────────────
         Log::info("[Arkzen] Phase 1: Migrations");
         foreach ($databases as $db) {
             $this->run("Migration: {$db['table']}", $steps, $errors, function() use ($module, $db) {
@@ -190,77 +193,61 @@ class ArkzenEngineController extends Controller
     }
 
     // ─────────────────────────────────────────────
-    // REMOVE v5.0 — COMPLETE CLEANUP
-    // Now uses explicit models[], controllers[], tables[]
-    // from the registry payload for precise deletion.
-    // Falls back to name-based guessing if lists empty.
+    // REMOVE v5.1 — SLUG-FOLDER AWARE
+    // Deletes entire tatemono slug folder from every
+    // backend directory. Clean, no glob guessing.
     // ─────────────────────────────────────────────
 
     public function remove(Request $request): JsonResponse
     {
-        $name        = $request->input('name');
-        $models      = $request->input('models',      []);
-        $controllers = $request->input('controllers', []);
-        $tables      = $request->input('tables',      []);
+        $name = $request->input('name');
 
         Log::info("[Arkzen] Removing tatemono: {$name}");
-        Log::info("[Arkzen]   Models: " . implode(', ', $models));
-        Log::info("[Arkzen]   Controllers: " . implode(', ', $controllers));
-        Log::info("[Arkzen]   Tables: " . implode(', ', $tables));
 
-        // 1. Delete route file
+        // 1. Route file
         RouteRegistrar::remove($name);
 
-        // 2. Delete controllers
-        foreach ($controllers as $controller) {
-            $path = app_path("Http/Controllers/Arkzen/{$controller}.php");
-            if (File::exists($path)) { File::delete($path); Log::info("[Arkzen] ✓ Deleted controller: {$controller}"); }
-        }
+        // 2. Slug folders — each builder now isolates under {name}/
+        $slugFolders = [
+            app_path("Http/Controllers/Arkzen/{$name}"),
+            app_path("Models/Arkzen/{$name}"),
+            app_path("Http/Requests/Arkzen/{$name}"),
+            app_path("Policies/Arkzen/{$name}"),
+            app_path("Http/Resources/Arkzen/{$name}"),
+            database_path("factories/Arkzen/{$name}"),
+            database_path("seeders/arkzen/{$name}"),
+            database_path("migrations/arkzen/{$name}"),
+            // Events/Listeners/Jobs/etc use name-based classes — clean by folder
+            app_path("Events/Arkzen/{$name}"),
+            app_path("Listeners/Arkzen/{$name}"),
+            app_path("Jobs/Arkzen/{$name}"),
+            app_path("Notifications/Arkzen/{$name}"),
+            app_path("Mail/Arkzen/{$name}"),
+            app_path("Console/Commands/Arkzen/{$name}"),
+        ];
 
-        // 3. Delete models
-        foreach ($models as $model) {
-            $path = app_path("Models/Arkzen/{$model}.php");
-            if (File::exists($path)) { File::delete($path); Log::info("[Arkzen] ✓ Deleted model: {$model}"); }
-        }
-
-        // 4. Delete migrations for each table
-        foreach ($tables as $table) {
-            $migrations = glob(database_path("migrations/arkzen/*{$table}*.php")) ?: [];
-            foreach ($migrations as $migration) {
-                File::delete($migration);
-                Log::info("[Arkzen] ✓ Deleted migration: " . basename($migration));
+        foreach ($slugFolders as $folder) {
+            if (File::isDirectory($folder)) {
+                File::deleteDirectory($folder);
+                Log::info("[Arkzen] ✓ Deleted folder: " . basename(dirname($folder)) . "/{$name}");
             }
         }
 
-        // 5. Delete requests, policies, resources, factories for each model
-        foreach ($models as $model) {
-            foreach (glob(app_path("Http/Requests/Arkzen/{$model}*.php")) ?: [] as $f) { File::delete($f); }
-            foreach (glob(app_path("Policies/Arkzen/{$model}*.php"))      ?: [] as $f) { File::delete($f); }
-            foreach (glob(app_path("Http/Resources/Arkzen/{$model}*.php")) ?: [] as $f) { File::delete($f); }
-            foreach (glob(database_path("factories/Arkzen/{$model}*.php")) ?: [] as $f) { File::delete($f); }
-            foreach (glob(database_path("seeders/arkzen/{$model}*.php"))   ?: [] as $f) { File::delete($f); }
+        // 3. Isolated SQLite DB file
+        $dbFile = database_path("arkzen/{$name}.sqlite");
+        if (File::exists($dbFile)) {
+            File::delete($dbFile);
+            Log::info("[Arkzen] ✓ Deleted isolated DB: database/arkzen/{$name}.sqlite");
         }
 
-        // 6. Delete events, broadcast events, listeners tied to this tatemono
-        foreach ($models as $model) {
-            foreach (glob(app_path("Events/Arkzen/{$model}.php"))           ?: [] as $f) { File::delete($f); }
-            foreach (glob(app_path("Events/Arkzen/Broadcast/{$model}.php")) ?: [] as $f) { File::delete($f); }
-            foreach (glob(app_path("Listeners/Arkzen/*{$model}*.php"))      ?: [] as $f) { File::delete($f); }
-            foreach (glob(app_path("Jobs/Arkzen/{$model}*.php"))            ?: [] as $f) { File::delete($f); }
-            foreach (glob(app_path("Notifications/Arkzen/{$model}*.php"))   ?: [] as $f) { File::delete($f); }
-            foreach (glob(app_path("Mail/Arkzen/{$model}*.php"))            ?: [] as $f) { File::delete($f); }
-            foreach (glob(app_path("Console/Commands/Arkzen/{$model}*.php")) ?: [] as $f) { File::delete($f); }
-        }
-
-        // 7. Remove channel authorizations from routes/channels.php
+        // 4. Channel authorizations
         $channelsPath = base_path('routes/channels.php');
         if (File::exists($channelsPath)) {
             $content    = File::get($channelsPath);
             $pattern    = '/\/\/ Module: ' . preg_quote($name, '/') . '\nBroadcast::channel\([^;]+\);?\n?\}/s';
             $newContent = preg_replace($pattern, '', $content);
             if ($newContent !== $content) {
-                $newContent = preg_replace('/\n{3,}/', "\n\n", $newContent);
-                File::put($channelsPath, $newContent);
+                File::put($channelsPath, preg_replace('/\n{3,}/', "\n\n", $newContent));
                 Log::info("[Arkzen] ✓ Removed channel authorizations for: {$name}");
             }
         }

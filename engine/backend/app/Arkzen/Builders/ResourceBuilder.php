@@ -2,9 +2,9 @@
 
 // ============================================================
 // ARKZEN ENGINE — RESOURCE BUILDER
-// Generates Laravel API Resource classes.
-// Resources transform model data before sending to frontend.
-// Declared in @arkzen:api via: resource: true
+// PATCHED v5.1: Tatemono-slug folder isolation
+//   Before: Http/Resources/Arkzen/InventoryResource.php
+//   After:  Http/Resources/Arkzen/inventory-management/InventoryResource.php
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -16,17 +16,17 @@ class ResourceBuilder
 {
     public static function build(array $module): void
     {
-        $api = $module['api'];
-        $db  = $module['database'];
+        $api  = $module['api'];
+        $db   = $module['database'];
+        $name = $module['name'];                                    // tatemono slug
 
-        // Only build if resource: true declared
         if (empty($api['resource'])) return;
 
         $modelName    = $api['model'];
         $resourceName = "{$modelName}Resource";
-        $filePath     = app_path("Http/Resources/Arkzen/{$resourceName}.php");
+        $filePath     = app_path("Http/Resources/Arkzen/{$name}/{$resourceName}.php");
 
-        File::ensureDirectoryExists(app_path('Http/Resources/Arkzen'));
+        File::ensureDirectoryExists(app_path("Http/Resources/Arkzen/{$name}"));
 
         $fields = self::generateFields($db['columns'] ?? []);
 
@@ -34,12 +34,12 @@ class ResourceBuilder
 
 // ============================================================
 // ARKZEN GENERATED RESOURCE — {$resourceName}
-// Transforms {$modelName} model data for API responses.
+// Tatemono: {$name}
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace App\Http\Resources\Arkzen;
+namespace App\Http\Resources\Arkzen\\{$name};
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -56,19 +56,12 @@ class {$resourceName} extends JsonResource
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Resource] ✓ Resource created: {$resourceName}");
+        Log::info("[Arkzen Resource] ✓ Resource created: {$name}/{$resourceName}");
     }
-
-    // ─────────────────────────────────────────────
-    // GENERATE FIELDS
-    // Maps each column to a resource field
-    // ─────────────────────────────────────────────
 
     private static function generateFields(array $columns): string
     {
-        $lines = [
-            "            'id'         => \$this->id,",
-        ];
+        $lines = ["            'id'         => \$this->id,"];
 
         foreach ($columns as $name => $config) {
             if ($name === 'id') continue;
