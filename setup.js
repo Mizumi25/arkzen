@@ -313,36 +313,10 @@ function setupBackend() {
   log('Running base migrations...')
   run('php artisan migrate --force', BACKEND_DIR)
   success('Base migrations complete')
-  
-  
-  log('Setting up Sanctum authentication...')
-  run('php artisan vendor:publish --provider="Laravel\\Sanctum\\SanctumServiceProvider" --tag=sanctum-migrations --quiet', BACKEND_DIR)
-  run('php artisan migrate --force', BACKEND_DIR)
-  
-  // Create User model if missing
-  const userModelPath = path.join(BACKEND_DIR, 'app', 'Models', 'User.php')
-  if (!fs.existsSync(userModelPath)) {
-    fs.mkdirSync(path.join(BACKEND_DIR, 'app', 'Models'), { recursive: true })
-    fs.writeFileSync(userModelPath, `<?php
 
-namespace App\\Models;
-
-use Illuminate\\Foundation\\Auth\\User as Authenticatable;
-use Illuminate\\Notifications\\Notifiable;
-use Laravel\\Sanctum\\HasApiTokens;
-
-class User extends Authenticatable
-{
-    use HasApiTokens, Notifiable;
-    protected $fillable = ['name', 'email', 'password'];
-    protected $hidden = ['password', 'remember_token'];
-    protected $casts = ['email_verified_at' => 'datetime', 'password' => 'hashed'];
-}
-`)
-    success('User model created')
-  } else {
-    success('User model already exists')
-  }
+  // NOTE: Auth (users table, personal_access_tokens, User model, AuthController)
+  // is no longer set up globally here. Each tatemono with auth:true gets its own
+  // fully isolated auth stack inside its own SQLite via AuthBuilder::buildForTatemono().
 }
 
 // ─────────────────────────────────────────────

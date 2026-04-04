@@ -36,8 +36,14 @@ layout:
 
 'use client'
 
-import React, { useState } from 'react'
-import { useAuthStore } from '@/arkzen/core/stores/authStore'
+import React, { useState, useEffect } from 'react'
+import { useAuthStore, setActiveTatemono } from '@/arkzen/core/stores/authStore'
+
+// Register this tatemono's slug so all auth calls hit /api/auth-test/auth/*
+// This must run before any useAuthStore() call touches the network.
+if (typeof window !== 'undefined') {
+  setActiveTatemono('auth-test')
+}
 
 /* @arkzen:components:shared:end */
 

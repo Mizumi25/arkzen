@@ -1,15 +1,20 @@
 'use client'
 
 // ============================================================
-// ARKZEN ENGINE — AUTH LAYOUT v5.0
+// ARKZEN ENGINE — AUTH LAYOUT v6.0 (PER-TATEMONO AUTH)
 // Empty protected layout. No structure imposed.
 // Redirects unauthenticated users to the tatemono's login page.
 // Shows a minimal loader while auth check runs.
+//
+// v6.0: Derives the tatemono slug from the URL path and registers
+// it via setActiveTatemono() so the auth store hits the correct
+// isolated backend (/api/{slug}/auth/*). Each tatemono is fully
+// independent — no shared user pool.
 // ============================================================
 
 import React, { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { useAuthStore } from '../stores/authStore'
+import { useAuthStore, setActiveTatemono } from '../stores/authStore'
 
 export interface AuthLayoutProps {
   children:     React.ReactNode
@@ -30,13 +35,15 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
   const [checking, setChecking]             = useState(requireAuth)
 
   useEffect(() => {
+    // Derive tatemono slug from URL and register it BEFORE any auth network call
+    const segments = pathname.split('/').filter(Boolean)
+    const tatemono = segments[0] ?? ''
+    if (tatemono) setActiveTatemono(tatemono)
+
     if (!requireAuth) { setChecking(false); return }
 
     const check = async () => {
       if (!token) {
-        // Derive login page: /{tatemono-name}/login
-        const segments  = pathname.split('/').filter(Boolean)
-        const tatemono  = segments[0] ?? ''
         const loginPage = redirectTo ?? (tatemono ? `/${tatemono}/login` : '/login')
         router.replace(loginPage)
         return
@@ -45,8 +52,6 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
       await fetchMe()
 
       if (!useAuthStore.getState().isAuthenticated) {
-        const segments  = pathname.split('/').filter(Boolean)
-        const tatemono  = segments[0] ?? ''
         const loginPage = redirectTo ?? (tatemono ? `/${tatemono}/login` : '/login')
         router.replace(loginPage)
         return

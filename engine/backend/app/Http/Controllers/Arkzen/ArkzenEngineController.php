@@ -14,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
 use App\Arkzen\Readers\ModuleReader;
+use App\Arkzen\Builders\AuthBuilder;
 use App\Arkzen\Builders\MigrationBuilder;
 use App\Arkzen\Builders\ModelBuilder;
 use App\Arkzen\Builders\ControllerBuilder;
@@ -70,7 +71,8 @@ class ArkzenEngineController extends Controller
         $module    = ModuleReader::parse($payload);
         $databases = $module['databases'];
         $apis      = $module['apis'];
-        $isStatic  = empty($databases) && empty($apis);
+        $hasAuth   = $module['auth'];
+        $isStatic  = empty($databases) && empty($apis) && !$hasAuth;
 
         if ($isStatic) {
             return response()->json([
@@ -86,6 +88,15 @@ class ArkzenEngineController extends Controller
         Log::info("[Arkzen] Phase 0: Register isolated DB connections");
         $dbConn = ModelBuilder::slugToConnection($name);
         MigrationBuilder::ensureDatabase($name, $dbConn);
+
+        // ── PHASE 0.5: Isolated Auth ───────────────
+        // Each tatemono with auth:true gets its own users table,
+        // personal_access_tokens table, User model, and AuthController
+        // all scoped to its own SQLite. Zero sharing between tatemonos.
+        if ($hasAuth) {
+            Log::info("[Arkzen] Phase 0.5: Isolated auth for {$name}");
+            $this->run("Auth: {$name}", $steps, $errors, fn() => AuthBuilder::buildForTatemono($module));
+        }
 
         // ── PHASE 1: Migrations ───────────────────
         Log::info("[Arkzen] Phase 1: Migrations");
@@ -209,6 +220,9 @@ class ArkzenEngineController extends Controller
 
         // 1. Route file
         RouteRegistrar::remove($name);
+
+        // Remove isolated auth artifacts (controller, User model, token model)
+        AuthBuilder::removeForTatemono($name);
 
         // 2. Slug folders — NOW USING $slugNs (camel case) to match fixed builders
         $slugFolders = [

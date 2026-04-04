@@ -1,18 +1,46 @@
 // ============================================================
-// ARKZEN ENGINE — GLOBAL AUTH STORE v2.0
-// Place at: engine/frontend/arkzen/core/stores/authStore.ts
+// ARKZEN ENGINE — GLOBAL AUTH STORE v3.0 (PER-TATEMONO AUTH)
 //
-// CHANGES v2.0:
-//   - safeJson() helper: handles non-JSON responses (HTML 404/500
-//     pages, proxy errors) gracefully instead of throwing a raw
-//     "Unexpected token '<'" parse crash.
-//   - All fetch calls (login, register, logout, fetchMe) now use
-//     safeJson() — system-wide coverage, not just login.
-//   - Better error messages when the backend is unreachable.
+// CHANGES v3.0:
+//   - Auth endpoints are now tatemono-scoped:
+//       /api/{tatemono-slug}/auth/login
+//       /api/{tatemono-slug}/auth/register
+//       etc.
+//   - useAuthStore() now requires the tatemono slug so it hits
+//     the correct isolated backend. Each tatemono has its own
+//     users table and token table — there is no shared user pool.
+//   - Convenience factory: createAuthStore(slug) returns a store
+//     bound to that tatemono's endpoints.
+//   - The default export useAuthStore is kept for backward compat
+//     but reads the slug from window.__ARKZEN_TATEMONO__ which
+//     each tatemono's layout sets on mount.
+//
+// CHANGES v2.0 (kept):
+//   - safeJson() handles non-JSON responses gracefully.
 // ============================================================
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+
+// ─────────────────────────────────────────────
+// TATEMONO SLUG RESOLUTION
+// Each tatemono's layout sets window.__ARKZEN_TATEMONO__ on mount.
+// Auth endpoints are scoped per-tatemono:
+//   /api/{slug}/auth/login
+//   /api/{slug}/auth/register  etc.
+// ─────────────────────────────────────────────
+
+declare global {
+  interface Window {
+    __ARKZEN_TATEMONO__?: string
+  }
+}
+
+function getAuthBase(slug?: string): string {
+  const s = slug ?? (typeof window !== 'undefined' ? window.__ARKZEN_TATEMONO__ : undefined)
+  if (!s) throw new Error('[Arkzen] window.__ARKZEN_TATEMONO__ is not set. Did you forget to set it in your tatemono layout?')
+  return `/api/${s}/auth`
+}
 
 // ─────────────────────────────────────────────
 // SAFE JSON HELPER
@@ -85,7 +113,7 @@ export const useAuthStore = create<AuthState>()(
       login: async (email, password) => {
         set({ isLoading: true })
         try {
-          const res = await fetch('/api/auth/login', {
+          const res = await fetch(`${getAuthBase()}/login`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ email, password }),
@@ -107,7 +135,7 @@ export const useAuthStore = create<AuthState>()(
       register: async (name, email, password, passwordConfirmation) => {
         set({ isLoading: true })
         try {
-          const res = await fetch('/api/auth/register', {
+          const res = await fetch(`${getAuthBase()}/register`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({
@@ -134,7 +162,7 @@ export const useAuthStore = create<AuthState>()(
       logout: async () => {
         const { token } = get()
         try {
-          await fetch('/api/auth/logout', {
+          await fetch(`${getAuthBase()}/logout`, {
             method:  'POST',
             headers: {
               'Content-Type':  'application/json',
@@ -156,7 +184,7 @@ export const useAuthStore = create<AuthState>()(
 
         set({ isLoading: true })
         try {
-          const res = await fetch('/api/auth/me', {
+          const res = await fetch(`${getAuthBase()}/me`, {
             headers: { 'Authorization': `Bearer ${token}` },
           })
 
@@ -187,7 +215,7 @@ export const useAuthStore = create<AuthState>()(
     }),
 
     {
-      name:       'arkzen-auth',
+      name:       `arkzen-auth-${typeof window !== 'undefined' ? (window.__ARKZEN_TATEMONO__ ?? 'default') : 'default'}`,
       partialize: (state) => ({ token: state.token }),
     }
   )
@@ -201,7 +229,7 @@ export const useAuthStore = create<AuthState>()(
 //
 // Usage:
 //   import { arkzenFetch } from '@/arkzen/core/stores/authStore'
-//   const res = await arkzenFetch('/api/inventories')
+//   const res = await arkzenFetch('/api/auth-test/inventories')
 // ─────────────────────────────────────────────
 
 export async function arkzenFetch(url: string, options: RequestInit = {}): Promise<Response> {
@@ -221,4 +249,21 @@ export async function arkzenFetch(url: string, options: RequestInit = {}): Promi
 export async function arkzenGet<T = unknown>(url: string): Promise<T> {
   const res = await arkzenFetch(url)
   return safeJson<T>(res)
+}
+
+// ─────────────────────────────────────────────
+// TATEMONO LAYOUT HELPER
+// Call this in your tatemono's root layout or page to register
+// which tatemono is active. This scopes all auth calls to the
+// correct isolated backend.
+//
+// Usage (in layout.tsx or the top of your page component):
+//   import { setActiveTatemono } from '@/arkzen/core/stores/authStore'
+//   setActiveTatemono('auth-test')
+// ─────────────────────────────────────────────
+
+export function setActiveTatemono(slug: string): void {
+  if (typeof window !== 'undefined') {
+    window.__ARKZEN_TATEMONO__ = slug
+  }
 }
