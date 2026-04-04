@@ -30,5 +30,6 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // Force JSON for all API routes (including /api/* and /arkzen/*)
+        $exceptions->shouldRenderJsonWhen(fn($request) => $request->is('api/*') || $request->is('arkzen/*'));
     })->create();
