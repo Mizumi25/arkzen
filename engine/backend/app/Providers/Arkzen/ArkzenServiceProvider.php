@@ -1,39 +1,57 @@
 <?php
 
-// ============================================================
-// ARKZEN ENGINE — SERVICE PROVIDER
-// Fixed v4.1:
-//   - Removed registerArkzenRoutes() — bootstrap/app.php handles it
-//   - Removed 'cors' from registerModuleRoutes middleware (doesn't exist as alias)
-//   - bootActiveTatemonos reads routes/modules/*.php correctly
-// ============================================================
-
 namespace App\Providers\Arkzen;
 
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Config;
 use App\Arkzen\Readers\RegistryReader;
 
 class ArkzenServiceProvider extends ServiceProvider
 {
-    // ─────────────────────────────────────────────
-    // BOOT
-    // ─────────────────────────────────────────────
-
     public function boot(): void
     {
         $this->ensureDirectories();
-        // NOTE: arkzen engine routes (/arkzen/health, /arkzen/build, /arkzen/remove)
-        // are registered by bootstrap/app.php via the then: closure.
-        // Do NOT register them here — it causes double registration.
+        $this->registerSqliteConnections();  // <-- ADD THIS LINE
         $this->bootActiveTatemonos();
     }
 
     // ─────────────────────────────────────────────
-    // ENSURE REQUIRED DIRECTORIES EXIST
+    // NEW METHOD: Register all SQLite connections
     // ─────────────────────────────────────────────
+    
+    private function registerSqliteConnections(): void
+    {
+        $arkzenDbDir = database_path('arkzen');
+        
+        if (!File::exists($arkzenDbDir)) {
+            return;
+        }
+        
+        // Scan all SQLite files in database/arkzen/
+        $dbFiles = File::glob($arkzenDbDir . '/*.sqlite');
+        
+        foreach ($dbFiles as $dbFile) {
+            $slug = basename($dbFile, '.sqlite');  // "inventory-management"
+            $connection = str_replace('-', '_', $slug);  // "inventory_management"
+            
+            // Check if connection already exists
+            if (!Config::has("database.connections.{$connection}")) {
+                Config::set("database.connections.{$connection}", [
+                    'driver' => 'sqlite',
+                    'database' => $dbFile,
+                    'prefix' => '',
+                    'foreign_key_constraints' => true,
+                ]);
+                
+                \Log::info("[Arkzen] Registered SQLite connection: {$connection} → {$slug}.sqlite");
+            }
+        }
+    }
 
+    // ... rest of your existing code stays exactly the same ...
+    
     private function ensureDirectories(): void
     {
         $dirs = [
@@ -42,6 +60,7 @@ class ArkzenServiceProvider extends ServiceProvider
             database_path('migrations/arkzen'),
             database_path('seeders/arkzen'),
             base_path('routes/modules'),
+            database_path('arkzen'),  // <-- ADD THIS LINE
         ];
 
         foreach ($dirs as $dir) {
@@ -50,11 +69,6 @@ class ArkzenServiceProvider extends ServiceProvider
             }
         }
     }
-
-    // ─────────────────────────────────────────────
-    // BOOT ALL ACTIVE TATEMONOS FROM REGISTRY
-    // Reads arkzen.json and registers all active tatemono routes
-    // ─────────────────────────────────────────────
 
     private function bootActiveTatemonos(): void
     {
@@ -74,10 +88,6 @@ class ArkzenServiceProvider extends ServiceProvider
         }
     }
 
-    // ─────────────────────────────────────────────
-    // REGISTER ROUTES FOR A SINGLE TATEMONO
-    // ─────────────────────────────────────────────
-
     public static function registerModuleRoutes(string $tatemonoName): void
     {
         $routeFile = base_path("routes/modules/{$tatemonoName}.php");
@@ -87,10 +97,6 @@ class ArkzenServiceProvider extends ServiceProvider
                 ->group($routeFile);
         }
     }
-
-    // ─────────────────────────────────────────────
-    // REGISTER
-    // ─────────────────────────────────────────────
 
     public function register(): void
     {
