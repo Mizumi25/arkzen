@@ -89,14 +89,7 @@ class ArkzenEngineController extends Controller
         $dbConn = ModelBuilder::slugToConnection($name);
         MigrationBuilder::ensureDatabase($name, $dbConn);
 
-        // ── PHASE 0.5: Isolated Auth ───────────────
-        // Each tatemono with auth:true gets its own users table,
-        // personal_access_tokens table, User model, and AuthController
-        // all scoped to its own SQLite. Zero sharing between tatemonos.
-        if ($hasAuth) {
-            Log::info("[Arkzen] Phase 0.5: Isolated auth for {$name}");
-            $this->run("Auth: {$name}", $steps, $errors, fn() => AuthBuilder::buildForTatemono($module));
-        }
+  
 
         // ── PHASE 1: Migrations ───────────────────
         Log::info("[Arkzen] Phase 1: Migrations");
@@ -145,6 +138,12 @@ class ArkzenEngineController extends Controller
         // ── PHASE 6: Routes ───────────────────────
         Log::info("[Arkzen] Phase 6: Routes");
         $this->run("Routes: {$name}", $steps, $errors, fn() => RouteRegistrar::buildAll($module));
+        
+        // ── PHASE 6.5: Isolated Auth ──────────────
+        if ($hasAuth) {
+            Log::info("[Arkzen] Phase 6.5: Isolated auth for {$name}");
+            $this->run("Auth: {$name}", $steps, $errors, fn() => AuthBuilder::buildForTatemono($module));
+        }
 
         // ── PHASE 7: Seeders ──────────────────────
         Log::info("[Arkzen] Phase 7: Seeders");
