@@ -1,13 +1,9 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — CONTROLLER BUILDER
-// PATCHED v5.1: Tatemono-slug folder isolation
-//   Before: Controllers/Arkzen/InventoryController.php
-//   After:  Controllers/Arkzen/inventory-management/InventoryController.php
-//
-// Namespace is kept flat (App\Http\Controllers\Arkzen) so Laravel
-// can resolve it — the slug folder is physical only, not in namespace.
+// ARKZEN ENGINE — CONTROLLER BUILDER v5.3
+// FIXED: Physical folder now uses namespace-safe name (no hyphens)
+//   inventory-management → InventoryManagement (both namespace AND folder)
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -21,12 +17,15 @@ class ControllerBuilder
     {
         $api            = $module['api'];
         $name           = $module['name'];                          // tatemono slug e.g. inventory-management
+        $slugNs         = EventBuilder::toNamespace($name);        // e.g. InventoryManagement
         $controllerName = $api['controller'];
         $modelName      = $api['model'];
         $endpoints      = $api['endpoints'];
-        $filePath       = app_path("Http/Controllers/Arkzen/{$name}/{$controllerName}.php");
+        
+        // FIXED: Use $slugNs for directory (namespace-safe), not $name
+        $filePath       = app_path("Http/Controllers/Arkzen/{$slugNs}/{$controllerName}.php");
 
-        File::ensureDirectoryExists(app_path("Http/Controllers/Arkzen/{$name}"));
+        File::ensureDirectoryExists(app_path("Http/Controllers/Arkzen/{$slugNs}"));
 
         $methods = self::generateMethods($modelName, $endpoints);
 
@@ -39,10 +38,10 @@ class ControllerBuilder
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace App\Http\Controllers\Arkzen\\{$name};
+namespace App\Http\Controllers\Arkzen\\{$slugNs};
 
 use Illuminate\Routing\Controller;
-use App\Models\Arkzen\\{$name}\\{$modelName};
+use App\Models\Arkzen\\{$slugNs}\\{$modelName};
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
@@ -53,7 +52,7 @@ class {$controllerName} extends Controller
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Controller] ✓ Controller created: {$name}/{$controllerName}");
+        Log::info("[Arkzen Controller] ✓ Controller created: {$slugNs}/{$controllerName}");
     }
 
     // ─────────────────────────────────────────────

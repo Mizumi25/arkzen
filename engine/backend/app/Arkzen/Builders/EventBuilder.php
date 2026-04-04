@@ -1,7 +1,7 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — EVENT BUILDER v2.0 (slug-isolated)
+// ARKZEN ENGINE — EVENT BUILDER v2.1 (FIXED)
 // Generates Laravel Event classes.
 // Declared in @arkzen:events section as:
 //   events:
@@ -9,8 +9,10 @@
 //       listeners: [SendOrderConfirmation, UpdateInventory]
 //
 // ISOLATION: Each tatemono gets its own folder + namespace.
-//   Path:      app/Events/Arkzen/{slug}/{ClassName}.php
-//   Namespace: App\Events\Arkzen\{Slug}
+//   Path:      app/Events/Arkzen/{slugNs}/{ClassName}.php
+//   Namespace: App\Events\Arkzen\{slugNs}
+//
+// FIXED: Physical directory now uses $slugNs (namespace-safe name)
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -25,19 +27,22 @@ class EventBuilder
         $events = $module['events'] ?? [];
         if (empty($events)) return;
 
-        $slug = $module['name'];
-        File::ensureDirectoryExists(app_path("Events/Arkzen/{$slug}"));
+        $slug   = $module['name'];                          // tatemono slug e.g. inventory-management
+        $slugNs = self::toNamespace($slug);                // e.g. InventoryManagement
+
+        // FIXED: Use $slugNs for directory
+        File::ensureDirectoryExists(app_path("Events/Arkzen/{$slugNs}"));
 
         foreach ($events as $name => $config) {
-            self::buildEvent($slug, $name, $config);
+            self::buildEvent($slug, $slugNs, $name, $config);
         }
     }
 
-    private static function buildEvent(string $slug, string $name, array $config): void
+    private static function buildEvent(string $slug, string $slugNs, string $name, array $config): void
     {
         $className = self::toClassName($name);
-        $slugNs    = self::toNamespace($slug);
-        $filePath  = app_path("Events/Arkzen/{$slug}/{$className}.php");
+        // FIXED: Use $slugNs for file path
+        $filePath  = app_path("Events/Arkzen/{$slugNs}/{$className}.php");
 
         $content = "<?php
 
@@ -68,6 +73,7 @@ class {$className}
         Log::info("[Arkzen Event] ✓ {$slugNs}\\{$className}");
 
         foreach ($config['listeners'] ?? [] as $listenerName) {
+            // ListenerBuilder must also be fixed separately (not shown)
             ListenerBuilder::buildForEvent($slug, $className, $listenerName);
         }
     }

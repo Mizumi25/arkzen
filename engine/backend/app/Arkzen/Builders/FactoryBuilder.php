@@ -1,10 +1,9 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — FACTORY BUILDER
-// PATCHED v5.1: Tatemono-slug folder isolation
-//   Before: database/factories/Arkzen/InventoryFactory.php
-//   After:  database/factories/Arkzen/inventory-management/InventoryFactory.php
+// ARKZEN ENGINE — FACTORY BUILDER v5.3 (FIXED)
+// FIXED: Physical folder now uses namespace-safe name (no hyphens)
+//   inventory-management → InventoryManagement (both namespace AND folder)
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -16,16 +15,18 @@ class FactoryBuilder
 {
     public static function build(array $module): void
     {
-        $api  = $module['api'];
-        $db   = $module['database'];
-        $name = $module['name'];                                    // tatemono slug
+        $api    = $module['api'];
+        $db     = $module['database'];
+        $name   = $module['name'];                                  // tatemono slug e.g. inventory-management
+        $slugNs = EventBuilder::toNamespace($name);                // e.g. InventoryManagement
 
         if (empty($api['factory'])) return;
 
-        $modelName  = $api['model'];
-        $filePath   = database_path("factories/Arkzen/{$name}/{$modelName}Factory.php");
+        $modelName = $api['model'];
+        // FIXED: Use $slugNs for directory, not $name
+        $filePath  = database_path("factories/Arkzen/{$slugNs}/{$modelName}Factory.php");
 
-        File::ensureDirectoryExists(database_path("factories/Arkzen/{$name}"));
+        File::ensureDirectoryExists(database_path("factories/Arkzen/{$slugNs}"));
 
         $definition = self::generateDefinition($db['columns'] ?? []);
 
@@ -38,9 +39,9 @@ class FactoryBuilder
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace Database\Factories\Arkzen\\{$name};
+namespace Database\Factories\Arkzen\\{$slugNs};
 
-use App\Models\Arkzen\\{$name}\\{$modelName};
+use App\Models\Arkzen\\{$slugNs}\\{$modelName};
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 class {$modelName}Factory extends Factory
@@ -57,7 +58,7 @@ class {$modelName}Factory extends Factory
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Factory] ✓ Factory created: {$name}/{$modelName}Factory");
+        Log::info("[Arkzen Factory] ✓ Factory created: {$slugNs}/{$modelName}Factory");
     }
 
     private static function generateDefinition(array $columns): string

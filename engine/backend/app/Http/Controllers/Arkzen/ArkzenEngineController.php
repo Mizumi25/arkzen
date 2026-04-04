@@ -1,8 +1,8 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — ENGINE CONTROLLER v5.1
-// PATCHED: remove() now deletes slug-namespaced folders entirely.
+// ARKZEN ENGINE — ENGINE CONTROLLER v5.2 (FIXED)
+// PATCHED: remove() now uses $slugNs (camel case) to match fixed builders
 //          build() registers isolated DB connection before migrations.
 // ============================================================
 
@@ -40,7 +40,7 @@ class ArkzenEngineController extends Controller
         return response()->json([
             'status'  => 'ok',
             'engine'  => 'Arkzen Backend Engine',
-            'version' => '5.1.0',
+            'version' => '5.2.0',
         ]);
     }
 
@@ -193,54 +193,56 @@ class ArkzenEngineController extends Controller
     }
 
     // ─────────────────────────────────────────────
-    // REMOVE v5.1 — SLUG-FOLDER AWARE
-    // Deletes entire tatemono slug folder from every
-    // backend directory. Clean, no glob guessing.
+    // REMOVE v5.2 — SLUG-NAMESPACE AWARE (FIXED)
+    // Deletes entire tatemono camel-case folder from every
+    // backend directory. Matches the fixed builders.
     // ─────────────────────────────────────────────
 
     public function remove(Request $request): JsonResponse
     {
         $name = $request->input('name');
+        
+        // FIXED: Convert to namespace-safe name for directories
+        $slugNs = EventBuilder::toNamespace($name);
 
-        Log::info("[Arkzen] Removing tatemono: {$name}");
+        Log::info("[Arkzen] Removing tatemono: {$name} (folders: {$slugNs})");
 
         // 1. Route file
         RouteRegistrar::remove($name);
 
-        // 2. Slug folders — each builder now isolates under {name}/
+        // 2. Slug folders — NOW USING $slugNs (camel case) to match fixed builders
         $slugFolders = [
-            app_path("Http/Controllers/Arkzen/{$name}"),
-            app_path("Models/Arkzen/{$name}"),
-            app_path("Http/Requests/Arkzen/{$name}"),
-            app_path("Policies/Arkzen/{$name}"),
-            app_path("Http/Resources/Arkzen/{$name}"),
-            database_path("factories/Arkzen/{$name}"),
-            database_path("seeders/arkzen/{$name}"),
-            database_path("migrations/arkzen/{$name}"),
-            // Events/Listeners/Jobs/etc use name-based classes — clean by folder
-            app_path("Events/Arkzen/{$name}"),
-            app_path("Listeners/Arkzen/{$name}"),
-            app_path("Jobs/Arkzen/{$name}"),
-            app_path("Notifications/Arkzen/{$name}"),
-            app_path("Mail/Arkzen/{$name}"),
-            app_path("Console/Commands/Arkzen/{$name}"),
+            app_path("Http/Controllers/Arkzen/{$slugNs}"),
+            app_path("Models/Arkzen/{$slugNs}"),
+            app_path("Http/Requests/Arkzen/{$slugNs}"),
+            app_path("Policies/Arkzen/{$slugNs}"),
+            app_path("Http/Resources/Arkzen/{$slugNs}"),
+            database_path("factories/Arkzen/{$slugNs}"),
+            database_path("seeders/arkzen/{$slugNs}"),
+            database_path("migrations/arkzen/{$slugNs}"),
+            app_path("Events/Arkzen/{$slugNs}"),
+            app_path("Listeners/Arkzen/{$slugNs}"),
+            app_path("Jobs/Arkzen/{$slugNs}"),
+            app_path("Notifications/Arkzen/{$slugNs}"),
+            app_path("Mail/Arkzen/{$slugNs}"),
+            app_path("Console/Commands/Arkzen/{$slugNs}"),
         ];
 
         foreach ($slugFolders as $folder) {
             if (File::isDirectory($folder)) {
                 File::deleteDirectory($folder);
-                Log::info("[Arkzen] ✓ Deleted folder: " . basename(dirname($folder)) . "/{$name}");
+                Log::info("[Arkzen] ✓ Deleted folder: " . basename(dirname($folder)) . "/{$slugNs}");
             }
         }
 
-        // 3. Isolated SQLite DB file
+        // 3. Isolated SQLite DB file (uses hyphenated name for filename)
         $dbFile = database_path("arkzen/{$name}.sqlite");
         if (File::exists($dbFile)) {
             File::delete($dbFile);
             Log::info("[Arkzen] ✓ Deleted isolated DB: database/arkzen/{$name}.sqlite");
         }
 
-        // 4. Channel authorizations
+        // 4. Channel authorizations (uses hyphenated name for module reference)
         $channelsPath = base_path('routes/channels.php');
         if (File::exists($channelsPath)) {
             $content    = File::get($channelsPath);

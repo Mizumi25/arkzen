@@ -1,15 +1,15 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — NOTIFICATION BUILDER v2.0 (slug-isolated)
+// ARKZEN ENGINE — NOTIFICATION BUILDER v2.1 (FIXED)
 // Generates Laravel Notification classes.
 // Declared in @arkzen:notifications section.
 //
 // ISOLATION:
-//   Path:      app/Notifications/Arkzen/{slug}/{ClassName}Notification.php
-//   Namespace: App\Notifications\Arkzen\{Slug}
+//   Path:      app/Notifications/Arkzen/{slugNs}/{ClassName}Notification.php
+//   Namespace: App\Notifications\Arkzen\{slugNs}
 //
-// Supports channels: database, mail, broadcast
+// FIXED: Physical directory now uses $slugNs (namespace-safe name)
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -24,11 +24,14 @@ class NotificationBuilder
         $notifications = $module['notifications'] ?? [];
         if (empty($notifications)) return;
 
-        $slug = $module['name'];
-        File::ensureDirectoryExists(app_path("Notifications/Arkzen/{$slug}"));
+        $slug   = $module['name'];                          // tatemono slug e.g. inventory-management
+        $slugNs = EventBuilder::toNamespace($slug);        // e.g. InventoryManagement
+
+        // FIXED: Use $slugNs for directory
+        File::ensureDirectoryExists(app_path("Notifications/Arkzen/{$slugNs}"));
 
         foreach ($notifications as $name => $config) {
-            self::buildNotification($slug, $name, $config);
+            self::buildNotification($slug, $slugNs, $name, $config);
         }
     }
 
@@ -36,14 +39,15 @@ class NotificationBuilder
     // BUILD SINGLE NOTIFICATION
     // ─────────────────────────────────────────────
 
-    private static function buildNotification(string $slug, string $name, array $config): void
+    private static function buildNotification(string $slug, string $slugNs, string $name, array $config): void
     {
         $className  = self::toClassName($name);
-        $slugNs     = EventBuilder::toNamespace($slug);
         $channels   = $config['channels'] ?? ['database'];
         $message    = $config['message']  ?? 'You have a new notification.';
         $subject    = $config['subject']  ?? $className;
-        $filePath   = app_path("Notifications/Arkzen/{$slug}/{$className}.php");
+        
+        // FIXED: Use $slugNs for file path
+        $filePath   = app_path("Notifications/Arkzen/{$slugNs}/{$className}.php");
 
         $channelList    = self::generateChannelList($channels);
         $channelMethods = self::generateChannelMethods($channels, $message, $subject);

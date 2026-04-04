@@ -1,10 +1,9 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — RESOURCE BUILDER
-// PATCHED v5.1: Tatemono-slug folder isolation
-//   Before: Http/Resources/Arkzen/InventoryResource.php
-//   After:  Http/Resources/Arkzen/inventory-management/InventoryResource.php
+// ARKZEN ENGINE — RESOURCE BUILDER v5.3 (FIXED)
+// FIXED: Physical folder now uses namespace-safe name (no hyphens)
+//   inventory-management → InventoryManagement (both namespace AND folder)
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -16,17 +15,20 @@ class ResourceBuilder
 {
     public static function build(array $module): void
     {
-        $api  = $module['api'];
-        $db   = $module['database'];
-        $name = $module['name'];                                    // tatemono slug
+        $api    = $module['api'];
+        $db     = $module['database'];
+        $name   = $module['name'];                                  // tatemono slug e.g. inventory-management
+        $slugNs = EventBuilder::toNamespace($name);                // e.g. InventoryManagement
 
         if (empty($api['resource'])) return;
 
         $modelName    = $api['model'];
         $resourceName = "{$modelName}Resource";
-        $filePath     = app_path("Http/Resources/Arkzen/{$name}/{$resourceName}.php");
+        
+        // FIXED: Use $slugNs for directory and file path
+        $filePath     = app_path("Http/Resources/Arkzen/{$slugNs}/{$resourceName}.php");
 
-        File::ensureDirectoryExists(app_path("Http/Resources/Arkzen/{$name}"));
+        File::ensureDirectoryExists(app_path("Http/Resources/Arkzen/{$slugNs}"));
 
         $fields = self::generateFields($db['columns'] ?? []);
 
@@ -39,7 +41,7 @@ class ResourceBuilder
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace App\Http\Resources\Arkzen\\{$name};
+namespace App\Http\Resources\Arkzen\\{$slugNs};
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -56,7 +58,7 @@ class {$resourceName} extends JsonResource
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Resource] ✓ Resource created: {$name}/{$resourceName}");
+        Log::info("[Arkzen Resource] ✓ Resource created: {$slugNs}/{$resourceName}");
     }
 
     private static function generateFields(array $columns): string

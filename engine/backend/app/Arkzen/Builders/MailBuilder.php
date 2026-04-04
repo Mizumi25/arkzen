@@ -1,14 +1,17 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — MAIL BUILDER v2.0 (slug-isolated)
+// ARKZEN ENGINE — MAIL BUILDER v2.1 (FIXED)
 // Generates Laravel Mailable classes + blade view stubs.
 // Declared in @arkzen:mail section.
 //
 // ISOLATION:
-//   Class:     app/Mail/Arkzen/{slug}/{ClassName}Mail.php
-//   Namespace: App\Mail\Arkzen\{Slug}
+//   Class:     app/Mail/Arkzen/{slugNs}/{ClassName}Mail.php
+//   Namespace: App\Mail\Arkzen\{slugNs}
 //   View:      resources/views/emails/arkzen/{slug}/{name}.blade.php
+//
+// FIXED: Physical directory now uses $slugNs (namespace-safe name)
+// Note: View directory still uses original $slug for URL readability
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -23,12 +26,17 @@ class MailBuilder
         $mails = $module['mail'] ?? [];
         if (empty($mails)) return;
 
-        $slug = $module['name'];
-        File::ensureDirectoryExists(app_path("Mail/Arkzen/{$slug}"));
+        $slug   = $module['name'];                          // tatemono slug e.g. inventory-management
+        $slugNs = EventBuilder::toNamespace($slug);        // e.g. InventoryManagement
+
+        // FIXED: Use $slugNs for Mail directory
+        File::ensureDirectoryExists(app_path("Mail/Arkzen/{$slugNs}"));
+        
+        // View directory stays as $slug for readable URLs (emails/arkzen/inventory-management/welcome.blade.php)
         File::ensureDirectoryExists(resource_path("views/emails/arkzen/{$slug}"));
 
         foreach ($mails as $name => $config) {
-            self::buildMail($slug, $name, $config);
+            self::buildMail($slug, $slugNs, $name, $config);
         }
     }
 
@@ -36,13 +44,14 @@ class MailBuilder
     // BUILD SINGLE MAILABLE
     // ─────────────────────────────────────────────
 
-    private static function buildMail(string $slug, string $name, array $config): void
+    private static function buildMail(string $slug, string $slugNs, string $name, array $config): void
     {
         $className  = self::toClassName($name);
-        $slugNs     = EventBuilder::toNamespace($slug);
         $subject    = $config['subject'] ?? $className;
         $viewName   = "emails.arkzen.{$slug}." . strtolower(str_replace(['-', '_'], '-', $name));
-        $filePath   = app_path("Mail/Arkzen/{$slug}/{$className}.php");
+        
+        // FIXED: Use $slugNs for file path
+        $filePath   = app_path("Mail/Arkzen/{$slugNs}/{$className}.php");
 
         $dataFields    = $config['data'] ?? [];
         $properties    = self::generateProperties($dataFields);

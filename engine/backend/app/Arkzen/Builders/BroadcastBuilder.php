@@ -1,13 +1,16 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — BROADCAST BUILDER v2.0 (slug-isolated)
+// ARKZEN ENGINE — BROADCAST BUILDER v2.1 (FIXED)
 // Generates Laravel Broadcast Event classes for Reverb.
 // Declared in @arkzen:realtime section.
 //
 // ISOLATION:
-//   Path:      app/Events/Arkzen/{slug}/Broadcast/{ClassName}.php
-//   Namespace: App\Events\Arkzen\{Slug}\Broadcast
+//   Path:      app/Events/Arkzen/{slugNs}/Broadcast/{ClassName}.php
+//   Namespace: App\Events\Arkzen\{slugNs}\Broadcast
+//
+// FIXED: Physical directory now uses $slugNs (namespace-safe name)
+//   inventory-management → InventoryManagement (both namespace AND folder)
 //
 // Works with ChannelBuilder — Broadcast pushes data,
 // Channel controls who can subscribe.
@@ -25,11 +28,14 @@ class BroadcastBuilder
         $realtime = $module['realtime'] ?? [];
         if (empty($realtime['events'])) return;
 
-        $slug = $module['name'];
-        File::ensureDirectoryExists(app_path("Events/Arkzen/{$slug}/Broadcast"));
+        $slug   = $module['name'];                          // tatemono slug e.g. inventory-management
+        $slugNs = EventBuilder::toNamespace($slug);        // e.g. InventoryManagement
+        
+        // FIXED: Use $slugNs for directory (namespace-safe), not $slug
+        File::ensureDirectoryExists(app_path("Events/Arkzen/{$slugNs}/Broadcast"));
 
         foreach ($realtime['events'] as $name => $config) {
-            self::buildBroadcastEvent($slug, $name, $config);
+            self::buildBroadcastEvent($slug, $slugNs, $name, $config);
         }
     }
 
@@ -37,13 +43,14 @@ class BroadcastBuilder
     // BUILD BROADCAST EVENT
     // ─────────────────────────────────────────────
 
-    private static function buildBroadcastEvent(string $slug, string $name, array $config): void
+    private static function buildBroadcastEvent(string $slug, string $slugNs, string $name, array $config): void
     {
         $className   = self::toClassName($name);
-        $slugNs      = EventBuilder::toNamespace($slug);
         $channelName = $config['channel']  ?? $slug;
         $channelType = $config['type']     ?? 'public';
-        $filePath    = app_path("Events/Arkzen/{$slug}/Broadcast/{$className}.php");
+        
+        // FIXED: Use $slugNs for file path (namespace-safe)
+        $filePath    = app_path("Events/Arkzen/{$slugNs}/Broadcast/{$className}.php");
 
         $channelMethod = match($channelType) {
             'private'  => "new PrivateChannel('{$channelName}')",

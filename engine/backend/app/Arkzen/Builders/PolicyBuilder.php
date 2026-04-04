@@ -1,10 +1,9 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — POLICY BUILDER
-// PATCHED v5.1: Tatemono-slug folder isolation
-//   Before: Policies/Arkzen/InventoryPolicy.php
-//   After:  Policies/Arkzen/inventory-management/InventoryPolicy.php
+// ARKZEN ENGINE — POLICY BUILDER v5.3 (FIXED)
+// FIXED: Physical folder now uses namespace-safe name (no hyphens)
+//   inventory-management → InventoryManagement (both namespace AND folder)
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -16,17 +15,20 @@ class PolicyBuilder
 {
     public static function build(array $module): void
     {
-        $api  = $module['api'];
-        $db   = $module['database'];
-        $name = $module['name'];                                    // tatemono slug
+        $api    = $module['api'];
+        $db     = $module['database'];
+        $name   = $module['name'];                                  // tatemono slug e.g. inventory-management
+        $slugNs = EventBuilder::toNamespace($name);                // e.g. InventoryManagement
 
         if (empty($api['policy'])) return;
 
         $modelName  = $api['model'];
         $policyName = "{$modelName}Policy";
-        $filePath   = app_path("Policies/Arkzen/{$name}/{$policyName}.php");
+        
+        // FIXED: Use $slugNs for directory
+        $filePath   = app_path("Policies/Arkzen/{$slugNs}/{$policyName}.php");
 
-        File::ensureDirectoryExists(app_path("Policies/Arkzen/{$name}"));
+        File::ensureDirectoryExists(app_path("Policies/Arkzen/{$slugNs}"));
 
         $ownerColumn = self::detectOwnerColumn($db['columns'] ?? []);
         $varName     = self::varName($modelName);
@@ -44,10 +46,10 @@ class PolicyBuilder
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace App\Policies\Arkzen\\{$name};
+namespace App\Policies\Arkzen\\{$slugNs};
 
 use App\Models\User;
-use App\Models\Arkzen\\{$name}\\{$modelName};
+use App\Models\Arkzen\\{$slugNs}\\{$modelName};
 use Illuminate\Auth\Access\HandlesAuthorization;
 
 class {$policyName}
@@ -73,7 +75,7 @@ class {$policyName}
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Policy] ✓ Policy created: {$name}/{$policyName}");
+        Log::info("[Arkzen Policy] ✓ Policy created: {$slugNs}/{$policyName}");
     }
 
     private static function detectOwnerColumn(array $columns): ?string

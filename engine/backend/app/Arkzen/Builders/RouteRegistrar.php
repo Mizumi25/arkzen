@@ -1,9 +1,10 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — ROUTE REGISTRAR v4.1
-// Fixed: ->prefix($api['prefix']) now applied per resource group
-// One route file per tatemono, containing ALL resource groups.
+// ARKZEN ENGINE — ROUTE REGISTRAR v4.3
+// FIXED: Already using $slugNs correctly - no changes needed
+//   inventory-management → InventoryManagement (namespace only)
+//   Physical route file stays: routes/modules/inventory-management.php
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -21,14 +22,13 @@ class RouteRegistrar
     public static function buildAll(array $module): void
     {
         $name      = $module['name'];
+        $slugNs    = EventBuilder::toNamespace($name);             // inventory-management → InventoryManagement
         $apis      = $module['apis'];
         $routesDir = base_path('routes/modules');
 
         File::ensureDirectoryExists($routesDir);
 
-        $routeFile = "{$routesDir}/{$name}.php";
-
-        // Collect all controller use statements
+        $routeFile     = "{$routesDir}/{$name}.php";
         $useStatements = [];
         $routeGroups   = [];
 
@@ -36,7 +36,8 @@ class RouteRegistrar
             $controllerName = $api['controller'];
             $prefix         = $api['prefix'];
 
-            $useStatements[] = "use App\\Http\\Controllers\\Arkzen\\{$name}\\{$controllerName};";
+            // CORRECT: Using $slugNs for the namespace in use statement
+            $useStatements[] = "use App\\Http\\Controllers\\Arkzen\\{$slugNs}\\{$controllerName};";
 
             $resolvedMiddleware = MiddlewareBuilder::build(['api' => $api, 'name' => $name, 'databases' => $module['databases'], 'apis' => $apis]);
             $middlewareStr      = "['" . implode("', '", $resolvedMiddleware) . "']";

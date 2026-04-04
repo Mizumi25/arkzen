@@ -1,13 +1,16 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — CONSOLE BUILDER v2.0 (slug-isolated)
+// ARKZEN ENGINE — CONSOLE BUILDER v2.1 (FIXED)
 // Generates Artisan Command classes.
 // Declared in @arkzen:console section.
 //
 // ISOLATION:
-//   Path:      app/Console/Commands/Arkzen/{slug}/{ClassName}Command.php
-//   Namespace: App\Console\Commands\Arkzen\{Slug}
+//   Path:      app/Console/Commands/Arkzen/{slugNs}/{ClassName}Command.php
+//   Namespace: App\Console\Commands\Arkzen\{slugNs}
+//
+// FIXED: Physical directory now uses $slugNs (namespace-safe name)
+//   inventory-management → InventoryManagement (both namespace AND folder)
 //
 // NOTE ON SIGNATURES: Artisan signatures are globally unique in
 // Laravel (they're registered in the CLI table). To avoid collision
@@ -28,11 +31,14 @@ class ConsoleBuilder
         $commands = $module['console'] ?? [];
         if (empty($commands)) return;
 
-        $slug = $module['name'];
-        File::ensureDirectoryExists(app_path("Console/Commands/Arkzen/{$slug}"));
+        $slug   = $module['name'];                          // tatemono slug e.g. inventory-management
+        $slugNs = EventBuilder::toNamespace($slug);        // e.g. InventoryManagement
+
+        // FIXED: Use $slugNs for directory (namespace-safe)
+        File::ensureDirectoryExists(app_path("Console/Commands/Arkzen/{$slugNs}"));
 
         foreach ($commands as $name => $config) {
-            self::buildCommand($slug, $name, $config);
+            self::buildCommand($slug, $slugNs, $name, $config);
         }
     }
 
@@ -40,15 +46,16 @@ class ConsoleBuilder
     // BUILD SINGLE COMMAND
     // ─────────────────────────────────────────────
 
-    private static function buildCommand(string $slug, string $name, array $config): void
+    private static function buildCommand(string $slug, string $slugNs, string $name, array $config): void
     {
         $className   = self::toClassName($name);
-        $slugNs      = EventBuilder::toNamespace($slug);
         // Auto-scope signature to slug to prevent cross-tatemono collision
         $signature   = $config['signature']   ?? "{$slug}:{$name}";
         $description = $config['description'] ?? "Arkzen [{$slug}] command: {$name}";
         $schedule    = $config['schedule']    ?? null;
-        $filePath    = app_path("Console/Commands/Arkzen/{$slug}/{$className}.php");
+
+        // FIXED: Use $slugNs for file path
+        $filePath    = app_path("Console/Commands/Arkzen/{$slugNs}/{$className}.php");
 
         $scheduleComment = $schedule
             ? "// Schedule: {$schedule} — register in app/Console/Kernel.php"

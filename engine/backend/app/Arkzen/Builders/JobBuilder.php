@@ -1,13 +1,15 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — JOB BUILDER v2.0 (slug-isolated)
+// ARKZEN ENGINE — JOB BUILDER v2.1 (FIXED)
 // Generates Laravel Job classes for background processing.
 // Declared in @arkzen:jobs section.
 //
 // ISOLATION:
-//   Path:      app/Jobs/Arkzen/{slug}/{ClassName}Job.php
-//   Namespace: App\Jobs\Arkzen\{Slug}
+//   Path:      app/Jobs/Arkzen/{slugNs}/{ClassName}Job.php
+//   Namespace: App\Jobs\Arkzen\{slugNs}
+//
+// FIXED: Physical directory now uses $slugNs (namespace-safe name)
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -22,11 +24,14 @@ class JobBuilder
         $jobs = $module['jobs'] ?? [];
         if (empty($jobs)) return;
 
-        $slug = $module['name'];
-        File::ensureDirectoryExists(app_path("Jobs/Arkzen/{$slug}"));
+        $slug   = $module['name'];                          // tatemono slug e.g. inventory-management
+        $slugNs = EventBuilder::toNamespace($slug);        // e.g. InventoryManagement
+
+        // FIXED: Use $slugNs for directory
+        File::ensureDirectoryExists(app_path("Jobs/Arkzen/{$slugNs}"));
 
         foreach ($jobs as $name => $config) {
-            self::buildJob($slug, $name, $config);
+            self::buildJob($slug, $slugNs, $name, $config);
         }
     }
 
@@ -34,14 +39,15 @@ class JobBuilder
     // BUILD SINGLE JOB
     // ─────────────────────────────────────────────
 
-    private static function buildJob(string $slug, string $name, array $config): void
+    private static function buildJob(string $slug, string $slugNs, string $name, array $config): void
     {
         $className = self::toClassName($name);
-        $slugNs    = EventBuilder::toNamespace($slug);
         $queue     = $config['queue']   ?? 'default';
         $tries     = $config['tries']   ?? 3;
         $timeout   = $config['timeout'] ?? 60;
-        $filePath  = app_path("Jobs/Arkzen/{$slug}/{$className}.php");
+        
+        // FIXED: Use $slugNs for file path
+        $filePath  = app_path("Jobs/Arkzen/{$slugNs}/{$className}.php");
 
         $content = "<?php
 

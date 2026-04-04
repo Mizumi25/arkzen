@@ -1,12 +1,9 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — SEEDER BUILDER
-// PATCHED v5.1: Tatemono-slug folder isolation + prefixed table + isolated DB
-//   Before: database/seeders/arkzen/InventoryArkzenSeeder.php
-//           DB::table('inventories')
-//   After:  database/seeders/arkzen/inventory-management/InventoryArkzenSeeder.php
-//           DB::connection('inventory_management')->table('inventory_management_inventories')
+// ARKZEN ENGINE — SEEDER BUILDER v5.3 (FIXED)
+// FIXED: Physical folder now uses namespace-safe name (no hyphens)
+//   inventory-management → InventoryManagement (both namespace AND folder)
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -27,12 +24,15 @@ class SeederBuilder
             return;
         }
 
-        $name       = $module['name'];                              // tatemono slug
+        $name       = $module['name'];                              // tatemono slug e.g. inventory-management
+        $slugNs     = EventBuilder::toNamespace($name);            // e.g. InventoryManagement
         $tableName  = ModelBuilder::prefixedTable($name, $db['table']);
         $dbConn     = ModelBuilder::slugToConnection($name);
         $modelName  = $module['api']['model'];
         $seederName = "{$modelName}ArkzenSeeder";
-        $seederDir  = database_path("seeders/arkzen/{$name}");
+        
+        // FIXED: Use $slugNs for directory
+        $seederDir  = database_path("seeders/arkzen/{$slugNs}");
         $filePath   = "{$seederDir}/{$seederName}.php";
 
         File::ensureDirectoryExists($seederDir);
@@ -48,7 +48,7 @@ class SeederBuilder
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace Database\Seeders\Arkzen\\{$name};
+namespace Database\Seeders\Arkzen\\{$slugNs};
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -67,9 +67,9 @@ class {$seederName} extends Seeder
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Seeder] ✓ Seeder created: {$name}/{$seederName}");
+        Log::info("[Arkzen Seeder] ✓ Seeder created: {$slugNs}/{$seederName}");
 
-        self::runSeeder($seederName, $filePath, $name);
+        self::runSeeder($seederName, $filePath, $name, $slugNs);
     }
 
     private static function generateSeedData(array $seeder, array $columns): string
@@ -91,15 +91,14 @@ class {$seederName} extends Seeder
         return implode(",\n", $rows);
     }
 
-    private static function runSeeder(string $seederName, string $filePath, string $name): void
+    private static function runSeeder(string $seederName, string $filePath, string $name, string $slugNs): void
     {
         Log::info("[Arkzen Seeder] Running seeder: {$name}/{$seederName}");
 
-        // Load file into PHP runtime before Artisan can see the class
         require_once $filePath;
 
         Artisan::call('db:seed', [
-            '--class' => "Database\\Seeders\\Arkzen\\{$name}\\{$seederName}",
+            '--class' => "Database\\Seeders\\Arkzen\\{$slugNs}\\{$seederName}",
             '--force' => true,
         ]);
 

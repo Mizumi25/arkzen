@@ -1,10 +1,9 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — REQUEST BUILDER
-// PATCHED v5.1: Tatemono-slug folder isolation
-//   Before: Http/Requests/Arkzen/InventoryStoreRequest.php
-//   After:  Http/Requests/Arkzen/inventory-management/InventoryStoreRequest.php
+// ARKZEN ENGINE — REQUEST BUILDER v5.3 (FIXED)
+// FIXED: Physical folder now uses namespace-safe name (no hyphens)
+//   inventory-management → InventoryManagement (both namespace AND folder)
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -17,23 +16,26 @@ class RequestBuilder
     public static function build(array $module): void
     {
         $api       = $module['api'];
-        $name      = $module['name'];                               // tatemono slug
+        $name      = $module['name'];                               // tatemono slug e.g. inventory-management
+        $slugNs    = EventBuilder::toNamespace($name);             // e.g. InventoryManagement
         $modelName = $api['model'];
         $endpoints = $api['endpoints'] ?? [];
 
-        File::ensureDirectoryExists(app_path("Http/Requests/Arkzen/{$name}"));
+        // FIXED: Use $slugNs for directory
+        File::ensureDirectoryExists(app_path("Http/Requests/Arkzen/{$slugNs}"));
 
         foreach ($endpoints as $endpointName => $endpoint) {
             if (empty($endpoint['validation'])) continue;
-            self::buildRequest($modelName, $endpointName, $endpoint, $name);
+            self::buildRequest($modelName, $endpointName, $endpoint, $slugNs, $name);
         }
     }
 
-    private static function buildRequest(string $modelName, string $endpointName, array $endpoint, string $tatSlug): void
+    private static function buildRequest(string $modelName, string $endpointName, array $endpoint, string $slugNs, string $tatSlug): void
     {
         $suffix      = ucfirst($endpointName);
         $requestName = "{$modelName}{$suffix}Request";
-        $filePath    = app_path("Http/Requests/Arkzen/{$tatSlug}/{$requestName}.php");
+        // FIXED: Use $slugNs for file path
+        $filePath    = app_path("Http/Requests/Arkzen/{$slugNs}/{$requestName}.php");
 
         $rules = self::generateRules($endpoint['validation']);
 
@@ -46,7 +48,7 @@ class RequestBuilder
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace App\Http\Requests\Arkzen\\{$tatSlug};
+namespace App\Http\Requests\Arkzen\\{$slugNs};
 
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -66,7 +68,7 @@ class {$requestName} extends FormRequest
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Request] ✓ Request created: {$tatSlug}/{$requestName}");
+        Log::info("[Arkzen Request] ✓ Request created: {$slugNs}/{$requestName}");
     }
 
     private static function generateRules(array $validation): string
