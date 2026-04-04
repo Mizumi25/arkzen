@@ -1,9 +1,13 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — JOB BUILDER
+// ARKZEN ENGINE — JOB BUILDER v2.0 (slug-isolated)
 // Generates Laravel Job classes for background processing.
 // Declared in @arkzen:jobs section.
+//
+// ISOLATION:
+//   Path:      app/Jobs/Arkzen/{slug}/{ClassName}Job.php
+//   Namespace: App\Jobs\Arkzen\{Slug}
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -18,10 +22,11 @@ class JobBuilder
         $jobs = $module['jobs'] ?? [];
         if (empty($jobs)) return;
 
-        File::ensureDirectoryExists(app_path('Jobs/Arkzen'));
+        $slug = $module['name'];
+        File::ensureDirectoryExists(app_path("Jobs/Arkzen/{$slug}"));
 
         foreach ($jobs as $name => $config) {
-            self::buildJob($name, $config);
+            self::buildJob($slug, $name, $config);
         }
     }
 
@@ -29,31 +34,33 @@ class JobBuilder
     // BUILD SINGLE JOB
     // ─────────────────────────────────────────────
 
-    private static function buildJob(string $name, array $config): void
+    private static function buildJob(string $slug, string $name, array $config): void
     {
         $className = self::toClassName($name);
+        $slugNs    = EventBuilder::toNamespace($slug);
         $queue     = $config['queue']   ?? 'default';
         $tries     = $config['tries']   ?? 3;
         $timeout   = $config['timeout'] ?? 60;
-        $filePath  = app_path("Jobs/Arkzen/{$className}.php");
+        $filePath  = app_path("Jobs/Arkzen/{$slug}/{$className}.php");
 
         $content = "<?php
 
 // ============================================================
 // ARKZEN GENERATED JOB — {$className}
+// Tatemono: {$slug}
 // Queue: {$queue} | Tries: {$tries} | Timeout: {$timeout}s
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace App\Jobs\Arkzen;
+namespace App\\Jobs\\Arkzen\\{$slugNs};
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Log;
+use Illuminate\\Bus\\Queueable;
+use Illuminate\\Contracts\\Queue\\ShouldQueue;
+use Illuminate\\Foundation\\Bus\\Dispatchable;
+use Illuminate\\Queue\\InteractsWithQueue;
+use Illuminate\\Queue\\SerializesModels;
+use Illuminate\\Support\\Facades\\Log;
 
 class {$className} implements ShouldQueue
 {
@@ -70,14 +77,14 @@ class {$className} implements ShouldQueue
 
     public function handle(): void
     {
-        Log::info('[Arkzen Job] Running: {$className}', \$this->data);
+        Log::info('[Arkzen Job] Running: {$slugNs}\\\\{$className}', \$this->data);
 
         // TODO: implement job logic for {$name}
     }
 
     public function failed(\Throwable \$exception): void
     {
-        Log::error('[Arkzen Job] Failed: {$className}', [
+        Log::error('[Arkzen Job] Failed: {$slugNs}\\\\{$className}', [
             'error' => \$exception->getMessage(),
             'data'  => \$this->data,
         ]);
@@ -86,10 +93,10 @@ class {$className} implements ShouldQueue
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Job] ✓ Job created: {$className} (queue: {$queue})");
+        Log::info("[Arkzen Job] ✓ {$slugNs}\\{$className} (queue: {$queue})");
     }
 
-    private static function toClassName(string $name): string
+    public static function toClassName(string $name): string
     {
         return str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $name))) . 'Job';
     }

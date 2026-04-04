@@ -1,9 +1,13 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — NOTIFICATION BUILDER
+// ARKZEN ENGINE — NOTIFICATION BUILDER v2.0 (slug-isolated)
 // Generates Laravel Notification classes.
 // Declared in @arkzen:notifications section.
+//
+// ISOLATION:
+//   Path:      app/Notifications/Arkzen/{slug}/{ClassName}Notification.php
+//   Namespace: App\Notifications\Arkzen\{Slug}
 //
 // Supports channels: database, mail, broadcast
 // ============================================================
@@ -20,10 +24,11 @@ class NotificationBuilder
         $notifications = $module['notifications'] ?? [];
         if (empty($notifications)) return;
 
-        File::ensureDirectoryExists(app_path('Notifications/Arkzen'));
+        $slug = $module['name'];
+        File::ensureDirectoryExists(app_path("Notifications/Arkzen/{$slug}"));
 
         foreach ($notifications as $name => $config) {
-            self::buildNotification($name, $config);
+            self::buildNotification($slug, $name, $config);
         }
     }
 
@@ -31,13 +36,14 @@ class NotificationBuilder
     // BUILD SINGLE NOTIFICATION
     // ─────────────────────────────────────────────
 
-    private static function buildNotification(string $name, array $config): void
+    private static function buildNotification(string $slug, string $name, array $config): void
     {
-        $className = self::toClassName($name);
-        $channels  = $config['channels'] ?? ['database'];
-        $message   = $config['message']  ?? "You have a new notification.";
-        $subject   = $config['subject']  ?? $className;
-        $filePath  = app_path("Notifications/Arkzen/{$className}.php");
+        $className  = self::toClassName($name);
+        $slugNs     = EventBuilder::toNamespace($slug);
+        $channels   = $config['channels'] ?? ['database'];
+        $message    = $config['message']  ?? 'You have a new notification.';
+        $subject    = $config['subject']  ?? $className;
+        $filePath   = app_path("Notifications/Arkzen/{$slug}/{$className}.php");
 
         $channelList    = self::generateChannelList($channels);
         $channelMethods = self::generateChannelMethods($channels, $message, $subject);
@@ -46,17 +52,18 @@ class NotificationBuilder
 
 // ============================================================
 // ARKZEN GENERATED NOTIFICATION — {$className}
+// Tatemono: {$slug}
 // Channels: " . implode(', ', $channels) . "
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace App\Notifications\Arkzen;
+namespace App\\Notifications\\Arkzen\\{$slugNs};
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Notifications\Notification;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\\Bus\\Queueable;
+use Illuminate\\Notifications\\Notification;
+use Illuminate\\Contracts\\Queue\\ShouldQueue;
+use Illuminate\\Notifications\\Messages\\MailMessage;
 
 class {$className} extends Notification implements ShouldQueue
 {
@@ -76,15 +83,16 @@ class {$className} extends Notification implements ShouldQueue
     public function toArray(object \$notifiable): array
     {
         return array_merge([
-            'type'    => '{$className}',
-            'message' => '{$message}',
+            'type'      => '{$slugNs}\\\\{$className}',
+            'message'   => '{$message}',
+            'tatemono'  => '{$slug}',
         ], \$this->data);
     }
 }
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Notification] ✓ Notification created: {$className}");
+        Log::info("[Arkzen Notification] ✓ {$slugNs}\\{$className}");
     }
 
     // ─────────────────────────────────────────────
@@ -135,7 +143,7 @@ class {$className} extends Notification implements ShouldQueue
         return implode("\n\n", $methods);
     }
 
-    private static function toClassName(string $name): string
+    public static function toClassName(string $name): string
     {
         return str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $name))) . 'Notification';
     }

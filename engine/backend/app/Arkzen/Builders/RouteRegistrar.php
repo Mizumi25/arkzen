@@ -36,7 +36,7 @@ class RouteRegistrar
             $controllerName = $api['controller'];
             $prefix         = $api['prefix'];
 
-            $useStatements[] = "use App\\Http\\Controllers\\Arkzen\\{$controllerName};";
+            $useStatements[] = "use App\\Http\\Controllers\\Arkzen\\{$name}\\{$controllerName};";
 
             $resolvedMiddleware = MiddlewareBuilder::build(['api' => $api, 'name' => $name, 'databases' => $module['databases'], 'apis' => $apis]);
             $middlewareStr      = "['" . implode("', '", $resolvedMiddleware) . "']";

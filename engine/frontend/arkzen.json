@@ -11,7 +11,7 @@
         "index"
       ],
       "registered": "2026-03-29T05:18:40.255Z",
-      "lastUpdated": "2026-04-04T04:43:01.038Z"
+      "lastUpdated": "2026-04-04T07:46:24.180Z"
     },
     {
       "name": "auth-test",
@@ -24,7 +24,135 @@
         "dashboard"
       ],
       "registered": "2026-04-04T03:21:43.921Z",
-      "lastUpdated": "2026-04-04T04:43:00.939Z"
+      "lastUpdated": "2026-04-04T07:46:23.896Z"
+    },
+    {
+      "name": "broadcast-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/broadcast-test/core.tsx",
+      "pages": [
+        "login",
+        "dashboard"
+      ],
+      "registered": "2026-04-04T06:17:46.456Z",
+      "lastUpdated": "2026-04-04T07:46:23.904Z"
+    },
+    {
+      "name": "crud-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/crud-test/core.tsx",
+      "pages": [
+        "login",
+        "dashboard"
+      ],
+      "registered": "2026-04-04T06:17:46.866Z",
+      "lastUpdated": "2026-04-04T07:46:24.058Z"
+    },
+    {
+      "name": "errors-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/errors-test/core.tsx",
+      "pages": [
+        "index",
+        "400",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "500",
+        "503"
+      ],
+      "registered": "2026-04-04T06:17:46.872Z",
+      "lastUpdated": "2026-04-04T07:46:24.088Z"
+    },
+    {
+      "name": "events-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/events-test/core.tsx",
+      "pages": [
+        "login",
+        "dashboard"
+      ],
+      "registered": "2026-04-04T06:17:46.875Z",
+      "lastUpdated": "2026-04-04T07:46:24.098Z"
+    },
+    {
+      "name": "job-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/job-test/core.tsx",
+      "pages": [
+        "login",
+        "dashboard"
+      ],
+      "registered": "2026-04-04T06:17:46.972Z",
+      "lastUpdated": "2026-04-04T07:46:24.193Z"
+    },
+    {
+      "name": "mail-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/mail-test/core.tsx",
+      "pages": [
+        "login",
+        "dashboard"
+      ],
+      "registered": "2026-04-04T06:17:46.980Z",
+      "lastUpdated": "2026-04-04T07:46:24.203Z"
+    },
+    {
+      "name": "notification-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/notification-test/core.tsx",
+      "pages": [
+        "login",
+        "dashboard"
+      ],
+      "registered": "2026-04-04T06:17:46.988Z",
+      "lastUpdated": "2026-04-04T07:46:24.210Z"
+    },
+    {
+      "name": "roles-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/roles-test/core.tsx",
+      "pages": [
+        "login",
+        "dashboard"
+      ],
+      "registered": "2026-04-04T06:17:46.998Z",
+      "lastUpdated": "2026-04-04T07:46:24.218Z"
+    },
+    {
+      "name": "scheduler-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/scheduler-test/core.tsx",
+      "pages": [
+        "login",
+        "dashboard"
+      ],
+      "registered": "2026-04-04T06:17:47.006Z",
+      "lastUpdated": "2026-04-04T07:46:24.225Z"
+    },
+    {
+      "name": "upload-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/upload-test/core.tsx",
+      "pages": [
+        "login",
+        "dashboard"
+      ],
+      "registered": "2026-04-04T06:17:47.014Z",
+      "lastUpdated": "2026-04-04T07:46:24.232Z"
     }
   ]
 }

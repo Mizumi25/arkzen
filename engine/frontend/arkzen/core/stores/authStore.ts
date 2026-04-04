@@ -1,19 +1,46 @@
 // ============================================================
-// ARKZEN ENGINE — GLOBAL AUTH STORE
+// ARKZEN ENGINE — GLOBAL AUTH STORE v2.0
 // Place at: engine/frontend/arkzen/core/stores/authStore.ts
 //
-// Replaces the fake localStorage token check in BaseLayout.
-// Uses Zustand for real reactive auth state.
-//
-// What it does:
-//   - Stores the current user + Sanctum token
-//   - Provides login(), logout(), fetchMe() actions
-//   - Persists token to localStorage (only the token, not user)
-//   - BaseLayout reads isAuthenticated from this store
+// CHANGES v2.0:
+//   - safeJson() helper: handles non-JSON responses (HTML 404/500
+//     pages, proxy errors) gracefully instead of throwing a raw
+//     "Unexpected token '<'" parse crash.
+//   - All fetch calls (login, register, logout, fetchMe) now use
+//     safeJson() — system-wide coverage, not just login.
+//   - Better error messages when the backend is unreachable.
 // ============================================================
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+
+// ─────────────────────────────────────────────
+// SAFE JSON HELPER
+// Attempts to parse a Response as JSON.
+// If the response is HTML (Laravel 404, 500, proxy error, etc.)
+// this won't crash with "Unexpected token '<'" — it returns a
+// friendly error object instead.
+// ─────────────────────────────────────────────
+
+async function safeJson<T = Record<string, unknown>>(res: Response): Promise<T> {
+  const text = await res.text()
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    // Response was HTML or empty — backend is likely down or mis-routed
+    const status = res.status
+    if (status === 0 || !res.url) {
+      throw new Error('Cannot reach the server. Is the backend running?')
+    }
+    if (status >= 500) {
+      throw new Error(`Server error (${status}). Check the Laravel logs.`)
+    }
+    if (status === 404) {
+      throw new Error(`API route not found (${status}). Check your backend routes.`)
+    }
+    throw new Error(`Unexpected server response (${status}). Expected JSON but got HTML.`)
+  }
+}
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -34,7 +61,6 @@ interface AuthState {
   isAuthenticated: boolean
   isLoading:       boolean
 
-  // Actions
   login:    (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string, passwordConfirmation: string) => Promise<void>
   logout:   () => Promise<void>
@@ -65,12 +91,12 @@ export const useAuthStore = create<AuthState>()(
             body:    JSON.stringify({ email, password }),
           })
 
+          const data = await safeJson<{ user: ArkzenUser; token: string; message?: string }>(res)
+
           if (!res.ok) {
-            const err = await res.json()
-            throw new Error(err.message ?? 'Login failed')
+            throw new Error(data.message ?? 'Login failed. Check your credentials.')
           }
 
-          const data: { user: ArkzenUser; token: string } = await res.json()
           set({ user: data.user, token: data.token, isAuthenticated: true })
         } finally {
           set({ isLoading: false })
@@ -92,12 +118,12 @@ export const useAuthStore = create<AuthState>()(
             }),
           })
 
+          const data = await safeJson<{ user: ArkzenUser; token: string; message?: string }>(res)
+
           if (!res.ok) {
-            const err = await res.json()
-            throw new Error(err.message ?? 'Registration failed')
+            throw new Error(data.message ?? 'Registration failed.')
           }
 
-          const data: { user: ArkzenUser; token: string } = await res.json()
           set({ user: data.user, token: data.token, isAuthenticated: true })
         } finally {
           set({ isLoading: false })
@@ -115,6 +141,7 @@ export const useAuthStore = create<AuthState>()(
               'Authorization': `Bearer ${token}`,
             },
           })
+          // safeJson not needed here — we don't care about the logout response body
         } catch {
           // Logout locally even if request fails
         } finally {
@@ -138,9 +165,10 @@ export const useAuthStore = create<AuthState>()(
             return
           }
 
-          const user: ArkzenUser = await res.json()
+          const user = await safeJson<ArkzenUser>(res)
           set({ user, isAuthenticated: true })
         } catch {
+          // Backend unreachable — clear auth silently
           set({ user: null, token: null, isAuthenticated: false })
         } finally {
           set({ isLoading: false })
@@ -159,8 +187,8 @@ export const useAuthStore = create<AuthState>()(
     }),
 
     {
-      name:    'arkzen-auth',   // localStorage key
-      partialize: (state) => ({ token: state.token }),  // only persist token
+      name:       'arkzen-auth',
+      partialize: (state) => ({ token: state.token }),
     }
   )
 )
@@ -168,7 +196,8 @@ export const useAuthStore = create<AuthState>()(
 // ─────────────────────────────────────────────
 // FETCH HELPER
 // Automatically attaches the Bearer token to any fetch call.
-// Use this instead of raw fetch in tatemono page sections.
+// Also uses safeJson internally so callers don't need to handle
+// raw HTML error responses.
 //
 // Usage:
 //   import { arkzenFetch } from '@/arkzen/core/stores/authStore'
@@ -186,4 +215,10 @@ export async function arkzenFetch(url: string, options: RequestInit = {}): Promi
       ...options.headers,
     },
   })
+}
+
+// Convenience: arkzenFetch + auto-parse JSON safely
+export async function arkzenGet<T = unknown>(url: string): Promise<T> {
+  const res = await arkzenFetch(url)
+  return safeJson<T>(res)
 }

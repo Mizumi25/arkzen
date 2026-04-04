@@ -1,9 +1,13 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — BROADCAST BUILDER
+// ARKZEN ENGINE — BROADCAST BUILDER v2.0 (slug-isolated)
 // Generates Laravel Broadcast Event classes for Reverb.
 // Declared in @arkzen:realtime section.
+//
+// ISOLATION:
+//   Path:      app/Events/Arkzen/{slug}/Broadcast/{ClassName}.php
+//   Namespace: App\Events\Arkzen\{Slug}\Broadcast
 //
 // Works with ChannelBuilder — Broadcast pushes data,
 // Channel controls who can subscribe.
@@ -21,10 +25,11 @@ class BroadcastBuilder
         $realtime = $module['realtime'] ?? [];
         if (empty($realtime['events'])) return;
 
-        File::ensureDirectoryExists(app_path('Events/Arkzen/Broadcast'));
+        $slug = $module['name'];
+        File::ensureDirectoryExists(app_path("Events/Arkzen/{$slug}/Broadcast"));
 
         foreach ($realtime['events'] as $name => $config) {
-            self::buildBroadcastEvent($name, $config);
+            self::buildBroadcastEvent($slug, $name, $config);
         }
     }
 
@@ -32,12 +37,13 @@ class BroadcastBuilder
     // BUILD BROADCAST EVENT
     // ─────────────────────────────────────────────
 
-    private static function buildBroadcastEvent(string $name, array $config): void
+    private static function buildBroadcastEvent(string $slug, string $name, array $config): void
     {
         $className   = self::toClassName($name);
-        $channelName = $config['channel']  ?? 'arkzen';
-        $channelType = $config['type']     ?? 'public'; // public | private | presence
-        $filePath    = app_path("Events/Arkzen/Broadcast/{$className}.php");
+        $slugNs      = EventBuilder::toNamespace($slug);
+        $channelName = $config['channel']  ?? $slug;
+        $channelType = $config['type']     ?? 'public';
+        $filePath    = app_path("Events/Arkzen/{$slug}/Broadcast/{$className}.php");
 
         $channelMethod = match($channelType) {
             'private'  => "new PrivateChannel('{$channelName}')",
@@ -46,26 +52,27 @@ class BroadcastBuilder
         };
 
         $useStatements = match($channelType) {
-            'private'  => "use Illuminate\Broadcasting\PrivateChannel;",
-            'presence' => "use Illuminate\Broadcasting\PresenceChannel;",
-            default    => "use Illuminate\Broadcasting\Channel;",
+            'private'  => "use Illuminate\\Broadcasting\\PrivateChannel;",
+            'presence' => "use Illuminate\\Broadcasting\\PresenceChannel;",
+            default    => "use Illuminate\\Broadcasting\\Channel;",
         };
 
         $content = "<?php
 
 // ============================================================
 // ARKZEN GENERATED BROADCAST EVENT — {$className}
+// Tatemono: {$slug}
 // Channel: {$channelName} ({$channelType})
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace App\Events\Arkzen\Broadcast;
+namespace App\\Events\\Arkzen\\{$slugNs}\\Broadcast;
 
-use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
-use Illuminate\Foundation\Events\Dispatchable;
-use Illuminate\Queue\SerializesModels;
+use Illuminate\\Broadcasting\\InteractsWithSockets;
+use Illuminate\\Contracts\\Broadcasting\\ShouldBroadcast;
+use Illuminate\\Foundation\\Events\\Dispatchable;
+use Illuminate\\Queue\\SerializesModels;
 {$useStatements}
 
 class {$className} implements ShouldBroadcast
@@ -83,7 +90,8 @@ class {$className} implements ShouldBroadcast
 
     public function broadcastAs(): string
     {
-        return '{$name}';
+        // Scoped event name: tatemono.event-name
+        return '{$slug}.{$name}';
     }
 
     public function broadcastWith(): array
@@ -94,10 +102,10 @@ class {$className} implements ShouldBroadcast
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Broadcast] ✓ Broadcast event created: {$className} on {$channelName}");
+        Log::info("[Arkzen Broadcast] ✓ {$slugNs}\\Broadcast\\{$className} on {$channelName}");
     }
 
-    private static function toClassName(string $name): string
+    public static function toClassName(string $name): string
     {
         return str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $name)));
     }

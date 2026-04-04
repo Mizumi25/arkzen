@@ -1,9 +1,14 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — MAIL BUILDER
+// ARKZEN ENGINE — MAIL BUILDER v2.0 (slug-isolated)
 // Generates Laravel Mailable classes + blade view stubs.
 // Declared in @arkzen:mail section.
+//
+// ISOLATION:
+//   Class:     app/Mail/Arkzen/{slug}/{ClassName}Mail.php
+//   Namespace: App\Mail\Arkzen\{Slug}
+//   View:      resources/views/emails/arkzen/{slug}/{name}.blade.php
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -18,11 +23,12 @@ class MailBuilder
         $mails = $module['mail'] ?? [];
         if (empty($mails)) return;
 
-        File::ensureDirectoryExists(app_path('Mail/Arkzen'));
-        File::ensureDirectoryExists(resource_path('views/emails/arkzen'));
+        $slug = $module['name'];
+        File::ensureDirectoryExists(app_path("Mail/Arkzen/{$slug}"));
+        File::ensureDirectoryExists(resource_path("views/emails/arkzen/{$slug}"));
 
         foreach ($mails as $name => $config) {
-            self::buildMail($name, $config);
+            self::buildMail($slug, $name, $config);
         }
     }
 
@@ -30,35 +36,36 @@ class MailBuilder
     // BUILD SINGLE MAILABLE
     // ─────────────────────────────────────────────
 
-    private static function buildMail(string $name, array $config): void
+    private static function buildMail(string $slug, string $name, array $config): void
     {
-        $className = self::toClassName($name);
-        $subject   = $config['subject'] ?? $className;
-        $viewName  = 'emails.arkzen.' . strtolower(str_replace(['-', '_'], '-', $name));
-        $filePath  = app_path("Mail/Arkzen/{$className}.php");
+        $className  = self::toClassName($name);
+        $slugNs     = EventBuilder::toNamespace($slug);
+        $subject    = $config['subject'] ?? $className;
+        $viewName   = "emails.arkzen.{$slug}." . strtolower(str_replace(['-', '_'], '-', $name));
+        $filePath   = app_path("Mail/Arkzen/{$slug}/{$className}.php");
 
-        // Build the data properties
-        $dataFields   = $config['data'] ?? [];
-        $properties   = self::generateProperties($dataFields);
+        $dataFields    = $config['data'] ?? [];
+        $properties    = self::generateProperties($dataFields);
         $constructArgs = self::generateConstructArgs($dataFields);
-        $assigns      = self::generateAssigns($dataFields);
+        $assigns       = self::generateAssigns($dataFields);
 
         $content = "<?php
 
 // ============================================================
 // ARKZEN GENERATED MAILABLE — {$className}
+// Tatemono: {$slug}
 // Subject: {$subject}
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace App\Mail\Arkzen;
+namespace App\\Mail\\Arkzen\\{$slugNs};
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Content;
-use Illuminate\Mail\Mailables\Envelope;
-use Illuminate\Queue\SerializesModels;
+use Illuminate\\Bus\\Queueable;
+use Illuminate\\Mail\\Mailable;
+use Illuminate\\Mail\\Mailables\\Content;
+use Illuminate\\Mail\\Mailables\\Envelope;
+use Illuminate\\Queue\\SerializesModels;
 
 class {$className} extends Mailable
 {
@@ -93,17 +100,16 @@ class {$className} extends Mailable
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Mail] ✓ Mailable created: {$className}");
+        Log::info("[Arkzen Mail] ✓ {$slugNs}\\{$className}");
 
-        // Generate blade view stub
-        self::generateView($viewName, $className, $subject, $dataFields);
+        self::generateView($slug, $viewName, $subject, $dataFields);
     }
 
     // ─────────────────────────────────────────────
     // GENERATE BLADE VIEW STUB
     // ─────────────────────────────────────────────
 
-    private static function generateView(string $viewName, string $className, string $subject, array $dataFields): void
+    private static function generateView(string $slug, string $viewName, string $subject, array $dataFields): void
     {
         $viewPath = resource_path('views/' . str_replace('.', '/', $viewName) . '.blade.php');
         $varLines = array_map(fn($f) => "<p>{{ \${$f} }}</p>", array_keys($dataFields));
@@ -114,6 +120,7 @@ class {$className} extends Mailable
 <head><meta charset=\"UTF-8\"><title>{$subject}</title></head>
 <body style=\"font-family: sans-serif; padding: 40px; color: #333;\">
     <h2>{$subject}</h2>
+    <p style=\"color: #666; font-size: 12px;\">Tatemono: {$slug}</p>
     <hr>
     {$varBlock}
     <hr>
@@ -124,7 +131,7 @@ class {$className} extends Mailable
 
         File::ensureDirectoryExists(dirname($viewPath));
         File::put($viewPath, $view);
-        Log::info("[Arkzen Mail] ✓ View created: {$viewName}");
+        Log::info("[Arkzen Mail] ✓ View: {$viewName}");
     }
 
     // ─────────────────────────────────────────────
@@ -155,7 +162,7 @@ class {$className} extends Mailable
         ));
     }
 
-    private static function toClassName(string $name): string
+    public static function toClassName(string $name): string
     {
         return str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $name))) . 'Mail';
     }

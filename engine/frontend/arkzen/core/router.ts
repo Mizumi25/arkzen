@@ -86,10 +86,19 @@ function generatePageFile(
   const isAuthLayout  = page.layout === 'auth'
   const isGuestLayout = page.layout === 'guest'
 
+  // guestOnly: page is public (guest layout) but should bounce logged-in users.
+  // Set via @arkzen:page:guestOnly in the tatemono, or auto-applied to
+  // login/register pages when meta.auth is true.
+  // Pure public pages (landing, about) use guest layout WITHOUT guestOnly.
+  const isGuestOnly   = isGuestLayout && (
+    (page as any).guestOnly === true ||
+    (tatemono.meta.auth && ['login', 'register', 'forgot-password', 'reset-password'].includes(page.name))
+  )
+
   return `'use client'
 // ============================================================
 // ARKZEN GENERATED PAGE — ${tatemono.meta.name}/${page.name}
-// Layout: ${page.layout} | Auth guard: ${isAuthLayout}
+// Layout: ${page.layout} | Auth guard: ${isAuthLayout} | Guest-only: ${isGuestOnly}
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: ${new Date().toISOString()}
 // ============================================================
@@ -109,7 +118,7 @@ const ArkzenPage_${toPascalCase(tatemono.meta.name)}_${toPascalCase(page.name)} 
   }, [])
 
   return (
-    <${layoutComp}${isAuthLayout ? ' requireAuth={true}' : ''}${isGuestLayout && tatemono.meta.auth ? ' redirectIfAuth={true}' : ''}>
+    <${layoutComp}${isAuthLayout ? ' requireAuth={true}' : ''}${isGuestOnly ? ' guestOnly={true}' : ''}>
       <motion.div
         ref={pageRef}
         variants={${animationFnName ? 'pageVariants' : '{}'}}

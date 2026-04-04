@@ -39,7 +39,7 @@ class ControllerBuilder
 // Generated: " . now()->toISOString() . "
 // ============================================================
 
-namespace App\Http\Controllers\Arkzen;
+namespace App\Http\Controllers\Arkzen\\{$name};
 
 use Illuminate\Routing\Controller;
 use App\Models\Arkzen\\{$name}\\{$modelName};
