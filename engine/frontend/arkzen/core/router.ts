@@ -352,6 +352,31 @@ export function registerPage(tatemono: ParsedTatemono): void {
 // UNREGISTER — removes entire tatemono directory
 // ─────────────────────────────────────────────
 
+// ─────────────────────────────────────────────
+// UNREGISTER — two modes
+//
+// softUnregister: used during REBUILD — does NOT delete the app/{name}/
+//   folder. registerPage will overwrite files in place. This prevents
+//   Next.js Fast Refresh from seeing a deleted route mid-write and
+//   caching a 404 for the new pages.
+//
+// unregisterPage: used during REMOVE — deletes everything.
+// ─────────────────────────────────────────────
+
+export function softUnregisterPage(tatemononName: string): void {
+  console.log(`[Arkzen Router] Soft-unregistering (rebuild): ${tatemononName}`)
+
+  // Only remove the animation file — leave app/{name}/ intact so
+  // Next.js doesn't see a missing route during the write phase.
+  const animationPath = path.resolve(
+    process.cwd(), 'arkzen', 'generated', `${tatemononName}.animations.ts`
+  )
+  if (fs.existsSync(animationPath)) {
+    fs.unlinkSync(animationPath)
+    console.log(`[Arkzen Router] ✓ Animation file removed`)
+  }
+}
+
 export function unregisterPage(tatemononName: string): void {
   console.log(`[Arkzen Router] Unregistering: ${tatemononName}`)
 

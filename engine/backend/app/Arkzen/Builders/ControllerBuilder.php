@@ -86,8 +86,13 @@ class {$controllerName} extends Controller
                 'upload_destroy' => self::generateUploadDestroy($modelName, $endpoint),
                 default          => self::generateDestroy($modelName, $endpoint),
             },
-            'fileUrl' => self::generateUploadUrl($modelName, $endpoint),
-            default   => self::generateCustomMethod($name, $modelName, $endpoint),
+            'fileUrl'    => self::generateUploadUrl($modelName, $endpoint),
+            'me'         => self::generateRoleMe($endpoint),
+            'adminOnly'  => self::generateRoleAdminOnly($modelName, $endpoint),
+            'userOnly'   => self::generateRoleUserOnly($modelName, $endpoint),
+            'promote'    => self::generateRolePromote($endpoint),
+            'demote'     => self::generateRoleDemote($endpoint),
+            default      => self::generateCustomMethod($name, $modelName, $endpoint),
         };
     }
 
@@ -396,6 +401,126 @@ class {$controllerName} extends Controller
         \$ns    = class_basename(static::class);
         \$parts = preg_split('/(?=[A-Z])/', \$ns, -1, PREG_SPLIT_NO_EMPTY);
         return strtolower(implode('-', \$parts));
+    }";
+    }
+
+    // ─────────────────────────────────────────────
+    // ROLE ME — returns simulated user from session
+    // ─────────────────────────────────────────────
+
+    private static function generateRoleMe(array $endpoint): string
+    {
+        return "    /**
+     * {$endpoint['description']}
+     */
+    public function me(Request \$request): JsonResponse
+    {
+        \$user = \$request->session()->get('role_test_user', [
+            'name'  => 'Test User',
+            'email' => 'test@arkzen.dev',
+            'role'  => 'user',
+        ]);
+
+        return response()->json(['user' => \$user]);
+    }";
+    }
+
+    // ─────────────────────────────────────────────
+    // ROLE ADMIN ONLY — checks session role
+    // ─────────────────────────────────────────────
+
+    private static function generateRoleAdminOnly(string $model, array $endpoint): string
+    {
+        return "    /**
+     * {$endpoint['description']}
+     */
+    public function adminOnly(Request \$request): JsonResponse
+    {
+        \$user = \$request->session()->get('role_test_user', ['role' => 'user']);
+        \$granted = (\$user['role'] ?? 'user') === 'admin';
+
+        {$model}::create([
+            'user_id'       => null,
+            'action'        => 'GET /admin-only',
+            'role_required' => 'admin',
+            'granted'       => \$granted,
+        ]);
+
+        if (!\$granted) {
+            return response()->json(['message' => '✗ Access denied — admin role required'], 403);
+        }
+
+        return response()->json(['message' => '✓ Access granted — you are admin']);
+    }";
+    }
+
+    // ─────────────────────────────────────────────
+    // ROLE USER ONLY — always passes
+    // ─────────────────────────────────────────────
+
+    private static function generateRoleUserOnly(string $model, array $endpoint): string
+    {
+        return "    /**
+     * {$endpoint['description']}
+     */
+    public function userOnly(Request \$request): JsonResponse
+    {
+        {$model}::create([
+            'user_id'       => null,
+            'action'        => 'GET /user-only',
+            'role_required' => 'user',
+            'granted'       => true,
+        ]);
+
+        return response()->json(['message' => '✓ Access granted — open to all users']);
+    }";
+    }
+
+    // ─────────────────────────────────────────────
+    // ROLE PROMOTE — sets session role to admin
+    // ─────────────────────────────────────────────
+
+    private static function generateRolePromote(array $endpoint): string
+    {
+        return "    /**
+     * {$endpoint['description']}
+     */
+    public function promote(Request \$request): JsonResponse
+    {
+        \$user = \$request->session()->get('role_test_user', [
+            'name'  => 'Test User',
+            'email' => 'test@arkzen.dev',
+            'role'  => 'user',
+        ]);
+
+        \$user['role'] = 'admin';
+        \$request->session()->put('role_test_user', \$user);
+
+        return response()->json(['message' => 'Promoted to admin', 'user' => \$user]);
+    }";
+    }
+
+    // ─────────────────────────────────────────────
+    // ROLE DEMOTE — sets session role to user
+    // ─────────────────────────────────────────────
+
+    private static function generateRoleDemote(array $endpoint): string
+    {
+        return "    /**
+     * {$endpoint['description']}
+     */
+    public function demote(Request \$request): JsonResponse
+    {
+        \$user = \$request->session()->get('role_test_user', [
+            'name'  => 'Test User',
+            'email' => 'test@arkzen.dev',
+            'role'  => 'admin',
+        ]);
+
+        \$user['role'] = 'user';
+        \$request->session()->put('role_test_user', \$user);
+
+        return response()->json(['message' => 'Demoted to user', 'user' => \$user]);
     }";
     }
 

@@ -15,23 +15,69 @@ layout:
 */
 
 /* @arkzen:database:role_audit_logs
+table: role_audit_logs
 columns:
-  user_id: integer
-  action: string
-  role_required: string
-  granted: boolean
+  user_id:
+    type: integer
+    nullable: true
+  action:
+    type: string
+  role_required:
+    type: string
+  granted:
+    type: boolean
 timestamps: true
 */
 
-/* @arkzen:api
+/* @arkzen:api:role_audit_logs
+model: RoleAuditLog
+controller: RoleAuditLogController
+prefix: /api/roles-test
 middleware: []
-routes:
-  - GET  /roles-test/me              → me
-  - GET  /roles-test/admin-only      → adminOnly
-  - GET  /roles-test/user-only       → userOnly
-  - GET  /roles-test/logs            → index
-  - POST /roles-test/promote         → promote
-  - POST /roles-test/demote          → demote
+endpoints:
+  index:
+    method: GET
+    route: /logs
+    description: Get audit logs
+    response:
+      type: collection
+  me:
+    method: GET
+    route: /me
+    description: Get simulated current user (stored in session)
+    type: role_me
+    response:
+      type: single
+  adminOnly:
+    method: GET
+    route: /admin-only
+    description: Admin-only route test — checks session role
+    type: role_admin_only
+    response:
+      type: single
+  userOnly:
+    method: GET
+    route: /user-only
+    description: Any user route test — always passes
+    type: role_user_only
+    response:
+      type: single
+  promote:
+    method: POST
+    route: /promote
+    description: Promote simulated user to admin role
+    type: role_promote
+    response:
+      type: message
+      value: Promoted to admin
+  demote:
+    method: POST
+    route: /demote
+    description: Demote simulated user to user role
+    type: role_demote
+    response:
+      type: message
+      value: Demoted to user
 */
 
 /* @arkzen:components:shared */
@@ -48,14 +94,24 @@ import { arkzenFetch } from '@/arkzen/core/stores/authStore'
 /* @arkzen:page:dashboard */
 /* @arkzen:page:layout:guest */
 const DashboardPage = () => {
-
+  type SimUser = { name: string; email: string; role: string }
   type TestResult = { status: 'idle' | 'pass' | 'fail'; message: string }
-  const [adminResult, setAdminResult] = useState<TestResult>({ status: 'idle', message: '' })
-  const [userResult,  setUserResult]  = useState<TestResult>({ status: 'idle', message: '' })
-  const [logs, setLogs]               = useState<any[]>([])
-  const [promoting, setPromoting]     = useState(false)
 
-  const currentRole = (user as any)?.role ?? 'user'
+  const [simUser,      setSimUser]      = useState<SimUser | null>(null)
+  const [adminResult,  setAdminResult]  = useState<TestResult>({ status: 'idle', message: '' })
+  const [userResult,   setUserResult]   = useState<TestResult>({ status: 'idle', message: '' })
+  const [logs,         setLogs]         = useState<any[]>([])
+  const [promoting,    setPromoting]    = useState(false)
+
+  const currentRole = simUser?.role ?? 'guest'
+
+  const loadMe = async () => {
+    try {
+      const res = await arkzenFetch('/api/roles-test/me')
+      const d   = await res.json()
+      setSimUser(d.user ?? null)
+    } catch {}
+  }
 
   const loadLogs = async () => {
     try {
@@ -65,7 +121,7 @@ const DashboardPage = () => {
     } catch {}
   }
 
-  useEffect(() => { loadLogs() }, [])
+  useEffect(() => { loadMe(); loadLogs() }, [])
 
   const testRoute = async (
     route: string,
@@ -90,7 +146,7 @@ const DashboardPage = () => {
     setPromoting(true)
     try {
       await arkzenFetch(`/api/roles-test/${action}`, { method: 'POST' })
-      await fetchMe() // re-hydrate user with new role
+      await loadMe()
     } catch {} finally {
       setPromoting(false)
     }
@@ -113,7 +169,7 @@ const DashboardPage = () => {
         <div className="bg-white rounded-2xl border border-neutral-100 p-5 flex items-center justify-between">
           <div>
             <div className="text-sm text-neutral-500">Logged in as</div>
-            <div className="font-semibold">{user?.name} · {user?.email}</div>
+            <div className="font-semibold">{simUser?.name ?? 'Test User'} · {simUser?.email ?? 'test@arkzen.dev'}</div>
             <div className="mt-1">
               <span className={`text-xs font-bold px-2 py-1 rounded-full ${currentRole === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                 {currentRole}

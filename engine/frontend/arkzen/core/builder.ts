@@ -9,7 +9,7 @@
 import * as path from 'path'
 import * as fs   from 'fs'
 import { parseTatemono }                                from './parser'
-import { registerPage, unregisterPage }                 from './router'
+import { registerPage, unregisterPage, softUnregisterPage } from './router'
 import { updateRegistry, removeFromRegistry }           from './registry'
 import type { ParsedTatemono, BuildResult, BuildStep }  from '../types'
 import { triggerBackendBuild, triggerBackendRemove }    from './backend-bridge'
@@ -112,7 +112,14 @@ export async function rebuildTatemono(filePath: string): Promise<BuildResult> {
     : fileName
 
   console.log(`\n[Arkzen Builder] Rebuilding: ${tatemonoName}`)
-  unregisterPage(tatemonoName)
+  softUnregisterPage(tatemonoName)
+
+  // Small settle delay — gives Next.js Fast Refresh time to finish its
+  // current HMR cycle before new files are written. Without this, the
+  // deletion of the old app/{name}/ folder triggers a full reload mid-write,
+  // which causes Next.js to cache a 404 for the new pages.
+  await new Promise(resolve => setTimeout(resolve, 150))
+
   return buildTatemono(filePath)
 }
 
