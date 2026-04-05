@@ -1,10 +1,10 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — ROUTE REGISTRAR v4.3
-// FIXED: Already using $slugNs correctly - no changes needed
-//   inventory-management → InventoryManagement (namespace only)
-//   Physical route file stays: routes/modules/inventory-management.php
+// ARKZEN ENGINE — ROUTE REGISTRAR v4.4
+// FIXED: Route parameters rewritten from {id} to {modelVar}
+//   so Laravel implicit model binding always works correctly.
+//   e.g. /items/{id} → /items/{item} for Item model
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -36,12 +36,11 @@ class RouteRegistrar
             $controllerName = $api['controller'];
             $prefix         = $api['prefix'];
 
-            // CORRECT: Using $slugNs for the namespace in use statement
             $useStatements[] = "use App\\Http\\Controllers\\Arkzen\\{$slugNs}\\{$controllerName};";
 
             $resolvedMiddleware = MiddlewareBuilder::build(['api' => $api, 'name' => $name, 'databases' => $module['databases'], 'apis' => $apis]);
             $middlewareStr      = "['" . implode("', '", $resolvedMiddleware) . "']";
-            $routeLines         = self::generateRouteLines($controllerName, $api['endpoints']);
+            $routeLines         = self::generateRouteLines($controllerName, $api['endpoints'], $api['model']);
 
             $routeGroups[] = "// ── {$api['model']} ─────────────────────────────\nRoute::middleware({$middlewareStr})\n    ->prefix('{$prefix}')\n    ->group(function () {\n\n{$routeLines}\n    });";
         }
@@ -75,9 +74,10 @@ use Illuminate\\Support\\Facades\\Route;
     // GENERATE ROUTE LINES FOR ONE RESOURCE
     // ─────────────────────────────────────────────
 
-    private static function generateRouteLines(string $controller, array $endpoints): string
+    private static function generateRouteLines(string $controller, array $endpoints, string $model): string
     {
-        $lines = [];
+        $lines    = [];
+        $modelVar = lcfirst($model); // Item → item, EventLog → eventLog
 
         $methodMap = [
             'GET'    => 'get',
@@ -90,7 +90,7 @@ use Illuminate\\Support\\Facades\\Route;
         foreach ($endpoints as $name => $endpoint) {
             $httpMethod  = strtoupper($endpoint['method']);
             $routeMethod = $methodMap[$httpMethod] ?? 'get';
-            $route       = $endpoint['route'];
+            $route       = preg_replace('/\{id\}/', '{' . $modelVar . '}', $endpoint['route']);
             $description = $endpoint['description'] ?? $name;
 
             $lines[] = "        // {$description}";

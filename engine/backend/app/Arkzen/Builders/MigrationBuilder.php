@@ -300,13 +300,20 @@ return new class extends Migration
     private static function runMigration(string $filePath, string $name): void
     {
         Log::info("[Arkzen Migration] Running migration for: {$name}");
-
-        Artisan::call('migrate', [
+    
+        $exitCode = Artisan::call('migrate', [
             '--path'  => str_replace(base_path() . '/', '', $filePath),
             '--force' => true,
         ]);
-
-        Log::info("[Arkzen Migration] ✓ Migration executed: {$name}");
+    
+        $output = Artisan::output();
+    
+        if ($exitCode !== 0) {
+            Log::error("[Arkzen Migration] ✗ Migration FAILED for {$name}. Exit: {$exitCode}. Output: {$output}");
+            throw new \RuntimeException("[Arkzen Migration] Migration failed for {$name}: {$output}");
+        }
+    
+        Log::info("[Arkzen Migration] ✓ Migration executed: {$name}. Output: {$output}");
     }
 
     // ─────────────────────────────────────────────
