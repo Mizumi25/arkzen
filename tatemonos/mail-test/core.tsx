@@ -2,7 +2,7 @@
 name: mail-test
 version: 1.0.0
 description: Tests Laravel Mailable system. Send real emails via SMTP/Mailtrap. Tests subject, body fields, queue delivery.
-auth: false
+auth: true
 */
 
 /* @arkzen:config
@@ -12,10 +12,15 @@ toast:
 layout:
   guest:
     className: "min-h-screen bg-neutral-50"
+  auth:
+    className: "min-h-screen bg-neutral-50"
 */
 
 /* @arkzen:database:mail_logs
 columns:
+  user_id:
+    type: integer
+    nullable: true
   to_email: string
   subject: string
   mail_class: string
@@ -25,10 +30,27 @@ timestamps: true
 */
 
 /* @arkzen:api
-middleware: []
-routes:
-  - GET  /mail-test/logs        → index
-  - POST /mail-test/send        → store
+model: MailLog
+controller: MailLogController
+prefix: /api/mail-test
+middleware: [auth]
+endpoints:
+  index:
+    method: GET
+    route: /logs
+    description: Get all mail logs
+    response:
+      type: collection
+  store:
+    method: POST
+    route: /send
+    description: Send an email
+    validation:
+      mail: required|string
+      to: required|email
+      data: array
+    response:
+      type: single
 */
 
 /* @arkzen:mail
@@ -55,29 +77,180 @@ password-reset:
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { arkzenFetch } from '@/arkzen/core/stores/authStore'
+import { useAuthStore, setActiveTatemono, arkzenFetch } from '@/arkzen/core/stores/authStore'
+
+if (typeof window !== 'undefined') {
+  setActiveTatemono('mail-test')
+}
 
 /* @arkzen:components:shared:end */
 
+/* @arkzen:page:login */
+/* @arkzen:page:layout:guest */
+const LoginPage = () => {
+  const { login, isLoading } = useAuthStore()
+  const [email,    setEmail]    = useState('')
+  const [password, setPassword] = useState('')
+  const [error,    setError]    = useState<string | null>(null)
 
+  const handleLogin = async () => {
+    setError(null)
+    try {
+      await login(email, password)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Login failed')
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6">
+      <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-8 w-full max-w-sm space-y-5">
+        <div>
+          <h1 className="text-xl font-bold">✉️ Mail Test</h1>
+          <p className="text-sm text-neutral-500 mt-1">
+            Sign in to test email sending
+          </p>
+        </div>
+
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm">
+            {error}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <input
+            className="arkzen-input w-full"
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+          />
+          <input
+            className="arkzen-input w-full"
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+          />
+        </div>
+
+        <button className="arkzen-btn w-full" onClick={handleLogin} disabled={isLoading}>
+          {isLoading ? 'Signing in...' : 'Sign in'}
+        </button>
+
+        <p className="text-xs text-center text-neutral-400">
+          No account?{' '}
+          <a href="/mail-test/register" className="text-neutral-700 underline underline-offset-2">
+            Register
+          </a>
+        </p>
+      </div>
+    </div>
+  )
+}
+/* @arkzen:page:login:end */
+
+/* @arkzen:page:register */
+/* @arkzen:page:layout:guest */
+const RegisterPage = () => {
+  const { register, isLoading } = useAuthStore()
+  const [name,     setName]     = useState('')
+  const [email,    setEmail]    = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm,  setConfirm]  = useState('')
+  const [error,    setError]    = useState<string | null>(null)
+
+  const handleRegister = async () => {
+    setError(null)
+    if (password !== confirm) { setError('Passwords do not match'); return }
+    try {
+      await register(name, email, password, confirm)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Registration failed')
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6">
+      <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-8 w-full max-w-sm space-y-5">
+        <div>
+          <h1 className="text-xl font-bold">✉️ Mail Test</h1>
+          <p className="text-sm text-neutral-500 mt-1">
+            Create an account to test email sending
+          </p>
+        </div>
+
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm">
+            {error}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <input
+            className="arkzen-input w-full"
+            placeholder="Name"
+            value={name}
+            onChange={e => setName(e.target.value)}
+          />
+          <input
+            className="arkzen-input w-full"
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+          />
+          <input
+            className="arkzen-input w-full"
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+          />
+          <input
+            className="arkzen-input w-full"
+            type="password"
+            placeholder="Confirm password"
+            value={confirm}
+            onChange={e => setConfirm(e.target.value)}
+          />
+        </div>
+
+        <button className="arkzen-btn w-full" onClick={handleRegister} disabled={isLoading}>
+          {isLoading ? 'Creating account...' : 'Create account'}
+        </button>
+
+        <p className="text-xs text-center text-neutral-400">
+          Already have an account?{' '}
+          <a href="/mail-test/login" className="text-neutral-700 underline underline-offset-2">
+            Sign in
+          </a>
+        </p>
+      </div>
+    </div>
+  )
+}
+/* @arkzen:page:register:end */
 
 /* @arkzen:page:dashboard */
-/* @arkzen:page:layout:guest */
+/* @arkzen:page:layout:auth */
 const DashboardPage = () => {
+  const { user } = useAuthStore()
 
   const mailTypes = [
     {
       key: 'welcome-mail',
       label: 'Welcome Mail',
       desc: 'Sends WelcomeMail to the address below',
-      fields: { username: 'John Doe', app_name: 'Arkzen' },
+      fields: { username: user?.name || 'User', app_name: 'Arkzen' },
       color: 'bg-blue-500',
     },
     {
       key: 'order-confirmation',
       label: 'Order Confirmation',
       desc: 'Sends OrderConfirmationMail with order details',
-      fields: { order_id: 'ORD-1234', total: '$99.00', customer_name: 'John Doe' },
+      fields: { order_id: 'ORD-1234', total: '$99.00', customer_name: user?.name || 'Customer' },
       color: 'bg-green-500',
     },
     {
@@ -125,7 +298,9 @@ const DashboardPage = () => {
 
   const statusBadge = (s: string) => s === 'sent'
     ? 'bg-green-100 text-green-700'
-    : 'bg-red-100 text-red-700'
+    : s === 'failed'
+    ? 'bg-red-100 text-red-700'
+    : 'bg-yellow-100 text-yellow-700'
 
   return (
     <div className="min-h-screen p-8">
@@ -133,9 +308,16 @@ const DashboardPage = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">✉️ Mail Test</h1>
-            <p className="text-sm text-neutral-500 mt-1">Configure <code>MAIL_*</code> in .env. Use Mailtrap for local testing.</p>
+            <p className="text-sm text-neutral-500 mt-1">
+              Signed in as <span className="font-medium">{user?.email}</span>
+            </p>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              Configure <code>MAIL_*</code> in .env. Use Mailtrap for local testing.
+            </p>
           </div>
-          
+          <a href="/mail-test/logout" className="text-xs text-neutral-400 hover:text-neutral-700">
+            Sign out
+          </a>
         </div>
 
         {/* To address */}

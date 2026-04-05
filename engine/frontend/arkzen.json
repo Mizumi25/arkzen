@@ -11,7 +11,7 @@
         "index"
       ],
       "registered": "2026-03-29T05:18:40.255Z",
-      "lastUpdated": "2026-04-05T10:36:57.614Z"
+      "lastUpdated": "2026-04-05T13:11:38.910Z"
     },
     {
       "name": "auth-test",
@@ -35,7 +35,7 @@
         "index"
       ],
       "registered": "2026-04-04T06:17:46.456Z",
-      "lastUpdated": "2026-04-05T10:36:56.792Z"
+      "lastUpdated": "2026-04-05T13:11:38.104Z"
     },
     {
       "name": "crud-test",
@@ -46,7 +46,7 @@
         "index"
       ],
       "registered": "2026-04-04T06:17:46.866Z",
-      "lastUpdated": "2026-04-05T10:36:57.046Z"
+      "lastUpdated": "2026-04-05T13:11:38.343Z"
     },
     {
       "name": "errors-test",
@@ -66,7 +66,7 @@
         "503"
       ],
       "registered": "2026-04-04T06:17:46.872Z",
-      "lastUpdated": "2026-04-05T10:36:57.204Z"
+      "lastUpdated": "2026-04-05T13:11:38.506Z"
     },
     {
       "name": "events-test",
@@ -77,7 +77,7 @@
         "index"
       ],
       "registered": "2026-04-04T06:17:46.875Z",
-      "lastUpdated": "2026-04-05T10:36:57.413Z"
+      "lastUpdated": "2026-04-05T13:11:38.710Z"
     },
     {
       "name": "job-test",
@@ -88,7 +88,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.972Z",
-      "lastUpdated": "2026-04-05T10:36:57.772Z"
+      "lastUpdated": "2026-04-05T13:11:39.063Z"
     },
     {
       "name": "mail-test",
@@ -96,10 +96,12 @@
       "status": "active",
       "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/mail-test/core.tsx",
       "pages": [
+        "login",
+        "register",
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.980Z",
-      "lastUpdated": "2026-04-05T10:36:57.927Z"
+      "lastUpdated": "2026-04-05T13:11:39.302Z"
     },
     {
       "name": "notification-test",
@@ -110,7 +112,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.988Z",
-      "lastUpdated": "2026-04-05T10:36:58.087Z"
+      "lastUpdated": "2026-04-05T13:11:39.464Z"
     },
     {
       "name": "roles-test",
@@ -123,7 +125,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.998Z",
-      "lastUpdated": "2026-04-05T10:36:58.308Z"
+      "lastUpdated": "2026-04-05T13:11:39.720Z"
     },
     {
       "name": "scheduler-test",
@@ -134,7 +136,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:47.006Z",
-      "lastUpdated": "2026-04-05T10:36:58.461Z"
+      "lastUpdated": "2026-04-05T13:11:39.876Z"
     },
     {
       "name": "upload-test",
@@ -145,7 +147,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:47.014Z",
-      "lastUpdated": "2026-04-05T10:36:58.685Z"
+      "lastUpdated": "2026-04-05T13:11:40.087Z"
     }
   ]
 }
