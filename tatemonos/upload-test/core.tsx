@@ -15,24 +15,63 @@ layout:
 */
 
 /* @arkzen:database:uploaded_files
+table: uploaded_files
 columns:
-  user_id: integer
-  original_name: string
-  stored_name: string
-  mime_type: string
-  size_bytes: integer
-  disk_path: string
-  is_image: boolean
+  user_id:
+    type: integer
+    nullable: true
+  original_name:
+    type: string
+  stored_name:
+    type: string
+  mime_type:
+    type: string
+  size_bytes:
+    type: integer
+  disk_path:
+    type: string
+  is_image:
+    type: boolean
 timestamps: true
 */
 
-/* @arkzen:api
+/* @arkzen:api:uploaded_files
+model: UploadedFile
+controller: UploadedFileController
+prefix: /api/upload-test
 middleware: []
-routes:
-  - GET    /upload-test/files          → index
-  - POST   /upload-test/files          → store
-  - DELETE /upload-test/files/{id}     → destroy
-  - GET    /upload-test/files/{id}/url → fileUrl
+endpoints:
+  index:
+    method: GET
+    route: /files
+    description: List all uploaded files
+    response:
+      type: collection
+  store:
+    method: POST
+    route: /files
+    description: Upload one or more files
+    type: upload
+    validation:
+      files: required|array
+      files.*: file|max:10240
+    response:
+      type: collection
+  destroy:
+    method: DELETE
+    route: /files/{id}
+    description: Delete a file
+    type: upload_destroy
+    response:
+      type: message
+      value: File deleted
+  fileUrl:
+    method: GET
+    route: /files/{id}/url
+    description: Get public URL or download for a file
+    type: upload_url
+    response:
+      type: single
 */
 
 /* @arkzen:components:shared */
@@ -79,7 +118,6 @@ const DashboardPage = () => {
     try {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', '/api/upload-test/files')
-      xhr.setRequestHeader('Authorization', `Bearer ${token}`)
       xhr.setRequestHeader('Accept', 'application/json')
 
       xhr.upload.onprogress = (e) => {

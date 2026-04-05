@@ -48,6 +48,7 @@ use Illuminate\Routing\Controller;
 use App\Models\Arkzen\\{$slugNs}\\{$modelName};
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Storage;
 {$resourceImport}
 class {$controllerName} extends Controller
 {
@@ -77,9 +78,15 @@ class {$controllerName} extends Controller
         return match ($name) {
             'index'   => self::generateIndex($modelName, $endpoint, $slugNs, $useResource),
             'show'    => self::generateShow($modelName, $endpoint, $slugNs, $useResource),
-            'store'   => self::generateStore($modelName, $endpoint, $slugNs, $useResource),
-            'update'  => self::generateUpdate($modelName, $endpoint, $slugNs, $useResource),
-            'destroy' => self::generateDestroy($modelName, $endpoint),
+            'store'   => match ($endpoint['type'] ?? '') {
+                'upload'         => self::generateUploadStore($modelName, $endpoint),
+                default          => self::generateStore($modelName, $endpoint, $slugNs, $useResource),
+            },
+            'destroy' => match ($endpoint['type'] ?? '') {
+                'upload_destroy' => self::generateUploadDestroy($modelName, $endpoint),
+                default          => self::generateDestroy($modelName, $endpoint),
+            },
+            'fileUrl' => self::generateUploadUrl($modelName, $endpoint),
             default   => self::generateCustomMethod($name, $modelName, $endpoint),
         };
     }
@@ -278,6 +285,117 @@ class {$controllerName} extends Controller
         // Custom endpoint: {$name}
         // Implement logic here
         return response()->json(['message' => 'Not implemented']);
+    }";
+    }
+
+    // ─────────────────────────────────────────────
+    // UPLOAD STORE — handles multipart file uploads
+    // ─────────────────────────────────────────────
+
+    private static function generateUploadStore(string $model, array $endpoint): string
+    {
+        $description = $endpoint['description'] ?? 'Upload files';
+        $validation  = self::generateValidation($endpoint['validation'] ?? [
+            'files'   => 'required|array',
+            'files.*' => 'file|max:10240',
+        ]);
+
+        return "    /**
+     * {$description}
+     */
+    public function store(Request \$request): JsonResponse
+    {
+        \$request->validate([
+{$validation}
+        ]);
+
+        \$uploaded = [];
+
+        foreach (\$request->file('files', []) as \$file) {
+            \$originalName = \$file->getClientOriginalName();
+            \$storedName   = \$file->store('arkzen/' . \$this->tatemonoSlug(), 'public');
+            \$isImage      = str_starts_with(\$file->getMimeType(), 'image/');
+
+            \$record = {$model}::create([
+                'user_id'       => auth()->id(),
+                'original_name' => \$originalName,
+                'stored_name'   => basename(\$storedName),
+                'mime_type'     => \$file->getMimeType(),
+                'size_bytes'    => \$file->getSize(),
+                'disk_path'     => \$storedName,
+                'is_image'      => \$isImage,
+            ]);
+
+            if (\$isImage) {
+                \$record->url = \Storage::url(\$storedName);
+            }
+
+            \$uploaded[] = \$record;
+        }
+
+        return response()->json(['data' => \$uploaded], 201);
+    }";
+    }
+
+    // ─────────────────────────────────────────────
+    // UPLOAD DESTROY — deletes file from disk + DB
+    // ─────────────────────────────────────────────
+
+    private static function generateUploadDestroy(string $model, array $endpoint): string
+    {
+        $description = $endpoint['description'] ?? 'Delete file';
+        $varName     = lcfirst($model);
+
+        return "    /**
+     * {$description}
+     */
+    public function destroy({$model} \${$varName}): JsonResponse
+    {
+        if (\Storage::disk('public')->exists(\${$varName}->disk_path)) {
+            \Storage::disk('public')->delete(\${$varName}->disk_path);
+        }
+
+        \${$varName}->delete();
+
+        return response()->json(['message' => 'File deleted']);
+    }";
+    }
+
+    // ─────────────────────────────────────────────
+    // UPLOAD URL — returns public URL or download
+    // ─────────────────────────────────────────────
+
+    private static function generateUploadUrl(string $model, array $endpoint): string
+    {
+        $description = $endpoint['description'] ?? 'Get file URL';
+        $varName     = lcfirst($model);
+
+        return "    /**
+     * {$description}
+     */
+    public function fileUrl({$model} \${$varName}): JsonResponse
+    {
+        if (!\Storage::disk('public')->exists(\${$varName}->disk_path)) {
+            return response()->json(['message' => 'File not found'], 404);
+        }
+
+        return response()->json([
+            'url'  => \Storage::url(\${$varName}->disk_path),
+            'name' => \${$varName}->original_name,
+        ]);
+    }
+
+    // ─────────────────────────────────────────────
+    // HELPER
+    // ─────────────────────────────────────────────
+
+    private function tatemonoSlug(): string
+    {
+        // Derives the tatemono slug from the controller namespace
+        // e.g. App\Http\Controllers\Arkzen\UploadTest\... → upload-test
+        \$ns    = class_basename(static::class);
+        \$parts = preg_split('/(?=[A-Z])/', \$ns, -1, PREG_SPLIT_NO_EMPTY);
+        return strtolower(implode('-', \$parts));
     }";
     }
 
