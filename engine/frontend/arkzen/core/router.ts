@@ -38,6 +38,17 @@ function getLayoutComponent(layout: string): string {
   }
 }
 
+/**
+ * Extracts the React component name from raw page code.
+ * Looks for "const XxxPage = " or "const XxxPage: " patterns.
+ * Falls back to toSafeComponentName(pageName) if not found.
+ */
+function extractComponentName(pageName: string, raw: string): string {
+  const match = raw.match(/const\s+([A-Za-z_$][A-Za-z0-9_$]*Page)\s*[=:(]/)
+  if (match) return match[1]
+  return toSafeComponentName(pageName) + 'Page'
+}
+
 // ─────────────────────────────────────────────
 // GENERATE COMPONENTS FILE
 // ─────────────────────────────────────────────
@@ -48,7 +59,7 @@ function generateComponentsFile(tatemono: ParsedTatemono): string {
     .join('\n\n')
 
   const pageExports = tatemono.pages.map(page => {
-    const componentName = toPascalCase(page.name) + 'Page'
+    const componentName = extractComponentName(page.name, page.raw)
     const raw = page.raw.trim()
     return raw.replace(`const ${componentName}`, `export const ${componentName}`)
   }).join('\n\n')
@@ -77,7 +88,7 @@ function generatePageFile(
   animationFnName: string | null,
   componentsImportPath: string
 ): string {
-  const componentName = toPascalCase(page.name) + 'Page'
+  const componentName = extractComponentName(page.name, page.raw)
   const layoutImport  = getLayoutImport(page.layout, tatemono.meta)
   const layoutComp    = getLayoutComponent(page.layout)
   const animImport    = animationFnName
@@ -381,4 +392,15 @@ function toPascalCase(str: string): string {
 function toCamelCase(str: string): string {
   const p = toPascalCase(str)
   return p.charAt(0).toLowerCase() + p.slice(1)
+}
+
+/**
+ * Converts a page name to a safe React component name.
+ * Handles numeric names like "400" → "Page400" so the identifier is valid JS.
+ * e.g. "400" → "Page400Page", "dashboard" → "DashboardPage"
+ */
+function toSafeComponentName(pageName: string): string {
+  const pascal = toPascalCase(pageName)
+  // If it starts with a digit, prefix with "Page" to make it a valid identifier
+  return /^\d/.test(pascal) ? `Page${pascal}` : pascal
 }

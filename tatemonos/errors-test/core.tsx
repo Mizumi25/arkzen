@@ -45,6 +45,52 @@ const ERRORS: ErrorDef[] = [
   { code: 503, title: 'Service Unavailable',    message: 'The service is temporarily offline for maintenance. We\'ll be back soon.',            emoji: '🔧', color: 'text-slate-700',   bg: 'bg-slate-50',   action: { label: 'Refresh',     href: 'javascript:location.reload()' } },
 ]
 
+// ─────────────────────────────────────────────
+// SHARED ERROR SCREEN COMPONENT
+// Reused by every error page above.
+// ─────────────────────────────────────────────
+const ErrorScreen = ({ code }: { code: number }) => {
+  const err = ERRORS.find(e => e.code === code) ?? {
+    code,
+    title: 'Error',
+    message: 'An unexpected error occurred.',
+    emoji: '❓',
+    color: 'text-neutral-700',
+    bg: 'bg-neutral-50',
+    action: { label: 'Go home', href: '/' },
+  }
+
+  return (
+    <div className={`min-h-screen flex items-center justify-center ${err.bg} px-4`}>
+      <div className="text-center max-w-md">
+        <div className="text-6xl mb-6">{err.emoji}</div>
+        <div className={`text-7xl font-black mb-3 ${err.color}`}>{err.code}</div>
+        <h1 className="text-xl font-bold text-neutral-900 mb-3">{err.title}</h1>
+        <p className="text-sm text-neutral-500 leading-relaxed mb-8">{err.message}</p>
+        <div className="flex items-center justify-center gap-3">
+          {err.action && (
+            <a
+              href={err.action.href}
+              className="inline-flex items-center gap-2 bg-neutral-900 text-white text-sm font-medium px-5 py-2.5 rounded-xl hover:bg-neutral-700 transition-colors"
+            >
+              {err.action.label}
+            </a>
+          )}
+          <a
+            href="/"
+            className="inline-flex items-center gap-2 bg-white text-neutral-700 text-sm font-medium px-5 py-2.5 rounded-xl border border-neutral-200 hover:bg-neutral-50 transition-colors"
+          >
+            Home
+          </a>
+        </div>
+        <div className="mt-8 text-xs text-neutral-300">
+          Error {err.code} · Arkzen errors-test
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* @arkzen:components:shared:end */
 
 /* @arkzen:page:index */
@@ -172,49 +218,3 @@ const ServerErrorPage = () => <ErrorScreen code={500} />
 /* @arkzen:page:layout:guest */
 const ServiceUnavailablePage = () => <ErrorScreen code={503} />
 /* @arkzen:page:503:end */
-
-// ─────────────────────────────────────────────
-// SHARED ERROR SCREEN COMPONENT
-// Reused by every error page above.
-// ─────────────────────────────────────────────
-const ErrorScreen = ({ code }: { code: number }) => {
-  const err = ERRORS.find(e => e.code === code) ?? {
-    code,
-    title: 'Error',
-    message: 'An unexpected error occurred.',
-    emoji: '❓',
-    color: 'text-neutral-700',
-    bg: 'bg-neutral-50',
-    action: { label: 'Go home', href: '/' },
-  }
-
-  return (
-    <div className={`min-h-screen flex items-center justify-center ${err.bg} px-4`}>
-      <div className="text-center max-w-md">
-        <div className="text-6xl mb-6">{err.emoji}</div>
-        <div className={`text-7xl font-black mb-3 ${err.color}`}>{err.code}</div>
-        <h1 className="text-xl font-bold text-neutral-900 mb-3">{err.title}</h1>
-        <p className="text-sm text-neutral-500 leading-relaxed mb-8">{err.message}</p>
-        <div className="flex items-center justify-center gap-3">
-          {err.action && (
-            <a
-              href={err.action.href}
-              className="inline-flex items-center gap-2 bg-neutral-900 text-white text-sm font-medium px-5 py-2.5 rounded-xl hover:bg-neutral-700 transition-colors"
-            >
-              {err.action.label}
-            </a>
-          )}
-          <a
-            href="/"
-            className="inline-flex items-center gap-2 bg-white text-neutral-700 text-sm font-medium px-5 py-2.5 rounded-xl border border-neutral-200 hover:bg-neutral-50 transition-colors"
-          >
-            Home
-          </a>
-        </div>
-        <div className="mt-8 text-xs text-neutral-300">
-          Error {err.code} · Arkzen errors-test
-        </div>
-      </div>
-    </div>
-  )
-}
