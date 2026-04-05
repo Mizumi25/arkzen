@@ -1,19 +1,11 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — MODULE READER v6.0 (PER-TATEMONO AUTH)
-// Auth is now fully isolated per tatemono — there is no longer
-// a global shared users table or a global ArkzenAuthController.
-//
-// Each tatemono with auth:true gets its own users table, its own
-// personal_access_tokens table, its own AuthController, all scoped
-// to its own SQLite file. AuthBuilder::buildForTatemono() handles
-// this during Phase 0.5 of the build pipeline.
-//
-// Because auth is now tatemono-owned, the old reserved guards on
-// /api/auth, User, and users are removed. Tatemonos can no longer
-// accidentally collide with a global auth system because there
-// isn't one.
+// ARKZEN ENGINE — MODULE READER v6.1
+// Key changes v6.1:
+//   - parse() now includes events, realtimes, jobs,
+//     notifications, mails, consoles from payload
+//     so their builders are no longer dead code
 // ============================================================
 
 namespace App\Arkzen\Readers;
@@ -42,14 +34,8 @@ class ModuleReader
                 $errors[] = 'databases must be an array';
             } else {
                 foreach ($payload['databases'] as $i => $db) {
-                    if (empty($db['table'])) {
-                        $errors[] = "databases[{$i}]: table is required";
-                    }
-                    if (empty($db['columns'])) {
-                        $errors[] = "databases[{$i}]: columns is required";
-                    }
-
-
+                    if (empty($db['table']))   $errors[] = "databases[{$i}]: table is required";
+                    if (empty($db['columns'])) $errors[] = "databases[{$i}]: columns is required";
                 }
             }
         }
@@ -62,8 +48,6 @@ class ModuleReader
                     if (empty($api['model']))      $errors[] = "apis[{$i}]: model is required";
                     if (empty($api['controller'])) $errors[] = "apis[{$i}]: controller is required";
                     if (empty($api['prefix']))     $errors[] = "apis[{$i}]: prefix is required";
-
-
                 }
             }
         }
@@ -76,9 +60,7 @@ class ModuleReader
 
     // ─────────────────────────────────────────────
     // PARSE
-    // Returns normalized module with databases[] and apis[]
-    // Each database entry is a self-contained table definition.
-    // Each api entry is a self-contained resource group.
+    // Returns normalized module with all sections
     // ─────────────────────────────────────────────
 
     public static function parse(array $payload): array
@@ -101,35 +83,50 @@ class ModuleReader
             ];
         }
 
-       // ── Parse all api blocks ──────────────────
-      foreach (($payload['apis'] ?? []) as $api) {
-          $model = $api['model'] ?? null;
-          if (!$model || $model === '_none') continue;
-      
-          $apis[] = [
-              'model'      => $model,
-              'controller' => $api['controller'],
-              'prefix'     => $api['prefix'],
-              'middleware' => $api['middleware'] ?? [],
-              'endpoints'  => $api['endpoints']  ?? [],
-              'resource'   => $api['resource'] ?? false,   // ← ADD THIS
-              'policy'     => $api['policy'] ?? false,     // ← ADD THIS
-              'factory'    => $api['factory'] ?? false,    // ← ADD THIS
-          ];
-      }
+        // ── Parse all api blocks ──────────────────
+        foreach (($payload['apis'] ?? []) as $api) {
+            $model = $api['model'] ?? null;
+            if (!$model || $model === '_none') continue;
+
+            $apis[] = [
+                'model'      => $model,
+                'controller' => $api['controller'],
+                'prefix'     => $api['prefix'],
+                'middleware' => $api['middleware'] ?? [],
+                'endpoints'  => $api['endpoints']  ?? [],
+                'resource'   => $api['resource']   ?? false,
+                'policy'     => $api['policy']     ?? false,
+                'factory'    => $api['factory']    ?? false,
+            ];
+        }
+
+        // ── Parse raw section blocks ──────────────
+        // Each is an array of raw YAML strings sent from the frontend parser.
+        // Builders receive them as-is and parse the YAML themselves.
+        $events        = array_values(array_filter($payload['events']        ?? []));
+        $realtimes     = array_values(array_filter($payload['realtimes']     ?? []));
+        $jobs          = array_values(array_filter($payload['jobs']          ?? []));
+        $notifications = array_values(array_filter($payload['notifications'] ?? []));
+        $mails         = array_values(array_filter($payload['mails']         ?? []));
+        $consoles      = array_values(array_filter($payload['consoles']      ?? []));
 
         return [
-            'name'      => $payload['name'],
-            'version'   => $payload['version'] ?? '1.0.0',
-            'auth'      => (bool) ($payload['auth'] ?? false),
-            'databases' => $databases,
-            'apis'      => $apis,
+            'name'          => $payload['name'],
+            'version'       => $payload['version']  ?? '1.0.0',
+            'auth'          => (bool) ($payload['auth'] ?? false),
+            'databases'     => $databases,
+            'apis'          => $apis,
+            'events'        => $events,
+            'realtimes'     => $realtimes,
+            'jobs'          => $jobs,
+            'notifications' => $notifications,
+            'mails'         => $mails,
+            'consoles'      => $consoles,
         ];
     }
 
     // ─────────────────────────────────────────────
     // HELPER — find a database entry by table name
-    // Used by ControllerBuilder to link model → table
     // ─────────────────────────────────────────────
 
     public static function findDatabase(array $module, string $tableName): ?array
@@ -147,18 +144,14 @@ class ModuleReader
 
     public static function findDatabaseForModel(array $module, string $modelName): ?array
     {
-        // Derive expected table name from model name
-        // e.g. Product → products, OrderItem → order_items
         $snake = strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $modelName));
-        $table = $snake . 's'; // simple pluralization
+        $table = $snake . 's';
 
         foreach ($module['databases'] as $db) {
             if ($db['table'] === $table) return $db;
-            // Also try exact match (e.g. model Inventory → table inventories)
             if (strtolower($modelName) === rtrim($db['table'], 's')) return $db;
         }
 
-        // Fallback: return first database if only one exists
         if (count($module['databases']) === 1) {
             return $module['databases'][0];
         }
