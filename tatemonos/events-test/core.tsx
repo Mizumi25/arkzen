@@ -2,7 +2,7 @@
 name: events-test
 version: 1.0.0
 description: Tests Laravel Events + Listeners pipeline. Fire events manually, see listeners execute asynchronously, inspect the event chain.
-auth: true
+auth: false
 */
 
 /* @arkzen:config
@@ -12,33 +12,78 @@ toast:
 layout:
   guest:
     className: "min-h-screen bg-neutral-50"
-  auth:
-    className: "min-h-screen bg-neutral-50"
 */
 
 /* @arkzen:database:event_log
-columns:
-  event_name: string
-  listener_name: string
-  status: string
-  payload: text
-  duration_ms: integer
+table: event_log
 timestamps: true
+softDeletes: false
+columns:
+  id:
+    type: integer
+    primary: true
+    autoIncrement: true
+  event_name:
+    type: string
+    length: 255
+    nullable: false
+  listener_name:
+    type: string
+    length: 255
+    nullable: false
+  status:
+    type: string
+    length: 50
+    default: completed
+  payload:
+    type: text
+    nullable: true
+  duration_ms:
+    type: integer
+    nullable: true
 */
 
-/* @arkzen:api
-middleware: [auth]
-routes:
-  - GET  /events-test/log      → index
-  - POST /events-test/fire     → store
-  - POST /events-test/log/clear → clearLog
+/* @arkzen:api:event_log
+model: EventLog
+controller: EventLogController
+prefix: /api/events-test
+middleware: []
+endpoints:
+  index:
+    method: GET
+    route: /log
+    description: Get event log entries
+    response:
+      type: paginated
+  store:
+    method: POST
+    route: /fire
+    description: Fire an event
+    validation:
+      event: required|string
+      payload: nullable|array
+    response:
+      type: single
+  clearLog:
+    method: POST
+    route: /log/clear
+    description: Clear all log entries
+    response:
+      type: message
+      value: Log cleared
 */
 
-/* @arkzen:events
-user-signed-up:
-  listeners: [SendWelcomeEmail, UpdateUserStats, NotifyAdmins]
+/* @arkzen:events:order
 order-placed:
   listeners: [ProcessPayment, UpdateInventory, SendOrderConfirmation]
+*/
+
+/* @arkzen:events:user
+user-signed-up:
+  listeners: [SendWelcomeEmail, UpdateUserStats, NotifyAdmins]
+*/
+
+/* @arkzen:events:data
 data-exported:
   listeners: [LogExportActivity, CleanupTempFiles]
 */
@@ -48,69 +93,49 @@ data-exported:
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { useAuthStore, arkzenFetch } from '@/arkzen/core/stores/authStore'
+import { arkzenFetch } from '@/arkzen/core/stores/authStore'
+
+interface EventLogEntry {
+  id:           number
+  event_name:   string
+  listener_name: string
+  status:       string
+  payload:      string | null
+  duration_ms:  number | null
+  created_at:   string
+}
 
 /* @arkzen:components:shared:end */
 
-/* @arkzen:page:login */
+/* @arkzen:page:index */
 /* @arkzen:page:layout:guest */
-const LoginPage = () => {
-  const { login, isLoading } = useAuthStore()
-  const [email, setEmail]       = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError]       = useState<string | null>(null)
-  const handleSubmit = async () => {
-    setError(null)
-    try { await login(email, password) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Login failed') }
-  }
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm">
-        <h1 className="text-xl font-semibold mb-6">Events Test — Login</h1>
-        {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-xl text-sm">{error}</div>}
-        <div className="space-y-3">
-          <input className="arkzen-input w-full" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" />
-          <input className="arkzen-input w-full" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" />
-          <button className="arkzen-btn w-full" onClick={handleSubmit} disabled={isLoading}>{isLoading ? 'Signing in...' : 'Sign In'}</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-/* @arkzen:page:login:end */
-
-/* @arkzen:page:dashboard */
-/* @arkzen:page:layout:auth */
-const DashboardPage = () => {
-  const { user, logout } = useAuthStore()
-
+const IndexPage = () => {
   const events = [
     {
-      key: 'user-signed-up',
-      label: 'UserSignedUp',
-      desc: 'Fires 3 listeners: SendWelcomeEmail, UpdateUserStats, NotifyAdmins',
+      key:     'user-signed-up',
+      label:   'UserSignedUp',
+      desc:    'Fires 3 listeners: SendWelcomeEmail, UpdateUserStats, NotifyAdmins',
       payload: { user_id: 1, email: 'test@example.com', name: 'Test User' },
-      color: 'text-blue-600 bg-blue-50',
+      color:   'text-blue-600 bg-blue-50',
     },
     {
-      key: 'order-placed',
-      label: 'OrderPlaced',
-      desc: 'Fires 3 listeners: ProcessPayment, UpdateInventory, SendOrderConfirmation',
+      key:     'order-placed',
+      label:   'OrderPlaced',
+      desc:    'Fires 3 listeners: ProcessPayment, UpdateInventory, SendOrderConfirmation',
       payload: { order_id: 'ORD-9999', total: 149.99, items: 3 },
-      color: 'text-green-600 bg-green-50',
+      color:   'text-green-600 bg-green-50',
     },
     {
-      key: 'data-exported',
-      label: 'DataExported',
-      desc: 'Fires 2 listeners: LogExportActivity, CleanupTempFiles',
+      key:     'data-exported',
+      label:   'DataExported',
+      desc:    'Fires 2 listeners: LogExportActivity, CleanupTempFiles',
       payload: { export_id: 'EXP-001', format: 'csv', rows: 250 },
-      color: 'text-purple-600 bg-purple-50',
+      color:   'text-purple-600 bg-purple-50',
     },
   ]
 
-  const [log, setLog]         = useState<any[]>([])
-  const [firing, setFiring]   = useState<string | null>(null)
+  const [log, setLog]           = useState<EventLogEntry[]>([])
+  const [firing, setFiring]     = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
 
   const loadLog = async () => {
@@ -128,15 +153,12 @@ const DashboardPage = () => {
     try {
       await arkzenFetch('/api/events-test/fire', {
         method: 'POST',
-        body: JSON.stringify({ event: eventKey, payload }),
+        body:   JSON.stringify({ event: eventKey, payload }),
       })
-      // Poll for listener results — they run async
       setTimeout(loadLog, 600)
       setTimeout(loadLog, 1500)
       setTimeout(loadLog, 3000)
-    } catch {} finally {
-      setFiring(null)
-    }
+    } catch {} finally { setFiring(null) }
   }
 
   const clearLog = async () => {
@@ -144,9 +166,7 @@ const DashboardPage = () => {
     try {
       await arkzenFetch('/api/events-test/log/clear', { method: 'POST' })
       setLog([])
-    } catch {} finally {
-      setClearing(false)
-    }
+    } catch {} finally { setClearing(false) }
   }
 
   const statusColor = (s: string) => ({
@@ -155,8 +175,7 @@ const DashboardPage = () => {
     failed:    'bg-red-100 text-red-700',
   }[s] ?? 'bg-neutral-100 text-neutral-600')
 
-  // Group log entries by event_name
-  const grouped = log.reduce((acc: Record<string, any[]>, entry: any) => {
+  const grouped = log.reduce((acc: Record<string, EventLogEntry[]>, entry) => {
     const key = `${entry.event_name}:${entry.created_at?.slice(0, 19)}`
     if (!acc[key]) acc[key] = []
     acc[key].push(entry)
@@ -166,12 +185,9 @@ const DashboardPage = () => {
   return (
     <div className="min-h-screen p-8">
       <div className="max-w-2xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">⚡ Events Test</h1>
-            <p className="text-sm text-neutral-500 mt-1">Each event fires its listeners as queued jobs.</p>
-          </div>
-          <button className="arkzen-btn-ghost text-sm" onClick={logout}>Logout ({user?.name})</button>
+        <div>
+          <h1 className="text-2xl font-bold">⚡ Events Test</h1>
+          <p className="text-sm text-neutral-500 mt-1">Each event fires its listeners as queued jobs.</p>
         </div>
 
         {/* Event fire buttons */}
@@ -223,14 +239,14 @@ const DashboardPage = () => {
               {Object.entries(grouped).map(([groupKey, entries]) => (
                 <div key={groupKey} className="px-5 py-3">
                   <div className="text-xs font-medium text-neutral-500 mb-2">
-                    🔥 {(entries[0] as any).event_name} — {(entries[0] as any).created_at?.slice(11, 19)}
+                    🔥 {entries[0].event_name} — {entries[0].created_at?.slice(11, 19)}
                   </div>
                   <div className="space-y-1.5 pl-3 border-l-2 border-neutral-100">
-                    {(entries as any[]).map((e, i) => (
+                    {entries.map((e, i) => (
                       <div key={i} className="flex items-center justify-between text-xs">
                         <span className="text-neutral-600 font-mono">{e.listener_name}</span>
                         <div className="flex items-center gap-2">
-                          {e.duration_ms && <span className="text-neutral-400">{e.duration_ms}ms</span>}
+                          {e.duration_ms !== null && <span className="text-neutral-400">{e.duration_ms}ms</span>}
                           <span className={`px-1.5 py-0.5 rounded-md font-medium ${statusColor(e.status)}`}>{e.status}</span>
                         </div>
                       </div>
@@ -243,10 +259,10 @@ const DashboardPage = () => {
         </div>
 
         <div className="text-xs text-neutral-400 bg-neutral-50 rounded-xl p-4">
-          <strong>How it works:</strong> The backend fires the Arkzen-generated Event class, which triggers Laravel's event dispatcher. Each listener is a queued job implementing ShouldQueue. Run <code>php artisan queue:work</code> to process them. The controller logs each listener execution to the event_log table.
+          <strong>How it works:</strong> The backend fires the Arkzen-generated Event class → Laravel event dispatcher → each listener is a queued job (ShouldQueue). Run <code>php artisan queue:work</code> to process them.
         </div>
       </div>
     </div>
   )
 }
-/* @arkzen:page:dashboard:end */
+/* @arkzen:page:index:end */

@@ -2,7 +2,7 @@
 name: scheduler-test
 version: 1.0.0
 description: Tests Laravel Console Commands + Scheduler. Register Artisan commands, see them run on schedule, inspect the execution history.
-auth: true
+auth: false
 */
 
 /* @arkzen:config
@@ -11,8 +11,6 @@ toast:
   duration: 4000
 layout:
   guest:
-    className: "min-h-screen bg-neutral-50"
-  auth:
     className: "min-h-screen bg-neutral-50"
 */
 
@@ -28,7 +26,7 @@ timestamps: true
 */
 
 /* @arkzen:api
-middleware: [auth]
+middleware: []
 routes:
   - GET  /scheduler-test/runs           → index
   - POST /scheduler-test/run            → store
@@ -59,42 +57,15 @@ sync-data:
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { useAuthStore, arkzenFetch } from '@/arkzen/core/stores/authStore'
+import { arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 /* @arkzen:components:shared:end */
 
-/* @arkzen:page:login */
-/* @arkzen:page:layout:guest */
-const LoginPage = () => {
-  const { login, isLoading } = useAuthStore()
-  const [email, setEmail]       = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError]       = useState<string | null>(null)
-  const handleSubmit = async () => {
-    setError(null)
-    try { await login(email, password) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Login failed') }
-  }
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm">
-        <h1 className="text-xl font-semibold mb-6">Scheduler Test — Login</h1>
-        {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-xl text-sm">{error}</div>}
-        <div className="space-y-3">
-          <input className="arkzen-input w-full" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" />
-          <input className="arkzen-input w-full" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" />
-          <button className="arkzen-btn w-full" onClick={handleSubmit} disabled={isLoading}>{isLoading ? 'Signing in...' : 'Sign In'}</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-/* @arkzen:page:login:end */
+
 
 /* @arkzen:page:dashboard */
-/* @arkzen:page:layout:auth */
+/* @arkzen:page:layout:guest */
 const DashboardPage = () => {
-  const { user, logout } = useAuthStore()
 
   const commands = [
     { key: 'cleanup-temp',     label: 'Cleanup Temp',    signature: 'scheduler-test:cleanup-temp',    schedule: 'Every hour',     icon: '🧹' },
@@ -160,7 +131,7 @@ const DashboardPage = () => {
             <h1 className="text-2xl font-bold">⏰ Scheduler Test</h1>
             <p className="text-sm text-neutral-500 mt-1">Run commands manually or let the scheduler fire them.</p>
           </div>
-          <button className="arkzen-btn-ghost text-sm" onClick={logout}>Logout ({user?.name})</button>
+          
         </div>
 
         {/* Commands */}

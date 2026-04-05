@@ -101,19 +101,22 @@ class ModuleReader
             ];
         }
 
-        // ── Parse all api blocks ──────────────────
-        foreach (($payload['apis'] ?? []) as $api) {
-            $model = $api['model'] ?? null;
-            if (!$model || $model === '_none') continue;
-
-            $apis[] = [
-                'model'      => $model,
-                'controller' => $api['controller'],
-                'prefix'     => $api['prefix'],
-                'middleware' => $api['middleware'] ?? [],
-                'endpoints'  => $api['endpoints']  ?? [],
-            ];
-        }
+       // ── Parse all api blocks ──────────────────
+      foreach (($payload['apis'] ?? []) as $api) {
+          $model = $api['model'] ?? null;
+          if (!$model || $model === '_none') continue;
+      
+          $apis[] = [
+              'model'      => $model,
+              'controller' => $api['controller'],
+              'prefix'     => $api['prefix'],
+              'middleware' => $api['middleware'] ?? [],
+              'endpoints'  => $api['endpoints']  ?? [],
+              'resource'   => $api['resource'] ?? false,   // ← ADD THIS
+              'policy'     => $api['policy'] ?? false,     // ← ADD THIS
+              'factory'    => $api['factory'] ?? false,    // ← ADD THIS
+          ];
+      }
 
         return [
             'name'      => $payload['name'],

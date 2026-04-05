@@ -1,5 +1,5 @@
 // ============================================================
-// ARKZEN ENGINE — MIDDLEWARE v1.0
+// ARKZEN ENGINE — MIDDLEWARE v1.1
 //
 // Server-side auth guard. Runs before any page renders — no
 // hydration, no JS, no flash. Instant redirect at the edge.
@@ -9,22 +9,29 @@
 //   This middleware reads that cookie on every request and
 //   redirects before Next.js even builds the page.
 //
-// GUEST PAGES  (login, register, etc.)
-//   → Authenticated users get bounced to /{tatemono}/dashboard
+// IMPORTANT: Only tatemonos listed in AUTH_TATEMONOS are
+// subject to auth guards. All others pass through freely
+// regardless of page name.
 //
-// AUTH PAGES   (dashboard, etc.)
-//   → Unauthenticated users get bounced to /{tatemono}/login
-//
-// TO ADD MORE PROTECTED OR GUEST-ONLY PAGES:
-//   Add the page name to GUEST_PAGES or AUTH_PAGES below.
+// Add your tatemono name here when auth: true is set in its meta.
+// Remove it when auth: false.
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
 
 // ─────────────────────────────────────────────
+// AUTH-ENABLED TATEMONOS
+// Only these tatemonos will have login/guest guards enforced.
+// Add a tatemono name here when its meta has auth: true.
+// ─────────────────────────────────────────────
+
+const AUTH_TATEMONOS = [
+  'auth-test',
+]
+
+// ─────────────────────────────────────────────
 // PAGE CLASSIFICATIONS
-// Add page names here as your tatemonos grow.
-// These match the URL segment, e.g. /auth-test/dashboard → 'dashboard'
+// These only apply to tatemonos listed in AUTH_TATEMONOS above.
 // ─────────────────────────────────────────────
 
 const GUEST_PAGES = [
@@ -36,6 +43,8 @@ const GUEST_PAGES = [
 
 const AUTH_PAGES = [
   'dashboard',
+  'settings',
+  'profile',
 ]
 
 // ─────────────────────────────────────────────
@@ -51,6 +60,9 @@ export function middleware(request: NextRequest) {
   // Not a tatemono route — let it through
   if (!tatemono || !page) return NextResponse.next()
 
+  // Not an auth-enabled tatemono — always let it through
+  if (!AUTH_TATEMONOS.includes(tatemono)) return NextResponse.next()
+
   // Read the per-tatemono auth cookie set by authStore on login
   const token = request.cookies.get(`arkzen-auth-${tatemono}`)?.value
 
@@ -59,7 +71,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(`/${tatemono}/dashboard`, request.url))
   }
 
-  // Unauthenticated user trying to visit dashboard → send to login
+  // Unauthenticated user trying to visit protected page → send to login
   if (AUTH_PAGES.includes(page) && !token) {
     return NextResponse.redirect(new URL(`/${tatemono}/login`, request.url))
   }

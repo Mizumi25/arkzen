@@ -77,7 +77,7 @@ async function rebuildAllFromRoot(): Promise<void> {
   console.log(`[Arkzen Builder] Found ${existingFolders.size} tatemono(s). Building...`)
   for (const folder of existingFolders) {
     const corePath = path.join(MODULES_DIR, folder, 'core.tsx')
-    await buildTatemono(corePath)
+    await rebuildTatemono(corePath)
   }
   console.log(`\n[Arkzen Builder] ✓ All tatemonos rebuilt`)
 }

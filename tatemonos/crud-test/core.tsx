@@ -1,8 +1,8 @@
 /* @arkzen:meta
 name: crud-test
 version: 1.0.0
-description: Tests the full CRUD pipeline — Model, Migration, Controller, Request, Resource, Policy, Factory, Seeder — all isolated under crud-test slug. The canonical Arkzen CRUD verification.
-auth: true
+description: Tests the full CRUD pipeline — Model, Migration, Controller, Request, Resource, Policy, Factory, Seeder. The canonical Arkzen CRUD verification.
+auth: false
 */
 
 /* @arkzen:config
@@ -15,8 +15,6 @@ modal:
 layout:
   guest:
     className: "min-h-screen bg-neutral-50"
-  auth:
-    className: "min-h-screen bg-neutral-50"
 */
 
 /* @arkzen:database:items
@@ -24,6 +22,10 @@ table: items
 timestamps: true
 softDeletes: false
 columns:
+  id:
+    type: integer
+    primary: true
+    autoIncrement: true
   name:
     type: string
     length: 255
@@ -56,32 +58,73 @@ seeder:
       tags: test
 */
 
-/* @arkzen:api
-middleware: [auth]
-routes:
-  - GET    /crud-test/items          → index
-  - POST   /crud-test/items          → store
-  - GET    /crud-test/items/{id}     → show
-  - PUT    /crud-test/items/{id}     → update
-  - DELETE /crud-test/items/{id}     → destroy
+/* @arkzen:api:items
+model: Item
+controller: ItemController
+prefix: /api/crud-test
+middleware: []
+resource: true
+policy: true
+factory: true
+endpoints:
+  index:
+    method: GET
+    route: /items
+    description: Get all items
+    response:
+      type: collection
+  store:
+    method: POST
+    route: /items
+    description: Create item
+    validation:
+      name: required|string|max:255
+      description: nullable|string
+      status: sometimes|string|in:active,pending,archived
+      priority: sometimes|integer|min:0
+      tags: nullable|string
+    response:
+      type: single
+  show:
+    method: GET
+    route: /items/{id}
+    description: Get single item
+    response:
+      type: single
+  update:
+    method: PUT
+    route: /items/{id}
+    description: Update item
+    validation:
+      name: sometimes|string|max:255
+      status: sometimes|string|in:active,pending,archived
+    response:
+      type: single
+  destroy:
+    method: DELETE
+    route: /items/{id}
+    description: Delete item
+    response:
+      type: message
+      value: Item deleted
 */
 
 /* @arkzen:components:shared */
 
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { useAuthStore, arkzenFetch } from '@/arkzen/core/stores/authStore'
+import React, { useState, useEffect, useRef } from 'react'
+import { arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 type Item = {
-  id: number
-  name: string
+  id:          number
+  name:        string
   description: string | null
-  status: 'active' | 'pending' | 'archived'
-  priority: number
-  tags: string | null
-  created_at: string
-  updated_at: string
+  status:      'active' | 'pending' | 'archived'
+  priority:    number
+  tags:        string | null
+  created_at:  string
+  updated_at:  string
 }
 
 type FormData = { name: string; description: string; status: string; priority: number; tags: string }
@@ -89,63 +132,50 @@ const emptyForm: FormData = { name: '', description: '', status: 'active', prior
 
 /* @arkzen:components:shared:end */
 
-/* @arkzen:page:login */
+/* @arkzen:page:index */
 /* @arkzen:page:layout:guest */
-const LoginPage = () => {
-  const { login, isLoading } = useAuthStore()
-  const [email, setEmail]       = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError]       = useState<string | null>(null)
-  const handleSubmit = async () => {
-    setError(null)
-    try { await login(email, password) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Login failed') }
-  }
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm">
-        <h1 className="text-xl font-semibold mb-6">CRUD Test — Login</h1>
-        {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-xl text-sm">{error}</div>}
-        <div className="space-y-3">
-          <input className="arkzen-input w-full" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" />
-          <input className="arkzen-input w-full" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" />
-          <button className="arkzen-btn w-full" onClick={handleSubmit} disabled={isLoading}>{isLoading ? 'Signing in...' : 'Sign In'}</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-/* @arkzen:page:login:end */
+const IndexPage = () => {
+  const [items, setItems]         = useState<Item[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [form, setForm]           = useState<FormData>(emptyForm)
+  const [editing, setEditing]     = useState<Item | null>(null)
+  const [showForm, setShowForm]   = useState(false)
+  const [saving, setSaving]       = useState(false)
+  const [deleting, setDeleting]   = useState<number | null>(null)
+  const [error, setError]         = useState<string | null>(null)
+  const [stats, setStats]         = useState({ total: 0, active: 0, pending: 0, archived: 0 })
+  
+  const isMounted = useRef(true)
 
-/* @arkzen:page:dashboard */
-/* @arkzen:page:layout:auth */
-const DashboardPage = () => {
-  const { user, logout } = useAuthStore()
-  const [items, setItems]           = useState<Item[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [form, setForm]             = useState<FormData>(emptyForm)
-  const [editing, setEditing]       = useState<Item | null>(null)
-  const [showForm, setShowForm]     = useState(false)
-  const [saving, setSaving]         = useState(false)
-  const [deleting, setDeleting]     = useState<number | null>(null)
-  const [error, setError]           = useState<string | null>(null)
-  const [stats, setStats]           = useState({ total: 0, active: 0, pending: 0, archived: 0 })
+  useEffect(() => {
+    return () => { isMounted.current = false }
+  }, [])
 
   const load = async () => {
+    if (!isMounted.current) return
     setLoading(true)
     try {
       const res = await arkzenFetch('/api/crud-test/items')
-      const d   = await res.json()
-      const data: Item[] = d.data ?? []
-      setItems(data)
-      setStats({
-        total:    data.length,
-        active:   data.filter(i => i.status === 'active').length,
-        pending:  data.filter(i => i.status === 'pending').length,
-        archived: data.filter(i => i.status === 'archived').length,
-      })
+      const d = await res.json()
+      // Handle both collection and paginated responses
+      const data: Item[] = Array.isArray(d.data) ? d.data : Array.isArray(d) ? d : []
+      if (isMounted.current) {
+        setItems(data)
+        setStats({
+          total:    data.length,
+          active:   data.filter(i => i.status === 'active').length,
+          pending:  data.filter(i => i.status === 'pending').length,
+          archived: data.filter(i => i.status === 'archived').length,
+        })
+      }
+    } catch (err) {
+      console.error('Load failed:', err)
+      if (isMounted.current) {
+        setItems([])
+        setStats({ total: 0, active: 0, pending: 0, archived: 0 })
+      }
     } finally {
-      setLoading(false)
+      if (isMounted.current) setLoading(false)
     }
   }
 
@@ -158,7 +188,7 @@ const DashboardPage = () => {
     setError(null)
     setShowForm(true)
   }
-  const closeForm  = () => { setShowForm(false); setEditing(null); setError(null) }
+  const closeForm = () => { setShowForm(false); setEditing(null); setError(null) }
 
   const save = async () => {
     setSaving(true)
@@ -173,21 +203,24 @@ const DashboardPage = () => {
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed')
-    } finally {
-      setSaving(false)
-    }
+    } finally { setSaving(false) }
   }
 
-  const remove = async (id: number) => {
-    setDeleting(id)
-    try {
-      await arkzenFetch(`/api/crud-test/items/${id}`, { method: 'DELETE' })
-      setItems(prev => prev.filter(i => i.id !== id))
-      setStats(prev => ({ ...prev, total: prev.total - 1 }))
-    } catch {} finally {
-      setDeleting(null)
+const remove = async (id: number) => {
+  console.log('[DELETE] Attempting to delete ID:', id)  // Debug
+  setDeleting(id)
+  try {
+    const res = await arkzenFetch(`/api/crud-test/items/${id}`, { method: 'DELETE' })
+    console.log('[DELETE] Response status:', res.status)  // Debug
+    if (res.ok) {
+      await load()  // ← RELOAD from server instead of manual filter
     }
+  } catch (err) {
+    console.error('[DELETE] Error:', err)
+  } finally { 
+    setDeleting(null)
   }
+}
 
   const statusColor = (s: string) => ({
     active:   'bg-green-100 text-green-700',
@@ -195,9 +228,15 @@ const DashboardPage = () => {
     archived: 'bg-neutral-100 text-neutral-500',
   }[s] ?? 'bg-neutral-100 text-neutral-600')
 
+  const statItems = [
+    { label: 'Total', count: stats.total, cls: 'text-neutral-900' },
+    { label: 'Active', count: stats.active, cls: 'text-green-600' },
+    { label: 'Pending', count: stats.pending, cls: 'text-yellow-600' },
+    { label: 'Archived', count: stats.archived, cls: 'text-neutral-400' }
+  ]
+
   return (
     <div className="min-h-screen p-8">
-      {/* Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md">
@@ -225,23 +264,18 @@ const DashboardPage = () => {
       <div className="max-w-3xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">🔧 CRUD Test</h1>
-          <div className="flex items-center gap-2">
-            <button className="arkzen-btn text-sm" onClick={openCreate}>+ Create Item</button>
-            <button className="arkzen-btn-ghost text-sm" onClick={logout}>Logout ({user?.name})</button>
-          </div>
+          <button className="arkzen-btn text-sm" onClick={openCreate}>+ Create Item</button>
         </div>
 
-        {/* Stats */}
         <div className="grid grid-cols-4 gap-3">
-          {[['Total', stats.total, 'text-neutral-900'], ['Active', stats.active, 'text-green-600'], ['Pending', stats.pending, 'text-yellow-600'], ['Archived', stats.archived, 'text-neutral-400']].map(([label, count, cls]) => (
-            <div key={String(label)} className="bg-white rounded-2xl border border-neutral-100 p-4 text-center">
+          {statItems.map(({ label, count, cls }) => (
+            <div key={label} className="bg-white rounded-2xl border border-neutral-100 p-4 text-center">
               <div className={`text-2xl font-bold ${cls}`}>{count}</div>
               <div className="text-xs text-neutral-500 mt-1">{label}</div>
             </div>
           ))}
         </div>
 
-        {/* Table */}
         <div className="bg-white rounded-2xl border border-neutral-100 overflow-hidden">
           <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
             <h2 className="font-semibold">Items</h2>
@@ -266,8 +300,8 @@ const DashboardPage = () => {
                     {item.description && <p className="text-xs text-neutral-500 truncate">{item.description}</p>}
                     {item.tags && (
                       <div className="flex gap-1 mt-1 flex-wrap">
-                        {item.tags.split(',').map(t => (
-                          <span key={t} className="text-xs bg-neutral-100 text-neutral-500 px-1.5 py-0.5 rounded">{t.trim()}</span>
+                        {item.tags.split(',').map((t, idx) => (
+                          <span key={`${item.id}-tag-${idx}`} className="text-xs bg-neutral-100 text-neutral-500 px-1.5 py-0.5 rounded">{t.trim()}</span>
                         ))}
                       </div>
                     )}
@@ -289,10 +323,10 @@ const DashboardPage = () => {
         </div>
 
         <div className="text-xs text-neutral-400 bg-neutral-50 rounded-xl p-4">
-          <strong>What this tests:</strong> ModelBuilder (crud-test slug, isolated DB), MigrationBuilder (items table), ControllerBuilder (CRUD routes), RequestBuilder (validation), ResourceBuilder (JSON transform), FactoryBuilder, SeederBuilder — all isolated under <code>crud-test</code> slug. No other tatemono is affected.
+          <strong>What this tests:</strong> ModelBuilder, MigrationBuilder (items table), ControllerBuilder (CRUD routes), RequestBuilder (validation), ResourceBuilder (JSON transform), FactoryBuilder, SeederBuilder — all isolated under <code>crud-test</code> slug. No auth required.
         </div>
       </div>
     </div>
   )
 }
-/* @arkzen:page:dashboard:end */
+/* @arkzen:page:index:end */

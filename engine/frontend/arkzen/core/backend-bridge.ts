@@ -3,6 +3,7 @@
 // Key changes:
 //   - remove payload now includes models, controllers, tables
 //     so Laravel can clean up ALL associated files
+//   - now sends resource, policy, factory flags to backend
 // ============================================================
 
 import type { ParsedTatemono } from '../types'
@@ -23,8 +24,18 @@ export async function triggerBackendBuild(tatemono: ParsedTatemono): Promise<voi
   const payload = {
     name:      tatemono.meta.name,
     version:   tatemono.meta.version,
+    auth:      tatemono.meta.auth,
     databases: tatemono.databases,
-    apis:      tatemono.apis,
+    apis:      tatemono.apis.map(api => ({
+      model:      api.model,
+      controller: api.controller,
+      prefix:     api.prefix,
+      middleware: api.middleware,
+      endpoints:  api.endpoints,
+      resource:   api.resource ?? false,   // ← ADDED
+      policy:     api.policy ?? false,     // ← ADDED
+      factory:    api.factory ?? false,    // ← ADDED
+    })),
   }
 
   try {

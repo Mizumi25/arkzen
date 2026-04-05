@@ -255,7 +255,8 @@ function topologicalSort(databases: ArkzenDatabase[]): ArkzenDatabase[] {
 }
 
 // ─────────────────────────────────────────────
-// PARSE ALL API BLOCKS
+// PARSE ALL API BLOCKS — FIXED
+// Now includes resource, policy, factory fields
 // ─────────────────────────────────────────────
 
 function parseAllApis(content: string): ArkzenApi[] {
@@ -278,6 +279,9 @@ function parseAllApis(content: string): ArkzenApi[] {
       prefix:     String(parsed.prefix),
       middleware: (parsed.middleware as string[]) ?? [],
       endpoints:  (parsed.endpoints  as ArkzenApi['endpoints']) ?? {},
+      resource:   parsed.resource ?? false,   // ← ADDED
+      policy:     parsed.policy ?? false,     // ← ADDED
+      factory:    parsed.factory ?? false,    // ← ADDED
     })
   }
 

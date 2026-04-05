@@ -123,6 +123,9 @@ export interface ArkzenApi {
   prefix: string
   middleware: string[]
   endpoints: Record<string, ArkzenEndpoint>
+  resource?: boolean   // ← ADD THIS
+  policy?: boolean     // ← ADD THIS
+  factory?: boolean    // ← ADD THIS
 }
 
 export interface ArkzenSection {

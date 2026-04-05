@@ -1,329 +1,379 @@
 /* @arkzen:meta
-name: auth-test
+name: crud-test
 version: 1.0.0
-description: 3-page auth tatemono — register, login, dashboard
-auth: true
+description: Tests the full CRUD pipeline — Model, Migration, Controller, Request, Resource, Policy, Factory, Seeder — all isolated under crud-test slug. The canonical Arkzen CRUD verification.
+auth: false
 */
 
 /* @arkzen:config
 toast:
   position: top-right
-  duration: 4000
+  duration: 3000
+modal:
+  borderRadius: 2xl
+  backdrop: blur
 layout:
   guest:
     className: "min-h-screen bg-neutral-50"
-  auth:
-    className: "min-h-screen bg-white"
 */
 
-// ─────────────────────────────────────────────────────────────────
-// NO database:users block — users table is managed by Laravel.
-// NO api:auth block      — login/register/logout/me are provided
-//                          by ArkzenAuthController (built at setup).
-//
-// Auth on the frontend is handled entirely through useAuthStore():
-//   login(email, password)  →  POST /api/auth/login
-//   register(name, email, password, confirm)  →  POST /api/auth/register
-//   logout()                →  POST /api/auth/logout
-//   user                    ←  current ArkzenUser object
-//   isAuthenticated         ←  boolean
-//
-// layout:guest pages auto-redirect logged-in users to /dashboard.
-// layout:auth  pages auto-redirect guests to /login.
-// ─────────────────────────────────────────────────────────────────
+/* @arkzen:database:items
+table: items
+timestamps: true
+softDeletes: false
+columns:
+  id:
+    type: integer
+    primary: true
+    autoIncrement: true
+  name:
+    type: string
+    length: 255
+    nullable: false
+  description:
+    type: text
+    nullable: true
+  status:
+    type: string
+    length: 50
+    default: active
+  priority:
+    type: integer
+    default: 0
+  tags:
+    type: string
+    nullable: true
+seeder:
+  count: 5
+  data:
+    - name: Alpha Item
+      description: First seeded item for CRUD testing
+      status: active
+      priority: 1
+      tags: test,seed
+    - name: Beta Item
+      description: Second seeded item
+      status: pending
+      priority: 2
+      tags: test
+*/
+
+/* @arkzen:api:items
+model: Item
+controller: ItemController
+prefix: /api/crud-test
+middleware: []
+resource: true
+policy: true
+factory: true
+endpoints:
+  index:
+    method: GET
+    route: /items
+    description: Get all items
+    response:
+      type: collection
+  show:
+    method: GET
+    route: /items/{id}
+    description: Get single item
+    response:
+      type: single
+  store:
+    method: POST
+    route: /items
+    description: Create new item
+    validation:
+      name: required|string|max:255
+      description: nullable|string
+      status: required|in:active,pending,archived
+      priority: integer|min:0
+      tags: nullable|string
+    response:
+      type: single
+  update:
+    method: PUT
+    route: /items/{id}
+    description: Update item
+    validation:
+      name: sometimes|string|max:255
+      description: nullable|string
+      status: sometimes|in:active,pending,archived
+      priority: sometimes|integer|min:0
+      tags: nullable|string
+    response:
+      type: single
+  destroy:
+    method: DELETE
+    route: /items/{id}
+    description: Delete item
+    response:
+      type: message
+      value: Item deleted successfully
+*/
 
 /* @arkzen:components:shared */
 
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { useAuthStore, setActiveTatemono } from '@/arkzen/core/stores/authStore'
+import React, { useState, useEffect, useRef } from 'react'
+import { arkzenFetch } from '@/arkzen/core/stores/authStore'
 
-// Register this tatemono's slug so all auth calls hit /api/auth-test/auth/*
-// This must run before any useAuthStore() call touches the network.
-if (typeof window !== 'undefined') {
-  setActiveTatemono('auth-test')
+type Item = {
+  id: number
+  name: string
+  description: string | null
+  status: 'active' | 'pending' | 'archived'
+  priority: number
+  tags: string | null
+  created_at: string
+  updated_at: string
 }
+
+type FormData = { name: string; description: string; status: string; priority: number; tags: string }
+const emptyForm: FormData = { name: '', description: '', status: 'active', priority: 0, tags: '' }
 
 /* @arkzen:components:shared:end */
 
-/* @arkzen:page:register */
+/* @arkzen:page:index */
 /* @arkzen:page:layout:guest */
-const RegisterPage = () => {
-  const { register, isLoading } = useAuthStore()
-  const [name, setName]           = useState('')
-  const [email, setEmail]         = useState('')
-  const [password, setPassword]   = useState('')
-  const [confirm, setConfirm]     = useState('')
-  const [error, setError]         = useState<string | null>(null)
+const IndexPage = () => {
+  const [items, setItems] = useState<Item[]>([])
+  const [loading, setLoading] = useState(true)
+  const [form, setForm] = useState<FormData>(emptyForm)
+  const [editing, setEditing] = useState<Item | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [stats, setStats] = useState({ total: 0, active: 0, pending: 0, archived: 0 })
 
-  const handleSubmit = async () => {
-    setError(null)
-    if (password !== confirm) {
-      setError('Passwords do not match')
-      return
-    }
+  const isMounted = useRef(true)
+
+  useEffect(() => {
+    return () => { isMounted.current = false }
+  }, [])
+
+  const load = async () => {
+    if (!isMounted.current) return
+    setLoading(true)
     try {
-      await register(name, email, password, confirm)
-      // useAuthStore sets isAuthenticated = true → GuestLayout redirects
-      // to /auth-test/dashboard automatically. No manual redirect needed.
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Registration failed')
+      const res = await arkzenFetch('/api/crud-test/items')
+      const d = await res.json()
+      // Response format: { data: [...] }
+      const data: Item[] = Array.isArray(d.data) ? d.data : Array.isArray(d) ? d : []
+      if (isMounted.current) {
+        setItems(data)
+        setStats({
+          total: data.length,
+          active: data.filter(i => i.status === 'active').length,
+          pending: data.filter(i => i.status === 'pending').length,
+          archived: data.filter(i => i.status === 'archived').length,
+        })
+      }
+    } catch (err) {
+      console.error('Load failed:', err)
+      if (isMounted.current) {
+        setItems([])
+        setStats({ total: 0, active: 0, pending: 0, archived: 0 })
+      }
+    } finally {
+      if (isMounted.current) setLoading(false)
     }
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-50 px-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl shadow-black/5 p-8">
+  useEffect(() => { load() }, [])
 
-        {/* Logo + heading */}
-        <div className="text-center mb-8">
-          <div className="w-12 h-12 bg-neutral-900 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-bold text-lg">A</span>
-          </div>
-          <h1 className="text-xl font-semibold text-neutral-900">Create your account</h1>
-          <p className="text-sm text-neutral-500 mt-1">Start using auth-test today</p>
-        </div>
+  const openCreate = () => { setEditing(null); setForm(emptyForm); setError(null); setShowForm(true) }
+  const openEdit = (item: Item) => {
+    setEditing(item)
+    setForm({
+      name: item.name,
+      description: item.description ?? '',
+      status: item.status,
+      priority: item.priority,
+      tags: item.tags ?? ''
+    })
+    setError(null)
+    setShowForm(true)
+  }
+  const closeForm = () => { setShowForm(false); setEditing(null); setError(null) }
 
-        {/* Error banner */}
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
-            {error}
-          </div>
-        )}
-
-        {/* Form */}
-        <div className="space-y-4">
-          <input
-            type="text"
-            placeholder="Full Name"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            className="arkzen-input w-full"
-          />
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            className="arkzen-input w-full"
-          />
-          <input
-            type="password"
-            placeholder="Password (min 8 characters)"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            className="arkzen-input w-full"
-          />
-          <input
-            type="password"
-            placeholder="Confirm Password"
-            value={confirm}
-            onChange={e => setConfirm(e.target.value)}
-            className="arkzen-input w-full"
-          />
-          <button
-            onClick={handleSubmit}
-            disabled={isLoading || !name || !email || !password || !confirm}
-            className="arkzen-btn-primary w-full"
-          >
-            {isLoading ? 'Creating account...' : 'Create Account'}
-          </button>
-        </div>
-
-        <p className="text-center text-sm text-neutral-500 mt-6">
-          Already have an account?{' '}
-          <a href="/auth-test/login" className="text-neutral-900 font-medium hover:underline">
-            Sign in
-          </a>
-        </p>
-
-      </div>
-    </div>
-  )
-}
-/* @arkzen:page:register:end */
-
-/* @arkzen:page:login */
-/* @arkzen:page:layout:guest */
-const LoginPage = () => {
-  const { login, isLoading } = useAuthStore()
-  const [email, setEmail]       = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError]       = useState<string | null>(null)
-
-  const handleSubmit = async () => {
+  const save = async () => {
+    setSaving(true)
     setError(null)
     try {
-      await login(email, password)
-      // useAuthStore sets isAuthenticated = true → GuestLayout redirects
-      // to /auth-test/dashboard automatically. No manual redirect needed.
+      const url = editing?.id ? `/api/crud-test/items/${editing.id}` : '/api/crud-test/items'
+      const method = editing?.id ? 'PUT' : 'POST'
+      const res = await arkzenFetch(url, { method, body: JSON.stringify(form) })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.message ?? (d.errors ? Object.values(d.errors).flat().join(', ') : 'Save failed'))
+      closeForm()
+      await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Invalid email or password')
+      setError(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSaving(false)
     }
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-50 px-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl shadow-black/5 p-8">
+  const remove = async (id: number) => {
+    setDeleting(id)
+    try {
+      const res = await arkzenFetch(`/api/crud-test/items/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        await load()
+      }
+    } catch (err) {
+      console.error('Delete failed:', err)
+    } finally {
+      setDeleting(null)
+    }
+  }
 
-        {/* Logo + heading */}
-        <div className="text-center mb-8">
-          <div className="w-12 h-12 bg-neutral-900 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-bold text-lg">A</span>
-          </div>
-          <h1 className="text-xl font-semibold text-neutral-900">Sign in</h1>
-          <p className="text-sm text-neutral-500 mt-1">Welcome back</p>
-        </div>
+  const statusColor = (s: string) => ({
+    active: 'bg-green-100 text-green-700',
+    pending: 'bg-yellow-100 text-yellow-700',
+    archived: 'bg-neutral-100 text-neutral-500',
+  }[s] ?? 'bg-neutral-100 text-neutral-600')
 
-        {/* Error banner */}
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
-            {error}
-          </div>
-        )}
-
-        {/* Form */}
-        <div className="space-y-4">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            className="arkzen-input w-full"
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            className="arkzen-input w-full"
-          />
-          <button
-            onClick={handleSubmit}
-            disabled={isLoading || !email || !password}
-            className="arkzen-btn-primary w-full"
-          >
-            {isLoading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </div>
-
-        <p className="text-center text-sm text-neutral-500 mt-6">
-          No account?{' '}
-          <a href="/auth-test/register" className="text-neutral-900 font-medium hover:underline">
-            Create one
-          </a>
-        </p>
-
-      </div>
-    </div>
-  )
-}
-/* @arkzen:page:login:end */
-
-/* @arkzen:page:dashboard */
-/* @arkzen:page:layout:auth */
-const DashboardPage = () => {
-  const { user, logout, isLoading } = useAuthStore()
+  const statItems = [
+    { label: 'Total', count: stats.total, cls: 'text-neutral-900' },
+    { label: 'Active', count: stats.active, cls: 'text-green-600' },
+    { label: 'Pending', count: stats.pending, cls: 'text-yellow-600' },
+    { label: 'Archived', count: stats.archived, cls: 'text-neutral-400' }
+  ]
 
   return (
-    <div className="flex h-screen bg-neutral-50">
-
-      {/* Sidebar */}
-      <aside className="w-60 bg-white border-r border-neutral-200 flex flex-col p-4">
-        <div className="mb-8">
-          <div className="w-8 h-8 bg-neutral-900 rounded-xl flex items-center justify-center mb-2">
-            <span className="text-white font-bold text-sm">A</span>
+    <div className="min-h-screen p-8">
+      {/* Modal */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md">
+            <h2 className="font-semibold mb-4">{editing ? 'Edit Item' : 'Create Item'}</h2>
+            {error && <div className="mb-3 p-3 bg-red-50 text-red-600 rounded-xl text-sm">{error}</div>}
+            <div className="space-y-3">
+              <input
+                className="arkzen-input w-full"
+                placeholder="Name *"
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              />
+              <textarea
+                className="arkzen-input w-full h-20 resize-none"
+                placeholder="Description"
+                value={form.description}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              />
+              <select
+                className="arkzen-input w-full"
+                value={form.status}
+                onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+              >
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+                <option value="archived">Archived</option>
+              </select>
+              <input
+                className="arkzen-input w-full"
+                type="number"
+                placeholder="Priority"
+                value={form.priority}
+                onChange={e => setForm(f => ({ ...f, priority: Number(e.target.value) }))}
+              />
+              <input
+                className="arkzen-input w-full"
+                placeholder="Tags (comma separated)"
+                value={form.tags}
+                onChange={e => setForm(f => ({ ...f, tags: e.target.value }))}
+              />
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button className="arkzen-btn flex-1" onClick={save} disabled={saving}>
+                {saving ? 'Saving...' : editing ? 'Update' : 'Create'}
+              </button>
+              <button className="arkzen-btn-ghost flex-1" onClick={closeForm}>Cancel</button>
+            </div>
           </div>
-          <h2 className="font-bold text-neutral-900">auth-test</h2>
+        </div>
+      )}
+
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">🔧 CRUD Test</h1>
+          <button className="arkzen-btn text-sm" onClick={openCreate}>+ Create Item</button>
         </div>
 
-        <nav className="flex-1 space-y-1">
-          <a
-            href="/auth-test/dashboard"
-            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-900 text-white text-sm"
-          >
-            Dashboard
-          </a>
-        </nav>
-
-        {/* User info + sign out */}
-        <div className="pt-4 border-t border-neutral-200">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-8 h-8 bg-neutral-100 rounded-full flex items-center justify-center flex-shrink-0">
-              <span className="text-xs font-semibold text-neutral-600">
-                {user?.name?.charAt(0).toUpperCase() ?? '?'}
-              </span>
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-3">
+          {statItems.map(({ label, count, cls }) => (
+            <div key={label} className="bg-white rounded-2xl border border-neutral-100 p-4 text-center">
+              <div className={`text-2xl font-bold ${cls}`}>{count}</div>
+              <div className="text-xs text-neutral-500 mt-1">{label}</div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-neutral-900 truncate">{user?.name}</p>
-              <p className="text-xs text-neutral-500 truncate">{user?.email}</p>
-            </div>
-          </div>
-          <button
-            onClick={logout}
-            disabled={isLoading}
-            className="text-xs text-neutral-400 hover:text-red-500 transition-colors"
-          >
-            {isLoading ? 'Signing out...' : 'Sign out'}
-          </button>
+          ))}
         </div>
-      </aside>
 
-      {/* Main */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-16 bg-white border-b border-neutral-200 px-6 flex items-center justify-between">
-          <h1 className="font-semibold text-neutral-900">Dashboard</h1>
-          <span className="text-sm text-neutral-500">
-            Welcome, {user?.name?.split(' ')[0]}
-          </span>
-        </header>
-
-        <main className="flex-1 overflow-y-auto p-6">
-          {/* Auth status cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div className="arkzen-card p-6">
-              <p className="text-xs font-medium text-neutral-400 uppercase tracking-wide mb-2">
-                Auth Status
-              </p>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-emerald-400 rounded-full" />
-                <p className="text-sm font-semibold text-neutral-900">Authenticated</p>
-              </div>
-            </div>
-            <div className="arkzen-card p-6">
-              <p className="text-xs font-medium text-neutral-400 uppercase tracking-wide mb-2">
-                User ID
-              </p>
-              <p className="text-sm font-semibold text-neutral-900">#{user?.id}</p>
-            </div>
+        {/* Table */}
+        <div className="bg-white rounded-2xl border border-neutral-100 overflow-hidden">
+          <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
+            <h2 className="font-semibold">Items</h2>
+            <button className="text-xs text-neutral-400" onClick={load}>Refresh</button>
           </div>
-
-          {/* Profile table */}
-          <div className="arkzen-card p-6">
-            <h2 className="text-sm font-semibold text-neutral-900 mb-4">Your Profile</h2>
-            <div className="space-y-0">
-              {[
-                { label: 'Name',         value: user?.name },
-                { label: 'Email',        value: user?.email },
-                { label: 'Member since', value: user?.created_at
-                    ? new Date(user.created_at).toLocaleDateString()
-                    : '—' },
-              ].map(({ label, value }) => (
-                <div
-                  key={label}
-                  className="flex items-center justify-between py-3 border-b border-neutral-100 last:border-0"
-                >
-                  <span className="text-sm text-neutral-500">{label}</span>
-                  <span className="text-sm font-medium text-neutral-900">{value ?? '—'}</span>
+          {loading ? (
+            <div className="p-8 text-center text-sm text-neutral-400">Loading...</div>
+          ) : items.length === 0 ? (
+            <div className="p-8 text-center text-sm text-neutral-400">
+              No items yet. Click "Create Item" or check that the seeder ran.
+            </div>
+          ) : (
+            <div className="divide-y divide-neutral-50">
+              {items.map(item => (
+                <div key={item.id} className="px-5 py-3 flex items-center gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{item.name}</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${statusColor(item.status)}`}>
+                        {item.status}
+                      </span>
+                      {item.priority > 0 && <span className="text-xs text-neutral-400">P{item.priority}</span>}
+                    </div>
+                    {item.description && <p className="text-xs text-neutral-500 truncate">{item.description}</p>}
+                    {item.tags && (
+                      <div className="flex gap-1 mt-1 flex-wrap">
+                        {item.tags.split(',').map((t, idx) => (
+                          <span key={`${item.id}-tag-${idx}`} className="text-xs bg-neutral-100 text-neutral-500 px-1.5 py-0.5 rounded">
+                            {t.trim()}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button className="text-xs text-neutral-500 hover:text-neutral-900" onClick={() => openEdit(item)}>
+                      Edit
+                    </button>
+                    <button
+                      className="text-xs text-red-400 hover:text-red-600"
+                      onClick={() => remove(item.id)}
+                      disabled={deleting === item.id}
+                    >
+                      {deleting === item.id ? '...' : 'Delete'}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
-        </main>
-      </div>
+          )}
+        </div>
 
+        <div className="text-xs text-neutral-400 bg-neutral-50 rounded-xl p-4">
+          <strong>What this tests:</strong> ModelBuilder (crud-test slug, isolated DB), MigrationBuilder (items table),
+          ControllerBuilder (CRUD routes), RequestBuilder (validation), ResourceBuilder (JSON transform),
+          FactoryBuilder, SeederBuilder — all isolated under <code>crud-test</code> slug. No auth required.
+        </div>
+      </div>
     </div>
   )
 }
-/* @arkzen:page:dashboard:end */
+/* @arkzen:page:index:end */

@@ -11,7 +11,7 @@
         "index"
       ],
       "registered": "2026-03-29T05:18:40.255Z",
-      "lastUpdated": "2026-04-04T23:48:32.256Z"
+      "lastUpdated": "2026-04-05T04:16:50.434Z"
     },
     {
       "name": "auth-test",
@@ -24,7 +24,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T03:21:43.921Z",
-      "lastUpdated": "2026-04-04T23:48:31.848Z"
+      "lastUpdated": "2026-04-05T03:19:48.019Z"
     },
     {
       "name": "broadcast-test",
@@ -32,11 +32,10 @@
       "status": "active",
       "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/broadcast-test/core.tsx",
       "pages": [
-        "login",
-        "dashboard"
+        "index"
       ],
       "registered": "2026-04-04T06:17:46.456Z",
-      "lastUpdated": "2026-04-04T23:48:31.864Z"
+      "lastUpdated": "2026-04-05T04:16:50.039Z"
     },
     {
       "name": "crud-test",
@@ -44,11 +43,10 @@
       "status": "active",
       "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/crud-test/core.tsx",
       "pages": [
-        "login",
-        "dashboard"
+        "index"
       ],
       "registered": "2026-04-04T06:17:46.866Z",
-      "lastUpdated": "2026-04-04T23:48:32.065Z"
+      "lastUpdated": "2026-04-05T04:16:50.215Z"
     },
     {
       "name": "errors-test",
@@ -68,7 +66,7 @@
         "503"
       ],
       "registered": "2026-04-04T06:17:46.872Z",
-      "lastUpdated": "2026-04-04T23:48:32.111Z"
+      "lastUpdated": "2026-04-05T04:16:50.270Z"
     },
     {
       "name": "events-test",
@@ -76,11 +74,10 @@
       "status": "active",
       "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/events-test/core.tsx",
       "pages": [
-        "login",
-        "dashboard"
+        "index"
       ],
       "registered": "2026-04-04T06:17:46.875Z",
-      "lastUpdated": "2026-04-04T23:48:32.120Z"
+      "lastUpdated": "2026-04-05T04:16:50.325Z"
     },
     {
       "name": "job-test",
@@ -88,11 +85,10 @@
       "status": "active",
       "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/job-test/core.tsx",
       "pages": [
-        "login",
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.972Z",
-      "lastUpdated": "2026-04-04T23:48:32.267Z"
+      "lastUpdated": "2026-04-05T04:16:50.454Z"
     },
     {
       "name": "mail-test",
@@ -100,11 +96,10 @@
       "status": "active",
       "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/mail-test/core.tsx",
       "pages": [
-        "login",
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.980Z",
-      "lastUpdated": "2026-04-04T23:48:32.278Z"
+      "lastUpdated": "2026-04-05T04:16:50.468Z"
     },
     {
       "name": "notification-test",
@@ -112,11 +107,10 @@
       "status": "active",
       "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/notification-test/core.tsx",
       "pages": [
-        "login",
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.988Z",
-      "lastUpdated": "2026-04-04T23:48:32.290Z"
+      "lastUpdated": "2026-04-05T04:16:50.478Z"
     },
     {
       "name": "roles-test",
@@ -124,11 +118,10 @@
       "status": "active",
       "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/roles-test/core.tsx",
       "pages": [
-        "login",
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.998Z",
-      "lastUpdated": "2026-04-04T23:48:32.306Z"
+      "lastUpdated": "2026-04-05T04:16:50.482Z"
     },
     {
       "name": "scheduler-test",
@@ -136,11 +129,10 @@
       "status": "active",
       "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/scheduler-test/core.tsx",
       "pages": [
-        "login",
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:47.006Z",
-      "lastUpdated": "2026-04-04T23:48:32.320Z"
+      "lastUpdated": "2026-04-05T04:16:50.488Z"
     },
     {
       "name": "upload-test",
@@ -148,11 +140,10 @@
       "status": "active",
       "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/upload-test/core.tsx",
       "pages": [
-        "login",
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:47.014Z",
-      "lastUpdated": "2026-04-04T23:48:32.331Z"
+      "lastUpdated": "2026-04-05T04:16:50.492Z"
     }
   ]
 }

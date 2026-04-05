@@ -1,9 +1,8 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — CONTROLLER BUILDER v5.3
-// FIXED: Physical folder now uses namespace-safe name (no hyphens)
-//   inventory-management → InventoryManagement (both namespace AND folder)
+// ARKZEN ENGINE — CONTROLLER BUILDER v5.4 (FIXED)
+// FIXED: Now uses Resource class when resource: true is set
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -21,13 +20,18 @@ class ControllerBuilder
         $controllerName = $api['controller'];
         $modelName      = $api['model'];
         $endpoints      = $api['endpoints'];
+        $useResource    = $api['resource'] ?? false;               // ← ADD THIS
         
         // FIXED: Use $slugNs for directory (namespace-safe), not $name
         $filePath       = app_path("Http/Controllers/Arkzen/{$slugNs}/{$controllerName}.php");
 
         File::ensureDirectoryExists(app_path("Http/Controllers/Arkzen/{$slugNs}"));
 
-        $methods = self::generateMethods($modelName, $endpoints);
+        $methods = self::generateMethods($modelName, $endpoints, $slugNs, $useResource);  // ← ADD params
+
+        $resourceImport = $useResource 
+            ? "use App\\Http\\Resources\\Arkzen\\{$slugNs}\\{$modelName}Resource;\n" 
+            : '';
 
         $content = "<?php
 
@@ -44,7 +48,7 @@ use Illuminate\Routing\Controller;
 use App\Models\Arkzen\\{$slugNs}\\{$modelName};
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-
+{$resourceImport}
 class {$controllerName} extends Controller
 {
 {$methods}
@@ -59,36 +63,38 @@ class {$controllerName} extends Controller
     // GENERATE METHODS
     // ─────────────────────────────────────────────
 
-    private static function generateMethods(string $modelName, array $endpoints): string
+    private static function generateMethods(string $modelName, array $endpoints, string $slugNs, bool $useResource): string
     {
         $methods = [];
         foreach ($endpoints as $name => $endpoint) {
-            $methods[] = self::generateMethod($name, $modelName, $endpoint);
+            $methods[] = self::generateMethod($name, $modelName, $endpoint, $slugNs, $useResource);
         }
         return implode("\n\n", $methods);
     }
 
-    private static function generateMethod(string $name, string $modelName, array $endpoint): string
+    private static function generateMethod(string $name, string $modelName, array $endpoint, string $slugNs, bool $useResource): string
     {
         return match ($name) {
-            'index'   => self::generateIndex($modelName, $endpoint),
-            'show'    => self::generateShow($modelName, $endpoint),
-            'store'   => self::generateStore($modelName, $endpoint),
-            'update'  => self::generateUpdate($modelName, $endpoint),
+            'index'   => self::generateIndex($modelName, $endpoint, $slugNs, $useResource),
+            'show'    => self::generateShow($modelName, $endpoint, $slugNs, $useResource),
+            'store'   => self::generateStore($modelName, $endpoint, $slugNs, $useResource),
+            'update'  => self::generateUpdate($modelName, $endpoint, $slugNs, $useResource),
             'destroy' => self::generateDestroy($modelName, $endpoint),
             default   => self::generateCustomMethod($name, $modelName, $endpoint),
         };
     }
 
     // ─────────────────────────────────────────────
-    // INDEX
+    // INDEX — FIXED to use Resource
     // ─────────────────────────────────────────────
 
-    private static function generateIndex(string $model, array $endpoint): string
+    private static function generateIndex(string $model, array $endpoint, string $slugNs, bool $useResource): string
     {
         $query        = $endpoint['query'] ?? [];
         $searchFields = self::detectSearchFields($query);
         $perPage      = self::extractDefault($query['per_page'] ?? 'integer|default:15');
+        $resourceClass = $useResource ? "{$model}Resource::class" : 'null';
+        $resourceCollection = $useResource ? "{$model}Resource::collection" : '';
 
         $searchLogic = '';
         if ($searchFields) {
@@ -99,6 +105,22 @@ class {$controllerName} extends Controller
         }
 
         $filterLogic = self::generateFilterLogic($query);
+
+        if ($useResource) {
+            return "    /**
+     * {$endpoint['description']}
+     */
+    public function index(Request \$request): JsonResponse
+    {
+        \$query = {$model}::query();
+{$searchLogic}
+{$filterLogic}
+        \$perPage = \$request->get('per_page', {$perPage});
+        \$results = \$query->paginate(\$perPage);
+
+        return response()->json({$model}Resource::collection(\$results));
+    }";
+        }
 
         return "    /**
      * {$endpoint['description']}
@@ -116,12 +138,23 @@ class {$controllerName} extends Controller
     }
 
     // ─────────────────────────────────────────────
-    // SHOW
+    // SHOW — FIXED to use Resource
     // ─────────────────────────────────────────────
 
-    private static function generateShow(string $model, array $endpoint): string
+    private static function generateShow(string $model, array $endpoint, string $slugNs, bool $useResource): string
     {
         $varName = lcfirst($model);
+        
+        if ($useResource) {
+            return "    /**
+     * {$endpoint['description']}
+     */
+    public function show({$model} \${$varName}): JsonResponse
+    {
+        return response()->json(new {$model}Resource(\${$varName}));
+    }";
+        }
+
         return "    /**
      * {$endpoint['description']}
      */
@@ -132,13 +165,29 @@ class {$controllerName} extends Controller
     }
 
     // ─────────────────────────────────────────────
-    // STORE
+    // STORE — FIXED to use Resource
     // ─────────────────────────────────────────────
 
-    private static function generateStore(string $model, array $endpoint): string
+    private static function generateStore(string $model, array $endpoint, string $slugNs, bool $useResource): string
     {
         $validation = self::generateValidation($endpoint['validation'] ?? []);
         $varName    = lcfirst($model);
+
+        if ($useResource) {
+            return "    /**
+     * {$endpoint['description']}
+     */
+    public function store(Request \$request): JsonResponse
+    {
+        \$validated = \$request->validate([
+{$validation}
+        ]);
+
+        \${$varName} = {$model}::create(\$validated);
+
+        return response()->json(new {$model}Resource(\${$varName}), 201);
+    }";
+        }
 
         return "    /**
      * {$endpoint['description']}
@@ -156,13 +205,29 @@ class {$controllerName} extends Controller
     }
 
     // ─────────────────────────────────────────────
-    // UPDATE
+    // UPDATE — FIXED to use Resource
     // ─────────────────────────────────────────────
 
-    private static function generateUpdate(string $model, array $endpoint): string
+    private static function generateUpdate(string $model, array $endpoint, string $slugNs, bool $useResource): string
     {
         $validation = self::generateValidation($endpoint['validation'] ?? []);
         $varName    = lcfirst($model);
+
+        if ($useResource) {
+            return "    /**
+     * {$endpoint['description']}
+     */
+    public function update(Request \$request, {$model} \${$varName}): JsonResponse
+    {
+        \$validated = \$request->validate([
+{$validation}
+        ]);
+
+        \${$varName}->update(\$validated);
+
+        return response()->json(new {$model}Resource(\${$varName}));
+    }";
+        }
 
         return "    /**
      * {$endpoint['description']}
@@ -180,7 +245,7 @@ class {$controllerName} extends Controller
     }
 
     // ─────────────────────────────────────────────
-    // DESTROY
+    // DESTROY — unchanged
     // ─────────────────────────────────────────────
 
     private static function generateDestroy(string $model, array $endpoint): string

@@ -1,8 +1,8 @@
 /* @arkzen:meta
 name: broadcast-test
 version: 1.0.0
-description: Tests Laravel Reverb broadcasting end-to-end. Public channel live counter + private channel authenticated feed.
-auth: true
+description: Tests Laravel Reverb broadcasting end-to-end. Public channel live counter + private channel message feed.
+auth: false
 */
 
 /* @arkzen:config
@@ -10,40 +10,66 @@ toast:
   position: top-right
   duration: 3000
 layout:
-  auth:
-    className: "min-h-screen bg-neutral-50"
   guest:
     className: "min-h-screen bg-neutral-50"
 */
 
 /* @arkzen:database:messages
-columns:
-  content: string
-  user_id: integer
-  channel: string
+table: messages
 timestamps: true
+softDeletes: false
+columns:
+  id:
+    type: integer
+    primary: true
+    autoIncrement: true
+  content:
+    type: string
+    length: 500
+    nullable: false
+  channel:
+    type: string
+    length: 100
+    nullable: false
 */
 
-/* @arkzen:api
-middleware: [auth]
-routes:
-  - GET    /broadcast-test/messages         → index
-  - POST   /broadcast-test/messages         → store
-  - DELETE /broadcast-test/messages/{id}    → destroy
+/* @arkzen:api:messages
+model: Message
+controller: MessageController
+prefix: /api/broadcast-test/messages
+middleware: []
+endpoints:
+  index:
+    method: GET
+    route: /
+    description: Get recent messages
+    response:
+      type: paginated
+  store:
+    method: POST
+    route: /
+    description: Send a message and broadcast it
+    validation:
+      content: required|string|max:500
+    response:
+      type: single
+  destroy:
+    method: DELETE
+    route: /{id}
+    description: Delete a message
+    response:
+      type: message
+      value: Message deleted
 */
 
-/* @arkzen:realtime
+/* @arkzen:realtime:broadcast
+channels:
+  broadcast-test-public:
+    type: public
 events:
   message-sent:
     channel: broadcast-test-public
     type: public
-  private-message:
-    channel: broadcast-test-private
-    type: private
-channels:
-  broadcast-test-private:
-    type: private
-    auth: authenticated
 */
 
 /* @arkzen:components:shared */
@@ -51,71 +77,39 @@ channels:
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { useAuthStore, arkzenFetch } from '@/arkzen/core/stores/authStore'
+import { arkzenFetch } from '@/arkzen/core/stores/authStore'
+
+interface Message {
+  id:         number
+  content:    string
+  channel:    string
+  created_at: string
+}
 
 /* @arkzen:components:shared:end */
 
-/* @arkzen:page:login */
+/* @arkzen:page:index */
 /* @arkzen:page:layout:guest */
-const LoginPage = () => {
-  const { login, isLoading } = useAuthStore()
-  const [email, setEmail]       = useState('test@example.com')
-  const [password, setPassword] = useState('password')
-  const [error, setError]       = useState<string | null>(null)
-
-  const handleSubmit = async () => {
-    setError(null)
-    try { await login(email, password) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Login failed') }
-  }
-
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm">
-        <h1 className="text-xl font-semibold mb-6">Broadcast Test — Login</h1>
-        {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-xl text-sm">{error}</div>}
-        <div className="space-y-3">
-          <input className="arkzen-input w-full" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" />
-          <input className="arkzen-input w-full" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" />
-          <button className="arkzen-btn w-full" onClick={handleSubmit} disabled={isLoading}>
-            {isLoading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-/* @arkzen:page:login:end */
-
-/* @arkzen:page:dashboard */
-/* @arkzen:page:layout:auth */
-const DashboardPage = () => {
-  const { user, logout } = useAuthStore()
-  const [messages, setMessages]   = useState<any[]>([])
-  const [input, setInput]         = useState('')
+const IndexPage = () => {
+  const [messages, setMessages]       = useState<Message[]>([])
+  const [input, setInput]             = useState('')
   const [publicCount, setPublicCount] = useState(0)
-  const [wsStatus, setWsStatus]   = useState<'connecting' | 'connected' | 'error'>('connecting')
+  const [wsStatus, setWsStatus]       = useState<'connecting' | 'connected' | 'error'>('connecting')
   const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
-    // Load existing messages
     arkzenFetch('/api/broadcast-test/messages')
       .then(r => r.json())
       .then(d => setMessages(d.data ?? []))
       .catch(() => {})
 
-    // Connect to Reverb WebSocket
     try {
-      const ws = new WebSocket(`ws://localhost:8080/app/arkzen-key`)
+      const ws = new WebSocket('ws://localhost:8080/app/arkzen-key')
       wsRef.current = ws
 
       ws.onopen = () => {
         setWsStatus('connected')
-        // Subscribe to public channel
-        ws.send(JSON.stringify({
-          event: 'pusher:subscribe',
-          data: { channel: 'broadcast-test-public' }
-        }))
+        ws.send(JSON.stringify({ event: 'pusher:subscribe', data: { channel: 'broadcast-test-public' } }))
       }
 
       ws.onmessage = (e) => {
@@ -127,8 +121,8 @@ const DashboardPage = () => {
         }
       }
 
-      ws.onerror = () => setWsStatus('error')
-      ws.onclose = () => setWsStatus('error')
+      ws.onerror  = () => setWsStatus('error')
+      ws.onclose  = () => setWsStatus('error')
 
       return () => ws.close()
     } catch {
@@ -141,15 +135,17 @@ const DashboardPage = () => {
     try {
       await arkzenFetch('/api/broadcast-test/messages', {
         method: 'POST',
-        body: JSON.stringify({ content: input })
+        body:   JSON.stringify({ content: input }),
       })
       setInput('')
-    } catch (e) {
-      console.error(e)
-    }
+    } catch (e) { console.error(e) }
   }
 
-  const statusColor = { connecting: 'bg-yellow-400', connected: 'bg-green-400', error: 'bg-red-400' }
+  const statusColor = {
+    connecting: 'bg-yellow-400',
+    connected:  'bg-green-400',
+    error:      'bg-red-400',
+  }
 
   return (
     <div className="min-h-screen p-8">
@@ -159,14 +155,11 @@ const DashboardPage = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">📡 Broadcast Test</h1>
-            <p className="text-sm text-neutral-500 mt-1">Logged in as <strong>{user?.name}</strong></p>
+            <p className="text-sm text-neutral-500 mt-1">Public channel — no auth required</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-sm">
-              <div className={`w-2 h-2 rounded-full ${statusColor[wsStatus]}`} />
-              <span className="text-neutral-600 capitalize">{wsStatus}</span>
-            </div>
-            <button className="arkzen-btn-ghost text-sm" onClick={logout}>Logout</button>
+          <div className="flex items-center gap-2 text-sm">
+            <div className={`w-2 h-2 rounded-full ${statusColor[wsStatus]}`} />
+            <span className="text-neutral-600 capitalize">{wsStatus}</span>
           </div>
         </div>
 
@@ -196,7 +189,7 @@ const DashboardPage = () => {
             <button className="arkzen-btn" onClick={sendMessage}>Send</button>
           </div>
           <p className="text-xs text-neutral-400 mt-2">
-            This triggers POST /api/broadcast-test/messages → Laravel broadcasts MessageSent event → all connected clients receive it in real-time.
+            POST /api/broadcast-test/messages → Laravel broadcasts MessageSent → all connected clients receive it in real-time.
           </p>
         </div>
 
@@ -212,19 +205,15 @@ const DashboardPage = () => {
               {messages.map((m, i) => (
                 <div key={i} className="px-5 py-3 flex items-start gap-3">
                   <div className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center text-xs font-medium shrink-0">
-                    {m.user?.name?.[0] ?? '?'}
+                    💬
                   </div>
-                  <div>
-                    <span className="text-sm font-medium">{m.user?.name ?? 'Unknown'}</span>
-                    <p className="text-sm text-neutral-600">{m.content}</p>
-                  </div>
+                  <p className="text-sm text-neutral-700">{m.content}</p>
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        {/* WebSocket error help */}
         {wsStatus === 'error' && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-sm text-amber-800">
             <strong>WebSocket not connected.</strong> Make sure Laravel Reverb is running:{' '}
@@ -235,4 +224,4 @@ const DashboardPage = () => {
     </div>
   )
 }
-/* @arkzen:page:dashboard:end */
+/* @arkzen:page:index:end */
