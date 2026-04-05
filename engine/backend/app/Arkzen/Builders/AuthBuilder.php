@@ -1,7 +1,7 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — AUTH BUILDER v2.0 (PER-TATEMONO)
+// ARKZEN ENGINE — AUTH BUILDER v2.1 (PER-TATEMONO)
 // Auth is now fully isolated per tatemono.
 //
 // Each tatemono with auth:true gets:
@@ -13,6 +13,16 @@
 //
 // Called by ArkzenEngineController::build() during Phase 0.5.
 // setup.js no longer touches auth at all.
+//
+// v2.1 — Added `role` column to all auth users tables.
+//   migrateAuthTables() now always includes `role varchar(20) default 'user'`
+//   on CREATE, and adds it via ALTER if the table already exists (idempotent).
+//   generateUserModel() adds 'role' to $fillable so update/promote/demote
+//   calls go through without mass-assignment guards.
+//   This aligns the engine with CheckRole middleware (MiddlewareBuilder) which
+//   reads $request->user()->role — that field must exist for role:* middleware
+//   to function on any auth:true tatemono.
+// ============================================================
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -76,10 +86,19 @@ class AuthBuilder
                 $table->string('email')->unique();
                 $table->timestamp('email_verified_at')->nullable();
                 $table->string('password');
+                $table->string('role', 20)->default('user'); // Role-based access control
                 $table->rememberToken();
                 $table->timestamps();
             });
             Log::info("[Arkzen Auth] ✓ Created table: {$usersTable}");
+        }
+
+        // Ensure `role` column exists on pre-existing users tables (idempotent upgrade)
+        if (!Schema::connection($dbConn)->hasColumn($usersTable, 'role')) {
+            Schema::connection($dbConn)->table($usersTable, function ($table) {
+                $table->string('role', 20)->default('user')->after('password');
+            });
+            Log::info("[Arkzen Auth] ✓ Added `role` column to existing table: {$usersTable}");
         }
 
         if (!Schema::connection($dbConn)->hasTable($tokensTable)) {
@@ -127,7 +146,7 @@ class AuthBuilder
             . "    use HasApiTokens, Notifiable;\n\n"
             . "    protected \$connection = '{$dbConn}';\n\n"
             . "    protected \$table = '{$usersTable}';\n\n"
-            . "    protected \$fillable = ['name', 'email', 'password'];\n\n"
+            . "    protected \$fillable = ['name', 'email', 'password', 'role'];\n\n"
             . "    protected \$hidden = ['password', 'remember_token'];\n\n"
             . "    protected \$casts = [\n"
             . "        'email_verified_at' => 'datetime',\n"

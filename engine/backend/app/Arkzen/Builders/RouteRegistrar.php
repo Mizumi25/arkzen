@@ -1,10 +1,16 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — ROUTE REGISTRAR v4.4
-// FIXED: Route parameters rewritten from {id} to {modelVar}
+// ARKZEN ENGINE — ROUTE REGISTRAR v4.5
+// FIXED v4.4: Route parameters rewritten from {id} to {modelVar}
 //   so Laravel implicit model binding always works correctly.
 //   e.g. /items/{id} → /items/{item} for Item model
+// FIXED v4.5: auth:true tatemonos now emit a Sanctum::usePersonalAccessTokenModel()
+//   call at the top of their generated route file. Without this, auth:sanctum
+//   middleware on non-auth routes (promote, demote, adminOnly etc.) resolves
+//   tokens against the global default connection — missing the tatemono's
+//   isolated SQLite — and returns 401 Unauthenticated even for valid tokens.
+//   The call is injected once per route file, before any middleware groups.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -23,6 +29,7 @@ class RouteRegistrar
     {
         $name      = $module['name'];
         $slugNs    = EventBuilder::toNamespace($name);             // inventory-management → InventoryManagement
+        $hasAuth   = $module['auth'] ?? false;
         $apis      = $module['apis'];
         $routesDir = base_path('routes/modules');
 
@@ -48,6 +55,16 @@ class RouteRegistrar
         $useBlock    = implode("\n", array_unique($useStatements));
         $groupsBlock = implode("\n\n", $routeGroups);
 
+        // For auth:true tatemonos, swap the Sanctum token model at the top of the
+        // route file so auth:sanctum middleware resolves tokens against the tatemono's
+        // own isolated SQLite connection — not the global default connection.
+        // Without this, tokens written by AuthController are invisible to auth:sanctum
+        // on all other routes, producing 401 Unauthenticated for valid tokens.
+        $sanctumBootstrap = '';
+        if ($hasAuth) {
+            $sanctumBootstrap = "\nuse Laravel\\Sanctum\\Sanctum;\nuse App\\Models\\Arkzen\\{$slugNs}\\PersonalAccessToken as {$slugNs}Token;\n\nSanctum::usePersonalAccessTokenModel({$slugNs}Token::class);\n";
+        }
+
         $content = "<?php
 
 // ============================================================
@@ -59,7 +76,7 @@ class RouteRegistrar
 
 use Illuminate\\Support\\Facades\\Route;
 {$useBlock}
-
+{$sanctumBootstrap}
 {$groupsBlock}
 ";
 

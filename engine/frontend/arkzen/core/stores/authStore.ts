@@ -1,7 +1,19 @@
 // ============================================================
-// ARKZEN ENGINE — GLOBAL AUTH STORE v4.0 (COOKIE + PER-TATEMONO)
+// ARKZEN ENGINE — GLOBAL AUTH STORE v4.1 (COOKIE + PER-TATEMONO)
 //
-// CHANGES v4.0:
+// CHANGES v4.1:
+//   - arkzenFetch now sends `Accept: application/json` on every
+//     request. Without this header Laravel's unauthenticated handler
+//     returns a redirect to route('login') instead of a 401 JSON
+//     response, causing "Route [login] not defined" errors on all
+//     auth-protected API routes.
+//   - Added `refreshUser()` as a public alias for `fetchMe()`.
+//     Tatemonos that call refreshUser() after promote/demote now
+//     work correctly. fetchMe() remains for backwards compatibility.
+//   - All internal fetch() calls (login, register, logout, fetchMe)
+//     also gain `Accept: application/json` for consistency.
+//
+// CHANGES v4.0 (kept):
 //   - Token now written to cookie on login/register so
 //     middleware.ts can read it server-side for instant
 //     redirects — no hydration flash.
@@ -109,12 +121,13 @@ interface AuthState {
   isAuthenticated: boolean
   isLoading:       boolean
 
-  login:    (email: string, password: string) => Promise<void>
-  register: (name: string, email: string, password: string, passwordConfirmation: string) => Promise<void>
-  logout:   () => Promise<void>
-  fetchMe:  () => Promise<void>
-  setToken: (token: string, user: ArkzenUser) => void
-  clear:    () => void
+  login:       (email: string, password: string) => Promise<void>
+  register:    (name: string, email: string, password: string, passwordConfirmation: string) => Promise<void>
+  logout:      () => Promise<void>
+  fetchMe:     () => Promise<void>
+  refreshUser: () => Promise<void>   // alias for fetchMe — call after role changes
+  setToken:    (token: string, user: ArkzenUser) => void
+  clear:       () => void
 }
 
 // ─────────────────────────────────────────────
@@ -135,7 +148,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const res = await fetch(`${getAuthBase()}/login`, {
             method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             body:    JSON.stringify({ email, password }),
           })
 
@@ -158,7 +171,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const res = await fetch(`${getAuthBase()}/register`, {
             method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             body:    JSON.stringify({
               name,
               email,
@@ -188,6 +201,7 @@ export const useAuthStore = create<AuthState>()(
             method:  'POST',
             headers: {
               'Content-Type':  'application/json',
+              'Accept':        'application/json',
               'Authorization': `Bearer ${token}`,
             },
           })
@@ -208,7 +222,10 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true })
         try {
           const res = await fetch(`${getAuthBase()}/me`, {
-            headers: { 'Authorization': `Bearer ${token}` },
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept':        'application/json',
+            },
           })
 
           if (!res.ok) {
@@ -224,6 +241,13 @@ export const useAuthStore = create<AuthState>()(
         } finally {
           set({ isLoading: false })
         }
+      },
+
+      // ── Refresh User ─────────────────────────
+      // Call after role changes (promote/demote) to re-fetch /auth/me
+      // and update the store with the new role from the DB.
+      refreshUser: async () => {
+        await get().fetchMe()
       },
 
       // ── Manual setToken (for SSO / custom flows) ──
@@ -264,6 +288,7 @@ export async function arkzenFetch(url: string, options: RequestInit = {}): Promi
     ...options,
     headers: {
       'Content-Type':  'application/json',
+      'Accept':        'application/json',
       ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...options.headers,
     },

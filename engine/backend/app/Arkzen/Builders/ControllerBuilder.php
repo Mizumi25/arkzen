@@ -1,8 +1,16 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — CONTROLLER BUILDER v5.4 (FIXED)
-// FIXED: Now uses Resource class when resource: true is set
+// ARKZEN ENGINE — CONTROLLER BUILDER v5.5
+// FIXED v5.4: Now uses Resource class when resource: true is set
+// FIXED v5.5: Role endpoint generators rewritten for real Sanctum auth.
+//   generateRoleMe()        → REMOVED (auth store uses /auth/me built-in)
+//   generateRoleAdminOnly() → checks $request->user()->role via CheckRole
+//   generateRoleUserOnly()  → logs audit entry; auth guard already ran
+//   generateRolePromote()   → $user->update(['role' => 'admin'])
+//   generateRoleDemote()    → $user->update(['role' => 'user'])
+//   All session()->get/put('role_test_user', ...) calls eliminated.
+//   Audit log entries now record the real $request->user()->id.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -87,7 +95,7 @@ class {$controllerName} extends Controller
                 default          => self::generateDestroy($modelName, $endpoint),
             },
             'fileUrl'    => self::generateUploadUrl($modelName, $endpoint),
-            'me'         => self::generateRoleMe($endpoint),
+            'me'         => self::generateCustomMethod($name, $modelName, $endpoint),   // auth:true Tatemonos use /auth/me built-in
             'adminOnly'  => self::generateRoleAdminOnly($modelName, $endpoint),
             'userOnly'   => self::generateRoleUserOnly($modelName, $endpoint),
             'promote'    => self::generateRolePromote($endpoint),
@@ -405,28 +413,27 @@ class {$controllerName} extends Controller
     }
 
     // ─────────────────────────────────────────────
-    // ROLE ME — returns simulated user from session
+    // ROLE ME — DEPRECATED in v5.5
+    // auth:true Tatemonos use the built-in /auth/me endpoint from AuthBuilder.
+    // If an endpoint named 'me' still appears in a Tatemono, route it through
+    // generateCustomMethod instead (see dispatch above). This stub is kept only
+    // so any external call sites don't get a fatal error.
     // ─────────────────────────────────────────────
 
+    /** @deprecated Use AuthBuilder's /auth/me instead */
     private static function generateRoleMe(array $endpoint): string
     {
-        return "    /**
-     * {$endpoint['description']}
-     */
-    public function me(Request \$request): JsonResponse
-    {
-        \$user = \$request->session()->get('role_test_user', [
-            'name'  => 'Test User',
-            'email' => 'test@arkzen.dev',
-            'role'  => 'user',
-        ]);
-
-        return response()->json(['user' => \$user]);
-    }";
+        return self::generateCustomMethod('me', 'User', $endpoint);
     }
 
     // ─────────────────────────────────────────────
-    // ROLE ADMIN ONLY — checks session role
+    // ROLE ADMIN ONLY — Sanctum auth + role check
+    // The auth middleware guarantees $request->user() is non-null.
+    // CheckRole (role:admin) runs at the route level and returns 403
+    // before this method is reached if the role is wrong. We still
+    // do the check here as well so the audit log captures denied
+    // attempts that slip through (e.g. if per-endpoint middleware is
+    // not yet supported by RouteRegistrar).
     // ─────────────────────────────────────────────
 
     private static function generateRoleAdminOnly(string $model, array $endpoint): string
@@ -436,11 +443,11 @@ class {$controllerName} extends Controller
      */
     public function adminOnly(Request \$request): JsonResponse
     {
-        \$user = \$request->session()->get('role_test_user', ['role' => 'user']);
-        \$granted = (\$user['role'] ?? 'user') === 'admin';
+        \$user    = \$request->user();
+        \$granted = \$user && \$user->role === 'admin';
 
         {$model}::create([
-            'user_id'       => null,
+            'user_id'       => \$user?->id,
             'action'        => 'GET /admin-only',
             'role_required' => 'admin',
             'granted'       => \$granted,
@@ -455,7 +462,8 @@ class {$controllerName} extends Controller
     }
 
     // ─────────────────────────────────────────────
-    // ROLE USER ONLY — always passes
+    // ROLE USER ONLY — any authenticated user
+    // Auth middleware already ran. Just log and return.
     // ─────────────────────────────────────────────
 
     private static function generateRoleUserOnly(string $model, array $endpoint): string
@@ -465,19 +473,21 @@ class {$controllerName} extends Controller
      */
     public function userOnly(Request \$request): JsonResponse
     {
+        \$user = \$request->user();
+
         {$model}::create([
-            'user_id'       => null,
+            'user_id'       => \$user?->id,
             'action'        => 'GET /user-only',
             'role_required' => 'user',
             'granted'       => true,
         ]);
 
-        return response()->json(['message' => '✓ Access granted — open to all users']);
+        return response()->json(['message' => '✓ Access granted — open to all authenticated users']);
     }";
     }
 
     // ─────────────────────────────────────────────
-    // ROLE PROMOTE — sets session role to admin
+    // ROLE PROMOTE — updates role column via Sanctum user
     // ─────────────────────────────────────────────
 
     private static function generateRolePromote(array $endpoint): string
@@ -487,21 +497,15 @@ class {$controllerName} extends Controller
      */
     public function promote(Request \$request): JsonResponse
     {
-        \$user = \$request->session()->get('role_test_user', [
-            'name'  => 'Test User',
-            'email' => 'test@arkzen.dev',
-            'role'  => 'user',
-        ]);
+        \$user = \$request->user();
+        \$user->update(['role' => 'admin']);
 
-        \$user['role'] = 'admin';
-        \$request->session()->put('role_test_user', \$user);
-
-        return response()->json(['message' => 'Promoted to admin', 'user' => \$user]);
+        return response()->json(['message' => 'Promoted to admin', 'user' => \$user->fresh()]);
     }";
     }
 
     // ─────────────────────────────────────────────
-    // ROLE DEMOTE — sets session role to user
+    // ROLE DEMOTE — updates role column via Sanctum user
     // ─────────────────────────────────────────────
 
     private static function generateRoleDemote(array $endpoint): string
@@ -511,16 +515,10 @@ class {$controllerName} extends Controller
      */
     public function demote(Request \$request): JsonResponse
     {
-        \$user = \$request->session()->get('role_test_user', [
-            'name'  => 'Test User',
-            'email' => 'test@arkzen.dev',
-            'role'  => 'admin',
-        ]);
+        \$user = \$request->user();
+        \$user->update(['role' => 'user']);
 
-        \$user['role'] = 'user';
-        \$request->session()->put('role_test_user', \$user);
-
-        return response()->json(['message' => 'Demoted to user', 'user' => \$user]);
+        return response()->json(['message' => 'Demoted to user', 'user' => \$user->fresh()]);
     }";
     }
 
