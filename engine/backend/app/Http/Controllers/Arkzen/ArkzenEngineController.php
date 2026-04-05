@@ -52,6 +52,7 @@ class ArkzenEngineController extends Controller
     public function build(Request $request): JsonResponse
     {
         $payload = $request->all();
+        file_put_contents(base_path('consoles_debug.json'), json_encode($payload['consoles'] ?? [], JSON_PRETTY_PRINT));
         $steps   = [];
         $errors  = [];
         $name    = $payload['name'] ?? 'unknown';
@@ -72,7 +73,18 @@ class ArkzenEngineController extends Controller
         $databases = $module['databases'];
         $apis      = $module['apis'];
         $hasAuth   = $module['auth'];
-        $isStatic  = empty($databases) && empty($apis) && !$hasAuth;
+        $hasBackend = 
+            !empty($databases) ||
+            !empty($apis) ||
+            $hasAuth ||
+            !empty($module['events']) ||
+            !empty($module['realtime']) ||
+            !empty($module['jobs']) ||
+            !empty($module['notifications']) ||
+            !empty($module['mails']) ||
+            !empty($module['consoles']);
+        
+        $isStatic = !$hasBackend;
 
         if ($isStatic) {
             return response()->json([
@@ -185,7 +197,7 @@ class ArkzenEngineController extends Controller
         }
 
         // ── PHASE 12: Console Commands ────────────
-        if (!empty($module['console'])) {
+        if (!empty($module['consoles'])) {
             Log::info("[Arkzen] Phase 12: Console");
             $this->run("Console Commands", $steps, $errors, fn() => ConsoleBuilder::build($module));
         }

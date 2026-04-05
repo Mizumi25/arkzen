@@ -33,24 +33,33 @@ routes:
   - POST /scheduler-test/runs/clear     → clearRuns
 */
 
-/* @arkzen:console
-cleanup-temp:
-  signature: scheduler-test:cleanup-temp
-  description: Deletes temporary files older than 24h
-  schedule: "0 * * * *"
-generate-report:
-  signature: scheduler-test:generate-report
-  description: Generates a daily activity report
-  schedule: "0 8 * * *"
-ping-health:
-  signature: scheduler-test:ping-health
-  description: Pings all services and records health status
-  schedule: "*/5 * * * *"
-sync-data:
-  signature: scheduler-test:sync-data
-  description: Syncs data from external source
-  schedule: "*/15 * * * *"
+/* @arkzen:console:cleanup-temp
+signature: scheduler-test:cleanup-temp
+description: Deletes temporary files older than 24h
+schedule: "0 * * * *"
 */
+/* @arkzen:console:cleanup-temp:end */
+
+/* @arkzen:console:generate-report
+signature: scheduler-test:generate-report
+description: Generates a daily activity report
+schedule: "0 8 * * *"
+*/
+/* @arkzen:console:generate-report:end */
+
+/* @arkzen:console:ping-health
+signature: scheduler-test:ping-health
+description: Pings all services and records health status
+schedule: "*/5 * * * *"
+*/
+/* @arkzen:console:ping-health:end */
+
+/* @arkzen:console:sync-data
+signature: scheduler-test:sync-data
+description: Syncs data from external source
+schedule: "*/15 * * * *"
+*/
+/* @arkzen:console:sync-data:end */
 
 /* @arkzen:components:shared */
 
@@ -60,8 +69,6 @@ import React, { useState, useEffect } from 'react'
 import { arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 /* @arkzen:components:shared:end */
-
-
 
 /* @arkzen:page:dashboard */
 /* @arkzen:page:layout:guest */

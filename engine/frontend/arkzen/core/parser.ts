@@ -1,13 +1,5 @@
 // ============================================================
 // ARKZEN ENGINE — PARSER v5.0
-// Key changes v5:
-//   - meta.layout removed — layout is now per-page
-//   - extractAllNamedSections() for ALL repeatable markers
-//   - parseAllPages() extracts per-page layout declarations
-//   - parseAllLayouts() for @arkzen:layout:name blocks
-//   - parseAllComponents() — components now repeatable
-//   - ALL markers repeatable: store, events, jobs, etc.
-//   - Topological sort for migrations (auto foreign key ordering)
 // ============================================================
 
 import * as fs   from 'fs'
@@ -22,6 +14,13 @@ import type {
   ArkzenSection,
   ArkzenPage,
   ArkzenLayout,
+  ArkzenStore,
+  ArkzenRealtime,
+  ArkzenEvent,
+  ArkzenJob,
+  ArkzenNotification,
+  ArkzenMail,
+  ArkzenConsole,
 } from '../types'
 
 // ─────────────────────────────────────────────
@@ -66,7 +65,6 @@ function extractSectionWithPosition(content: string, marker: string): ArkzenSect
 
 // ─────────────────────────────────────────────
 // MULTI SECTION EXTRACTOR — YAML blocks (no identifiers)
-// For @arkzen:database and @arkzen:api (YAML comment blocks)
 // ─────────────────────────────────────────────
 
 function extractAllSections(content: string, marker: string): string[] {
@@ -81,15 +79,10 @@ function extractAllSections(content: string, marker: string): string[] {
     const openingEnd = content.indexOf('*/', startIndex)
     if (openingEnd === -1) break
 
-    // Slice everything between the marker keyword and the closing */
-    // This may start with :identifier (e.g. ":products\ntable: products")
-    // or be plain YAML (v4 compat). Strip the identifier prefix line if present.
     let rawSlice = content
       .slice(startIndex + startMarker.length, openingEnd)
       .trim()
 
-    // If the content starts with :identifier, strip that first token
-    // e.g. ":products\ntable: products" → "table: products"
     rawSlice = rawSlice.replace(/^:[a-zA-Z0-9_-]+\s*\n?/, '').trim()
 
     if (rawSlice) {
@@ -104,8 +97,6 @@ function extractAllSections(content: string, marker: string): string[] {
 
 // ─────────────────────────────────────────────
 // NAMED SECTION EXTRACTOR — v5
-// For @arkzen:marker:name ... @arkzen:marker:name:end
-// Returns array of { name, raw, start, end }
 // ─────────────────────────────────────────────
 
 function extractAllNamedSections(content: string, marker: string): ArkzenSection[] {
@@ -113,32 +104,25 @@ function extractAllNamedSections(content: string, marker: string): ArkzenSection
   let searchFrom = 0
 
   while (true) {
-    // Find next opening: /* @arkzen:marker:
     const openPattern = `/* @arkzen:${marker}:`
     const openIdx = content.indexOf(openPattern, searchFrom)
     if (openIdx === -1) break
 
-    // Extract the identifier (everything until whitespace or */)
     const afterOpen = content.slice(openIdx + openPattern.length)
     const identMatch = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
     if (!identMatch) { searchFrom = openIdx + openPattern.length; continue }
 
     const identifier = identMatch[1]
 
-    // Skip :end markers
     if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
 
-    // Find end of opening comment
     const openCommentEnd = content.indexOf('*/', openIdx)
     if (openCommentEnd === -1) break
 
-    // Find closing marker: /* @arkzen:marker:identifier:end */
     const closeMarker = `/* @arkzen:${marker}:${identifier}:end */`
     const closeIdx = content.indexOf(closeMarker, openCommentEnd)
     if (closeIdx === -1) { searchFrom = openCommentEnd + 2; continue }
 
-    // Extract raw content between opening comment close and closing marker
-    // Also handle per-page layout declarations inside the block
     const raw = content.slice(openCommentEnd + 2, closeIdx).trim()
 
     results.push({
@@ -208,13 +192,11 @@ function parseAllDatabases(content: string): ArkzenDatabase[] {
     })
   }
 
-  // v5: Topological sort — auto-order by foreign key dependencies
   return topologicalSort(result)
 }
 
 // ─────────────────────────────────────────────
-// TOPOLOGICAL SORT — v5 Decision 7
-// Auto-orders migrations so parent tables run before children
+// TOPOLOGICAL SORT
 // ─────────────────────────────────────────────
 
 function topologicalSort(databases: ArkzenDatabase[]): ArkzenDatabase[] {
@@ -255,8 +237,7 @@ function topologicalSort(databases: ArkzenDatabase[]): ArkzenDatabase[] {
 }
 
 // ─────────────────────────────────────────────
-// PARSE ALL API BLOCKS — FIXED
-// Now includes resource, policy, factory fields
+// PARSE ALL API BLOCKS
 // ─────────────────────────────────────────────
 
 function parseAllApis(content: string): ArkzenApi[] {
@@ -279,9 +260,9 @@ function parseAllApis(content: string): ArkzenApi[] {
       prefix:     String(parsed.prefix),
       middleware: (parsed.middleware as string[]) ?? [],
       endpoints:  (parsed.endpoints  as ArkzenApi['endpoints']) ?? {},
-      resource:   parsed.resource ?? false,   // ← ADDED
-      policy:     parsed.policy ?? false,     // ← ADDED
-      factory:    parsed.factory ?? false,    // ← ADDED
+      resource:   parsed.resource ?? false,
+      policy:     parsed.policy ?? false,
+      factory:    parsed.factory ?? false,
     })
   }
 
@@ -289,9 +270,7 @@ function parseAllApis(content: string): ArkzenApi[] {
 }
 
 // ─────────────────────────────────────────────
-// PARSE ALL PAGES — v5
-// Extracts @arkzen:page:name blocks with per-page layout
-// Layout declared as: /* @arkzen:page:layout:guest */
+// PARSE ALL PAGES
 // ─────────────────────────────────────────────
 
 function parseAllPages(content: string): ArkzenPage[] {
@@ -309,30 +288,24 @@ function parseAllPages(content: string): ArkzenPage[] {
 
     const pageName = identMatch[1]
 
-    // Skip :end and :layout markers
     if (pageName === 'end' || pageName === 'layout') {
       searchFrom = openIdx + openPattern.length
       continue
     }
 
-    // Find end of opening comment */
     const openCommentEnd = content.indexOf('*/', openIdx)
     if (openCommentEnd === -1) break
 
-    // Find closing marker
     const closeMarker = `/* @arkzen:page:${pageName}:end */`
     const closeIdx = content.indexOf(closeMarker, openCommentEnd)
     if (closeIdx === -1) { searchFrom = openCommentEnd + 2; continue }
 
-    // Raw content between opening comment and closing marker
     let raw = content.slice(openCommentEnd + 2, closeIdx).trim()
 
-    // Extract layout from @arkzen:page:layout:X declaration inside the block
-    let layout: string = 'auth'  // default
+    let layout: string = 'auth'
     const layoutMatch = raw.match(/\/\* @arkzen:page:layout:([a-zA-Z0-9_-]+) \*\//)
     if (layoutMatch) {
       layout = layoutMatch[1]
-      // Remove layout declaration line from raw code
       raw = raw.replace(/\/\* @arkzen:page:layout:[a-zA-Z0-9_-]+ \*\/\n?/, '').trim()
     }
 
@@ -351,14 +324,12 @@ function parseAllPages(content: string): ArkzenPage[] {
 }
 
 // ─────────────────────────────────────────────
-// PARSE ALL CUSTOM LAYOUTS — v5
-// @arkzen:layout:name ... @arkzen:layout:name:end
+// PARSE ALL CUSTOM LAYOUTS
 // ─────────────────────────────────────────────
 
 function parseAllLayouts(content: string): ArkzenLayout[] {
   const sections = extractAllNamedSections(content, 'layout')
   return sections.map(s => {
-    // Extract name from the marker — re-parse from content
     const marker = content.slice(s.start)
     const nameMatch = marker.match(/\/\* @arkzen:layout:([a-zA-Z0-9_-]+)/)
     const name = nameMatch ? nameMatch[1] : 'unknown'
@@ -367,17 +338,23 @@ function parseAllLayouts(content: string): ArkzenLayout[] {
 }
 
 // ─────────────────────────────────────────────
-// PARSE ALL NAMED CODE SECTIONS (store, events, jobs, etc.)
-// v5: all repeatable with identifiers
+// PARSE ALL NAMED CODE SECTIONS (parsed as YAML)
 // ─────────────────────────────────────────────
 
-function parseAllNamedCode(content: string, marker: string): ArkzenSection[] {
-  return extractAllNamedSections(content, marker)
+function parseAllNamedCodeAsYaml<T = Record<string, unknown>>(content: string, marker: string): T[] {
+  const sections = extractAllNamedSections(content, marker)
+  return sections.map(section => {
+    try {
+      return yaml.load(section.raw) as T
+    } catch (e) {
+      console.error(`[Arkzen Parser] Failed to parse ${marker} YAML:`, e)
+      return {} as T
+    }
+  })
 }
 
 // ─────────────────────────────────────────────
-// PARSE ALL COMPONENTS — v5
-// @arkzen:components:identifier
+// PARSE ALL COMPONENTS
 // ─────────────────────────────────────────────
 
 function parseAllComponents(content: string): ArkzenSection[] {
@@ -467,14 +444,14 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   const layouts   = parseAllLayouts(content)
   const components = parseAllComponents(content)
 
-  // Repeatable sections
-  const stores        = parseAllNamedCode(content, 'store')
-  const realtimes     = parseAllNamedCode(content, 'realtime')
-  const events        = parseAllNamedCode(content, 'events')
-  const jobs          = parseAllNamedCode(content, 'jobs')
-  const notifications = parseAllNamedCode(content, 'notifications')
-  const mails         = parseAllNamedCode(content, 'mail')
-  const consoles      = parseAllNamedCode(content, 'console')
+  // Parse all named sections as YAML (uniform frontend parsing)
+  const stores        = parseAllNamedCodeAsYaml<ArkzenStore>(content, 'store')
+  const realtimes     = parseAllNamedCodeAsYaml<ArkzenRealtime>(content, 'realtime')
+  const events        = parseAllNamedCodeAsYaml<ArkzenEvent>(content, 'events')
+  const jobs          = parseAllNamedCodeAsYaml<ArkzenJob>(content, 'jobs')
+  const notifications = parseAllNamedCodeAsYaml<ArkzenNotification>(content, 'notifications')
+  const mails         = parseAllNamedCodeAsYaml<ArkzenMail>(content, 'mail')
+  const consoles      = parseAllNamedCodeAsYaml<ArkzenConsole>(content, 'console')
 
   const animation  = extractSectionWithPosition(content, 'animation') ?? undefined
 
@@ -484,7 +461,18 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   validateNoDuplicateControllers(apis)
   validatePages(pages)
 
-  const isStatic = databases.length === 0 && apis.length === 0
+  const hasBackend = 
+    databases.length > 0 ||
+    apis.length > 0 ||
+    stores.length > 0 ||
+    events.length > 0 ||
+    realtimes.length > 0 ||
+    jobs.length > 0 ||
+    notifications.length > 0 ||
+    mails.length > 0 ||
+    consoles.length > 0
+  
+  const isStatic = !hasBackend
 
   const parsed: ParsedTatemono = {
     filePath,
@@ -511,6 +499,7 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   console.log(`[Arkzen Parser]   Pages (${pages.length}): ${pages.map(p => `${p.name}[${p.layout}]`).join(', ')}`)
   if (databases.length) console.log(`[Arkzen Parser]   Tables (${databases.length}): ${databases.map(d => d.table).join(', ')}`)
   if (apis.length)      console.log(`[Arkzen Parser]   Resources (${apis.length}): ${apis.map(a => a.model).join(', ')}`)
+  if (consoles.length)  console.log(`[Arkzen Parser]   Console (${consoles.length}): ${consoles.length} command(s)`)
 
   return parsed
 }

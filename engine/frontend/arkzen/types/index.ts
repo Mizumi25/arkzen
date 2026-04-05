@@ -1,20 +1,13 @@
 // ============================================================
 // ARKZEN ENGINE — TYPE DEFINITIONS v5.0
-// Key changes:
-//   - meta.layout removed (per-page layout now)
-//   - pages[] array replaces single page
-//   - layouts[] for custom layouts
-//   - ALL markers are now repeatable with identifiers
-//   - validator types added
 // ============================================================
 
 export interface ArkzenMeta {
   name: string
   version: string
   description: string
-  auth: boolean          // enables global auth guard
+  auth: boolean
   dependencies: string[]
-  // NOTE: layout is now per-page, not global — removed from meta
 }
 
 export interface ArkzenConfigOverride {
@@ -41,7 +34,6 @@ export interface ArkzenConfigOverride {
     size?: string
     animation?: string
   }
-  // v5: per-layout class config
   layout?: {
     guest?: {
       className?: string
@@ -123,9 +115,41 @@ export interface ArkzenApi {
   prefix: string
   middleware: string[]
   endpoints: Record<string, ArkzenEndpoint>
-  resource?: boolean   // ← ADD THIS
-  policy?: boolean     // ← ADD THIS
-  factory?: boolean    // ← ADD THIS
+  resource?: boolean
+  policy?: boolean
+  factory?: boolean
+}
+
+// NEW: Interfaces for parsed named sections
+export interface ArkzenStore {
+  [key: string]: unknown
+}
+
+export interface ArkzenRealtime {
+  [key: string]: unknown
+}
+
+export interface ArkzenEvent {
+  [key: string]: unknown
+}
+
+export interface ArkzenJob {
+  [key: string]: unknown
+}
+
+export interface ArkzenNotification {
+  [key: string]: unknown
+}
+
+export interface ArkzenMail {
+  [key: string]: unknown
+}
+
+export interface ArkzenConsole {
+  signature: string
+  description: string
+  schedule?: string
+  [key: string]: unknown
 }
 
 export interface ArkzenSection {
@@ -134,7 +158,6 @@ export interface ArkzenSection {
   end: number
 }
 
-// v5: per-page layout
 export type ArkzenPageLayout = 'guest' | 'auth' | string
 
 export interface ArkzenPage {
@@ -163,13 +186,13 @@ export interface ParsedTatemono {
   pages:     ArkzenPage[]
   layouts:   ArkzenLayout[]
 
-  stores:        ArkzenSection[]
-  realtimes:     ArkzenSection[]
-  events:        ArkzenSection[]
-  jobs:          ArkzenSection[]
-  notifications: ArkzenSection[]
-  mails:         ArkzenSection[]
-  consoles:      ArkzenSection[]
+  stores:        ArkzenStore[]
+  realtimes:     ArkzenRealtime[]
+  events:        ArkzenEvent[]
+  jobs:          ArkzenJob[]
+  notifications: ArkzenNotification[]
+  mails:         ArkzenMail[]
+  consoles:      ArkzenConsole[]
   components:    ArkzenSection[]
 
   animation?: ArkzenSection

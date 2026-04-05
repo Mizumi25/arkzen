@@ -28,7 +28,7 @@ class ConsoleBuilder
 {
     public static function build(array $module): void
     {
-        $commands = $module['console'] ?? [];
+        $commands = $module['consoles'] ?? [];
         if (empty($commands)) return;
 
         $slug   = $module['name'];                          // tatemono slug e.g. inventory-management

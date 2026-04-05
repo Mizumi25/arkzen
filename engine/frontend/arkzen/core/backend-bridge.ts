@@ -1,19 +1,11 @@
 // ============================================================
 // ARKZEN ENGINE — BACKEND BRIDGE v5.1
-// Key changes v5.1:
-//   - Now sends events, realtimes, jobs, notifications, mails,
-//     consoles sections to backend so their builders actually run
-//   - Early-return static check now includes all section types
 // ============================================================
 
-import type { ParsedTatemono, ArkzenSection } from '../types'
+import type { ParsedTatemono } from '../types'
 
 const BACKEND_URL          = process.env.ARKZEN_BACKEND_URL   ?? 'http://localhost:8000'
 const ARKZEN_ENGINE_SECRET = process.env.ARKZEN_ENGINE_SECRET ?? 'arkzen-engine-secret'
-
-function sectionsToRaw(sections: ArkzenSection[]): string[] {
-  return sections.map(s => s.raw)
-}
 
 export async function triggerBackendBuild(tatemono: ParsedTatemono): Promise<void> {
   const hasBackend =
@@ -57,12 +49,12 @@ export async function triggerBackendBuild(tatemono: ParsedTatemono): Promise<voi
       policy:     api.policy     ?? false,
       factory:    api.factory    ?? false,
     })),
-    events:        sectionsToRaw(tatemono.events),
-    realtimes:     sectionsToRaw(tatemono.realtimes),
-    jobs:          sectionsToRaw(tatemono.jobs),
-    notifications: sectionsToRaw(tatemono.notifications),
-    mails:         sectionsToRaw(tatemono.mails),
-    consoles:      sectionsToRaw(tatemono.consoles),
+    events:        tatemono.events,
+    realtimes:     tatemono.realtimes,
+    jobs:          tatemono.jobs,
+    notifications: tatemono.notifications,
+    mails:         tatemono.mails,
+    consoles:      tatemono.consoles,
   }
 
   try {
@@ -98,10 +90,6 @@ export async function triggerBackendBuild(tatemono: ParsedTatemono): Promise<voi
     throw error
   }
 }
-
-// ─────────────────────────────────────────────
-// TRIGGER REMOVE — v5
-// ─────────────────────────────────────────────
 
 export async function triggerBackendRemove(
   tatemononName: string,
