@@ -1,7 +1,7 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — MAIL BUILDER v2.1 (FIXED)
+// ARKZEN ENGINE — MAIL BUILDER v2.2 (FIXED)
 // Generates Laravel Mailable classes + blade view stubs.
 // Declared in @arkzen:mail section.
 //
@@ -10,8 +10,11 @@
 //   Namespace: App\Mail\Arkzen\{slugNs}
 //   View:      resources/views/emails/arkzen/{slug}/{name}.blade.php
 //
-// FIXED: Physical directory now uses $slugNs (namespace-safe name)
+// FIXED v2.1: Physical directory now uses $slugNs (namespace-safe name)
 // Note: View directory still uses original $slug for URL readability
+// FIXED v2.2: Now reads $module['mails'] (plural) to match ModuleReader
+//   output. Previously read $module['mail'] (singular) — always empty,
+//   so no Mail classes or Blade views were ever generated.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -23,7 +26,7 @@ class MailBuilder
 {
     public static function build(array $module): void
     {
-        $mails = $module['mail'] ?? [];
+        $mails = $module['mails'] ?? [];
         if (empty($mails)) return;
 
         $slug   = $module['name'];                          // tatemono slug e.g. inventory-management

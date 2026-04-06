@@ -1,7 +1,7 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — BROADCAST BUILDER v2.1 (FIXED)
+// ARKZEN ENGINE — BROADCAST BUILDER v2.2 (FIXED)
 // Generates Laravel Broadcast Event classes for Reverb.
 // Declared in @arkzen:realtime section.
 //
@@ -9,7 +9,10 @@
 //   Path:      app/Events/Arkzen/{slugNs}/Broadcast/{ClassName}.php
 //   Namespace: App\Events\Arkzen\{slugNs}\Broadcast
 //
-// FIXED: Physical directory now uses $slugNs (namespace-safe name)
+// FIXED v2.1: Physical directory now uses $slugNs
+// FIXED v2.2: Now reads $module['realtimes'] (plural) to match ModuleReader
+//   output. Previously read $module['realtime'] (singular) — always empty,
+//   so no broadcast event files were ever generated. (namespace-safe name)
 //   inventory-management → InventoryManagement (both namespace AND folder)
 //
 // Works with ChannelBuilder — Broadcast pushes data,
@@ -25,7 +28,7 @@ class BroadcastBuilder
 {
     public static function build(array $module): void
     {
-        $realtime = $module['realtime'] ?? [];
+        $realtime = $module['realtimes'] ?? [];
         if (empty($realtime['events'])) return;
 
         $slug   = $module['name'];                          // tatemono slug e.g. inventory-management

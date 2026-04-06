@@ -1,9 +1,18 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — ENGINE CONTROLLER v5.2 (FIXED)
+// ARKZEN ENGINE — ENGINE CONTROLLER v5.3 (FIXED)
 // PATCHED: remove() now uses $slugNs (camel case) to match fixed builders
 //          build() registers isolated DB connection before migrations.
+// FIXED v5.3: Three module key mismatches between ModuleReader output
+//   and the phase checks here — caused broadcast, mail, and console
+//   builders to never run even when those sections were declared:
+//     $module['realtime']  → $module['realtimes']  (Phase 9)
+//     $module['mail']      → $module['mails']       (Phase 11b)
+//     $module['console']   → $module['consoles']    (Phase 12)
+//   Also fixed $isStatic check — previously only checked databases/apis/auth,
+//   so tatemonos with only events/jobs/mail/console sections were treated
+//   as static and the entire build was skipped before phase 8.
 // ============================================================
 
 namespace App\Http\Controllers\Arkzen;
@@ -52,7 +61,6 @@ class ArkzenEngineController extends Controller
     public function build(Request $request): JsonResponse
     {
         $payload = $request->all();
-        file_put_contents(base_path('consoles_debug.json'), json_encode($payload['consoles'] ?? [], JSON_PRETTY_PRINT));
         $steps   = [];
         $errors  = [];
         $name    = $payload['name'] ?? 'unknown';
@@ -73,18 +81,13 @@ class ArkzenEngineController extends Controller
         $databases = $module['databases'];
         $apis      = $module['apis'];
         $hasAuth   = $module['auth'];
-        $hasBackend = 
-            !empty($databases) ||
-            !empty($apis) ||
-            $hasAuth ||
-            !empty($module['events']) ||
-            !empty($module['realtime']) ||
-            !empty($module['jobs']) ||
-            !empty($module['notifications']) ||
-            !empty($module['mails']) ||
-            !empty($module['consoles']);
-        
-        $isStatic = !$hasBackend;
+        // FIXED v5.3: Also check all section types — previously a tatemono with only
+        // events/jobs/mail/console and no databases/apis would be treated as static
+        // and skip the entire build before reaching phases 8-12.
+        $isStatic  = empty($databases) && empty($apis) && !$hasAuth
+            && empty($module['events']) && empty($module['realtimes'])
+            && empty($module['jobs'])   && empty($module['notifications'])
+            && empty($module['mails'])  && empty($module['consoles']);
 
         if ($isStatic) {
             return response()->json([
@@ -174,7 +177,7 @@ class ArkzenEngineController extends Controller
         }
 
         // ── PHASE 9: Broadcast + Channels ─────────
-        if (!empty($module['realtime'])) {
+        if (!empty($module['realtimes'])) {
             Log::info("[Arkzen] Phase 9: Broadcast + Channels");
             $this->run("Broadcast Events", $steps, $errors, fn() => BroadcastBuilder::build($module));
             $this->run("Channels",         $steps, $errors, fn() => ChannelBuilder::build($module));
@@ -191,7 +194,7 @@ class ArkzenEngineController extends Controller
             Log::info("[Arkzen] Phase 11: Notifications");
             $this->run("Notifications", $steps, $errors, fn() => NotificationBuilder::build($module));
         }
-        if (!empty($module['mail'])) {
+        if (!empty($module['mails'])) {
             Log::info("[Arkzen] Phase 11b: Mail");
             $this->run("Mail", $steps, $errors, fn() => MailBuilder::build($module));
         }

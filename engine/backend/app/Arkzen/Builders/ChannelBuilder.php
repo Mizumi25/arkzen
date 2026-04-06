@@ -16,7 +16,7 @@ class ChannelBuilder
 {
     public static function build(array $module): void
     {
-        $realtime = $module['realtime'] ?? [];
+        $realtime = $module['realtimes'] ?? [];
         if (empty($realtime['channels'])) return;
 
         self::ensureChannelsFile();
