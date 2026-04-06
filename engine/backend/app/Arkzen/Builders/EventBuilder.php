@@ -24,17 +24,34 @@ class EventBuilder
 {
     public static function build(array $module): void
     {
-        $events = $module['events'] ?? [];
+        $rawSections = $module['events'] ?? [];
+        if (empty($rawSections)) return;
+
+        $slug   = $module['name'];
+        $slugNs = self::toNamespace($slug);
+
+        // FIXED v2.2: Bridge sends raw YAML strings from the frontend parser.
+        // Each string is one @arkzen:events:name block's content.
+        // Parse each string and merge all event definitions into one flat map.
+        $events = [];
+        foreach ($rawSections as $raw) {
+            if (!is_string($raw)) {
+                // Already parsed (legacy path) — merge directly
+                if (is_array($raw)) $events = array_merge($events, $raw);
+                continue;
+            }
+            $parsed = yaml_parse($raw);
+            if (is_array($parsed)) {
+                $events = array_merge($events, $parsed);
+            }
+        }
+
         if (empty($events)) return;
 
-        $slug   = $module['name'];                          // tatemono slug e.g. inventory-management
-        $slugNs = self::toNamespace($slug);                // e.g. InventoryManagement
-
-        // FIXED: Use $slugNs for directory
         File::ensureDirectoryExists(app_path("Events/Arkzen/{$slugNs}"));
 
         foreach ($events as $name => $config) {
-            self::buildEvent($slug, $slugNs, $name, $config);
+            self::buildEvent($slug, $slugNs, $name, is_array($config) ? $config : []);
         }
     }
 

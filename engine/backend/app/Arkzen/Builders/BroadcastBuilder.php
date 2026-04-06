@@ -1,7 +1,7 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — BROADCAST BUILDER v2.2 (FIXED)
+// ARKZEN ENGINE — BROADCAST BUILDER v2.1 (FIXED)
 // Generates Laravel Broadcast Event classes for Reverb.
 // Declared in @arkzen:realtime section.
 //
@@ -9,10 +9,7 @@
 //   Path:      app/Events/Arkzen/{slugNs}/Broadcast/{ClassName}.php
 //   Namespace: App\Events\Arkzen\{slugNs}\Broadcast
 //
-// FIXED v2.1: Physical directory now uses $slugNs
-// FIXED v2.2: Now reads $module['realtimes'] (plural) to match ModuleReader
-//   output. Previously read $module['realtime'] (singular) — always empty,
-//   so no broadcast event files were ever generated. (namespace-safe name)
+// FIXED: Physical directory now uses $slugNs (namespace-safe name)
 //   inventory-management → InventoryManagement (both namespace AND folder)
 //
 // Works with ChannelBuilder — Broadcast pushes data,
@@ -28,17 +25,34 @@ class BroadcastBuilder
 {
     public static function build(array $module): void
     {
-        $realtime = $module['realtimes'] ?? [];
-        if (empty($realtime['events'])) return;
+        $rawSections = $module['realtimes'] ?? [];
+        if (empty($rawSections)) return;
 
-        $slug   = $module['name'];                          // tatemono slug e.g. inventory-management
-        $slugNs = EventBuilder::toNamespace($slug);        // e.g. InventoryManagement
-        
-        // FIXED: Use $slugNs for directory (namespace-safe), not $slug
+        $slug   = $module['name'];
+        $slugNs = EventBuilder::toNamespace($slug);
+
+        // FIXED v2.2: Parse raw YAML strings from the frontend bridge.
+        // Each raw string is one @arkzen:realtime:name block.
+        // Merge all 'events' sub-keys across all blocks.
+        $broadcastEvents = [];
+        foreach ($rawSections as $raw) {
+            if (!is_string($raw)) {
+                if (is_array($raw) && isset($raw['events'])) {
+                    $broadcastEvents = array_merge($broadcastEvents, $raw['events']);
+                }
+                continue;
+            }
+            $parsed = yaml_parse($raw);
+            if (is_array($parsed) && isset($parsed['events'])) {
+                $broadcastEvents = array_merge($broadcastEvents, $parsed['events']);
+            }
+        }
+        if (empty($broadcastEvents)) return;
+
         File::ensureDirectoryExists(app_path("Events/Arkzen/{$slugNs}/Broadcast"));
 
-        foreach ($realtime['events'] as $name => $config) {
-            self::buildBroadcastEvent($slug, $slugNs, $name, $config);
+        foreach ($broadcastEvents as $name => $config) {
+            self::buildBroadcastEvent($slug, $slugNs, $name, is_array($config) ? $config : []);
         }
     }
 

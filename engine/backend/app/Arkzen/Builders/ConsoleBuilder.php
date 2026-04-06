@@ -28,17 +28,25 @@ class ConsoleBuilder
 {
     public static function build(array $module): void
     {
-        $commands = $module['consoles'] ?? [];
+        $rawSections = $module['consoles'] ?? [];
+        if (empty($rawSections)) return;
+
+        $slug   = $module['name'];
+        $slugNs = EventBuilder::toNamespace($slug);
+
+        // FIXED v2.2: Parse raw YAML strings from the frontend bridge.
+        $commands = [];
+        foreach ($rawSections as $raw) {
+            if (!is_string($raw)) { if (is_array($raw)) $commands = array_merge($commands, $raw); continue; }
+            $parsed = yaml_parse($raw);
+            if (is_array($parsed)) $commands = array_merge($commands, $parsed);
+        }
         if (empty($commands)) return;
 
-        $slug   = $module['name'];                          // tatemono slug e.g. inventory-management
-        $slugNs = EventBuilder::toNamespace($slug);        // e.g. InventoryManagement
-
-        // FIXED: Use $slugNs for directory (namespace-safe)
         File::ensureDirectoryExists(app_path("Console/Commands/Arkzen/{$slugNs}"));
 
         foreach ($commands as $name => $config) {
-            self::buildCommand($slug, $slugNs, $name, $config);
+            self::buildCommand($slug, $slugNs, $name, is_array($config) ? $config : []);
         }
     }
 

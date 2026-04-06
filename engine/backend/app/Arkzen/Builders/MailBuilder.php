@@ -26,20 +26,26 @@ class MailBuilder
 {
     public static function build(array $module): void
     {
-        $mails = $module['mails'] ?? [];
+        $rawSections = $module['mails'] ?? [];
+        if (empty($rawSections)) return;
+
+        $slug   = $module['name'];
+        $slugNs = EventBuilder::toNamespace($slug);
+
+        // FIXED v2.3: Parse raw YAML strings from the frontend bridge.
+        $mails = [];
+        foreach ($rawSections as $raw) {
+            if (!is_string($raw)) { if (is_array($raw)) $mails = array_merge($mails, $raw); continue; }
+            $parsed = yaml_parse($raw);
+            if (is_array($parsed)) $mails = array_merge($mails, $parsed);
+        }
         if (empty($mails)) return;
 
-        $slug   = $module['name'];                          // tatemono slug e.g. inventory-management
-        $slugNs = EventBuilder::toNamespace($slug);        // e.g. InventoryManagement
-
-        // FIXED: Use $slugNs for Mail directory
         File::ensureDirectoryExists(app_path("Mail/Arkzen/{$slugNs}"));
-        
-        // View directory stays as $slug for readable URLs (emails/arkzen/inventory-management/welcome.blade.php)
         File::ensureDirectoryExists(resource_path("views/emails/arkzen/{$slug}"));
 
         foreach ($mails as $name => $config) {
-            self::buildMail($slug, $slugNs, $name, $config);
+            self::buildMail($slug, $slugNs, $name, is_array($config) ? $config : []);
         }
     }
 

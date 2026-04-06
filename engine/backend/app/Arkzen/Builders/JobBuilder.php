@@ -21,17 +21,25 @@ class JobBuilder
 {
     public static function build(array $module): void
     {
-        $jobs = $module['jobs'] ?? [];
+        $rawSections = $module['jobs'] ?? [];
+        if (empty($rawSections)) return;
+
+        $slug   = $module['name'];
+        $slugNs = EventBuilder::toNamespace($slug);
+
+        // FIXED v2.2: Parse raw YAML strings from the frontend bridge.
+        $jobs = [];
+        foreach ($rawSections as $raw) {
+            if (!is_string($raw)) { if (is_array($raw)) $jobs = array_merge($jobs, $raw); continue; }
+            $parsed = yaml_parse($raw);
+            if (is_array($parsed)) $jobs = array_merge($jobs, $parsed);
+        }
         if (empty($jobs)) return;
 
-        $slug   = $module['name'];                          // tatemono slug e.g. inventory-management
-        $slugNs = EventBuilder::toNamespace($slug);        // e.g. InventoryManagement
-
-        // FIXED: Use $slugNs for directory
         File::ensureDirectoryExists(app_path("Jobs/Arkzen/{$slugNs}"));
 
         foreach ($jobs as $name => $config) {
-            self::buildJob($slug, $slugNs, $name, $config);
+            self::buildJob($slug, $slugNs, $name, is_array($config) ? $config : []);
         }
     }
 

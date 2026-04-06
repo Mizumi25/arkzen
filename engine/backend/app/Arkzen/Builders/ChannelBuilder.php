@@ -16,13 +16,31 @@ class ChannelBuilder
 {
     public static function build(array $module): void
     {
-        $realtime = $module['realtimes'] ?? [];
-        if (empty($realtime['channels'])) return;
+        $rawSections = $module['realtimes'] ?? [];
+        if (empty($rawSections)) return;
+
+        // FIXED v2.2: Parse raw YAML strings from the frontend bridge.
+        // Each raw string is one @arkzen:realtime:name block.
+        // Merge all 'channels' sub-keys across all blocks.
+        $channels = [];
+        foreach ($rawSections as $raw) {
+            if (!is_string($raw)) {
+                if (is_array($raw) && isset($raw['channels'])) {
+                    $channels = array_merge($channels, $raw['channels']);
+                }
+                continue;
+            }
+            $parsed = yaml_parse($raw);
+            if (is_array($parsed) && isset($parsed['channels'])) {
+                $channels = array_merge($channels, $parsed['channels']);
+            }
+        }
+        if (empty($channels)) return;
 
         self::ensureChannelsFile();
 
-        foreach ($realtime['channels'] as $channelName => $config) {
-            self::registerChannel($channelName, $config, $module['name']);
+        foreach ($channels as $channelName => $config) {
+            self::registerChannel($channelName, is_array($config) ? $config : [], $module['name']);
         }
     }
 

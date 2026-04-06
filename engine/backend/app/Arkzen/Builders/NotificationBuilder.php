@@ -21,17 +21,25 @@ class NotificationBuilder
 {
     public static function build(array $module): void
     {
-        $notifications = $module['notifications'] ?? [];
+        $rawSections = $module['notifications'] ?? [];
+        if (empty($rawSections)) return;
+
+        $slug   = $module['name'];
+        $slugNs = EventBuilder::toNamespace($slug);
+
+        // FIXED v2.2: Parse raw YAML strings from the frontend bridge.
+        $notifications = [];
+        foreach ($rawSections as $raw) {
+            if (!is_string($raw)) { if (is_array($raw)) $notifications = array_merge($notifications, $raw); continue; }
+            $parsed = yaml_parse($raw);
+            if (is_array($parsed)) $notifications = array_merge($notifications, $parsed);
+        }
         if (empty($notifications)) return;
 
-        $slug   = $module['name'];                          // tatemono slug e.g. inventory-management
-        $slugNs = EventBuilder::toNamespace($slug);        // e.g. InventoryManagement
-
-        // FIXED: Use $slugNs for directory
         File::ensureDirectoryExists(app_path("Notifications/Arkzen/{$slugNs}"));
 
         foreach ($notifications as $name => $config) {
-            self::buildNotification($slug, $slugNs, $name, $config);
+            self::buildNotification($slug, $slugNs, $name, is_array($config) ? $config : []);
         }
     }
 
