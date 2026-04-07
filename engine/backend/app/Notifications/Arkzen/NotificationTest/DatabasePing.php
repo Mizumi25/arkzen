@@ -1,21 +1,20 @@
 <?php
 
 // ============================================================
-// ARKZEN GENERATED NOTIFICATION — EndNotification
+// ARKZEN GENERATED NOTIFICATION — DatabasePing
 // Tatemono: notification-test
-// Channels: database
+// Channels: 'database'
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-06T23:20:47.239878Z
+// Generated: 2026-04-07T00:08:31.067364Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Notifications\Notification;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Notifications\Notification;
 
-class EndNotification extends Notification implements ShouldQueue
+class DatabasePing extends Notification implements ShouldQueue
 {
     use Queueable;
 
@@ -28,14 +27,16 @@ class EndNotification extends Notification implements ShouldQueue
         return ['database'];
     }
 
-
+    public function toDatabase(object $notifiable): array
+    {
+        return [
+            'message' => 'You have a new database notification',
+            'data'    => $this->data,
+        ];
+    }
 
     public function toArray(object $notifiable): array
     {
-        return array_merge([
-            'type'      => 'NotificationTest\\EndNotification',
-            'message'   => 'You have a new notification.',
-            'tatemono'  => 'notification-test',
-        ], $this->data);
+        return $this->data;
     }
 }

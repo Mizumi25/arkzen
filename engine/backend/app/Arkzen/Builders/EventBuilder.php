@@ -1,7 +1,7 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — EVENT BUILDER v2.1 (FIXED)
+// ARKZEN ENGINE — EVENT BUILDER v2.2 (FIXED)
 // Generates Laravel Event classes.
 // Declared in @arkzen:events section as:
 //   events:
@@ -13,6 +13,12 @@
 //   Namespace: App\Events\Arkzen\{slugNs}
 //
 // FIXED: Physical directory now uses $slugNs (namespace-safe name)
+//
+// FIXED v2.2: Bridge sends ArkzenSection objects { raw, start, end } —
+//   not raw strings and not pre-parsed arrays. The old fallback path was
+//   doing array_merge($events, $raw) which merged the object's own keys
+//   (raw, start, end) as event names, generating Start, Raw, End classes.
+//   Now we extract $raw['raw'] and yaml_parse it correctly.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -30,17 +36,18 @@ class EventBuilder
         $slug   = $module['name'];
         $slugNs = self::toNamespace($slug);
 
-        // FIXED v2.2: Bridge sends raw YAML strings from the frontend parser.
-        // Each string is one @arkzen:events:name block's content.
-        // Parse each string and merge all event definitions into one flat map.
         $events = [];
         foreach ($rawSections as $raw) {
+            // Bridge sends ArkzenSection objects: { raw: "yaml...", start: 0, end: 0 }
+            // Extract the 'raw' string from the object before parsing.
             if (!is_string($raw)) {
-                // Already parsed (legacy path) — merge directly
-                if (is_array($raw)) $events = array_merge($events, $raw);
-                continue;
+                if (is_array($raw) && isset($raw['raw']) && is_string($raw['raw'])) {
+                    $raw = $raw['raw'];
+                } else {
+                    continue;
+                }
             }
-            $parsed = yaml_parse($raw);
+            $parsed = ArkzenYaml::parse($raw);
             if (is_array($parsed)) {
                 $events = array_merge($events, $parsed);
             }
@@ -58,7 +65,6 @@ class EventBuilder
     private static function buildEvent(string $slug, string $slugNs, string $name, array $config): void
     {
         $className = self::toClassName($name);
-        // FIXED: Use $slugNs for file path
         $filePath  = app_path("Events/Arkzen/{$slugNs}/{$className}.php");
 
         $content = "<?php
@@ -90,8 +96,7 @@ class {$className}
         Log::info("[Arkzen Event] ✓ {$slugNs}\\{$className}");
 
         foreach ($config['listeners'] ?? [] as $listenerName) {
-            // ListenerBuilder must also be fixed separately (not shown)
-            ListenerBuilder::buildForEvent($slug, $className, $listenerName);
+            ListenerBuilder::buildForEvent($slug, $slugNs, $className, $listenerName);
         }
     }
 

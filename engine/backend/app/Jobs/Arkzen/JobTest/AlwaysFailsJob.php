@@ -1,11 +1,11 @@
 <?php
 
 // ============================================================
-// ARKZEN GENERATED JOB — RawJob
+// ARKZEN GENERATED JOB — AlwaysFailsJob
 // Tatemono: job-test
-// Queue: default | Tries: 3 | Timeout: 60s
+// Queue: default | Tries: 2 | Timeout: 10s
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-06T23:20:46.754346Z
+// Generated: 2026-04-07T00:08:30.596548Z
 // ============================================================
 
 namespace App\Jobs\Arkzen\JobTest;
@@ -17,12 +17,12 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class RawJob implements ShouldQueue
+class AlwaysFailsJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries   = 3;
-    public int $timeout = 60;
+    public int $tries   = 2;
+    public int $timeout = 10;
 
     public function __construct(
         public readonly array $data = []
@@ -32,14 +32,16 @@ class RawJob implements ShouldQueue
 
     public function handle(): void
     {
-        Log::info('[Arkzen Job] Running: JobTest\\RawJob', $this->data);
+        Log::info('[Arkzen Job] JobTest\\AlwaysFailsJob started', $this->data);
 
-        // TODO: implement job logic for raw
+        // TODO: implement job logic
+
+        Log::info('[Arkzen Job] JobTest\\AlwaysFailsJob completed');
     }
 
     public function failed(\Throwable $exception): void
     {
-        Log::error('[Arkzen Job] Failed: JobTest\\RawJob', [
+        Log::error('[Arkzen Job] JobTest\\AlwaysFailsJob failed', [
             'error' => $exception->getMessage(),
             'data'  => $this->data,
         ]);

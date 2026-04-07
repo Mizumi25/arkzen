@@ -1,10 +1,10 @@
 <?php
 
 // ============================================================
-// ARKZEN GENERATED EVENT — Start
+// ARKZEN GENERATED EVENT — UserSignedUp
 // Tatemono: events-test
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-06T23:20:46.264940Z
+// Generated: 2026-04-07T00:08:30.104712Z
 // ============================================================
 
 namespace App\Events\Arkzen\EventsTest;
@@ -13,7 +13,7 @@ use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class Start
+class UserSignedUp
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 

@@ -2,19 +2,25 @@
 
 // ============================================================
 // ARKZEN ENGINE — MAIL BUILDER v2.2 (FIXED)
-// Generates Laravel Mailable classes + blade view stubs.
-// Declared in @arkzen:mail section.
+// Generates Laravel Mailable classes.
+// Declared in @arkzen:mail section as:
+//   welcome-mail:
+//     subject: "Welcome to Arkzen"
+//     data:
+//       username: string
+//       app_name: string
 //
 // ISOLATION:
-//   Class:     app/Mail/Arkzen/{slugNs}/{ClassName}Mail.php
+//   Path:      app/Mail/Arkzen/{slugNs}/{ClassName}.php
 //   Namespace: App\Mail\Arkzen\{slugNs}
-//   View:      resources/views/emails/arkzen/{slug}/{name}.blade.php
 //
-// FIXED v2.1: Physical directory now uses $slugNs (namespace-safe name)
-// Note: View directory still uses original $slug for URL readability
-// FIXED v2.2: Now reads $module['mails'] (plural) to match ModuleReader
-//   output. Previously read $module['mail'] (singular) — always empty,
-//   so no Mail classes or Blade views were ever generated.
+// FIXED: Physical directory now uses $slugNs (namespace-safe name)
+//
+// FIXED v2.2: Bridge sends ArkzenSection objects { raw, start, end } —
+//   not raw strings and not pre-parsed arrays. The old fallback path was
+//   doing array_merge($mails, $raw) which merged the object's own keys
+//   (raw, start, end) as mail names, generating StartMail, RawMail, EndMail.
+//   Now we extract $raw['raw'] and yaml_parse it correctly.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -32,17 +38,26 @@ class MailBuilder
         $slug   = $module['name'];
         $slugNs = EventBuilder::toNamespace($slug);
 
-        // FIXED v2.3: Parse raw YAML strings from the frontend bridge.
         $mails = [];
         foreach ($rawSections as $raw) {
-            if (!is_string($raw)) { if (is_array($raw)) $mails = array_merge($mails, $raw); continue; }
-            $parsed = yaml_parse($raw);
-            if (is_array($parsed)) $mails = array_merge($mails, $parsed);
+            // Bridge sends ArkzenSection objects: { raw: "yaml...", start: 0, end: 0 }
+            // Extract the 'raw' string from the object before parsing.
+            if (!is_string($raw)) {
+                if (is_array($raw) && isset($raw['raw']) && is_string($raw['raw'])) {
+                    $raw = $raw['raw'];
+                } else {
+                    continue;
+                }
+            }
+            $parsed = ArkzenYaml::parse($raw);
+            if (is_array($parsed)) {
+                $mails = array_merge($mails, $parsed);
+            }
         }
+
         if (empty($mails)) return;
 
         File::ensureDirectoryExists(app_path("Mail/Arkzen/{$slugNs}"));
-        File::ensureDirectoryExists(resource_path("views/emails/arkzen/{$slug}"));
 
         foreach ($mails as $name => $config) {
             self::buildMail($slug, $slugNs, $name, is_array($config) ? $config : []);
@@ -55,17 +70,35 @@ class MailBuilder
 
     private static function buildMail(string $slug, string $slugNs, string $name, array $config): void
     {
-        $className  = self::toClassName($name);
-        $subject    = $config['subject'] ?? $className;
-        $viewName   = "emails.arkzen.{$slug}." . strtolower(str_replace(['-', '_'], '-', $name));
-        
-        // FIXED: Use $slugNs for file path
-        $filePath   = app_path("Mail/Arkzen/{$slugNs}/{$className}.php");
+        $className = self::toClassName($name);
+        $subject   = $config['subject'] ?? ucwords(str_replace(['-', '_'], ' ', $name));
+        $dataFields = $config['data']   ?? [];
 
-        $dataFields    = $config['data'] ?? [];
-        $properties    = self::generateProperties($dataFields);
-        $constructArgs = self::generateConstructArgs($dataFields);
-        $assigns       = self::generateAssigns($dataFields);
+        $filePath  = app_path("Mail/Arkzen/{$slugNs}/{$className}.php");
+
+        // Build constructor properties from declared data fields
+        $properties   = '';
+        $constructArgs = '';
+        if (!empty($dataFields)) {
+            $props = [];
+            $args  = [];
+            foreach ($dataFields as $field => $type) {
+                $phpType = is_string($type) ? self::toPhpType($type) : 'mixed';
+                $props[] = "    public readonly {$phpType} \${$field},";
+                $args[]  = "\${$field}";
+            }
+            $constructArgs = "\n        " . implode(",\n        ", array_map(
+                fn($f, $t) => 'public readonly ' . (is_string($t) ? self::toPhpType($t) : 'mixed') . " \${$f}",
+                array_keys($dataFields),
+                array_values($dataFields)
+            )) . "\n    ";
+        }
+
+        $viewData = '';
+        if (!empty($dataFields)) {
+            $pairs = array_map(fn($f) => "            '{$f}' => \$this->{$f},", array_keys($dataFields));
+            $viewData = "\n" . implode("\n", $pairs) . "\n        ";
+        }
 
         $content = "<?php
 
@@ -80,21 +113,17 @@ class MailBuilder
 namespace App\\Mail\\Arkzen\\{$slugNs};
 
 use Illuminate\\Bus\\Queueable;
+use Illuminate\\Contracts\\Queue\\ShouldQueue;
 use Illuminate\\Mail\\Mailable;
 use Illuminate\\Mail\\Mailables\\Content;
 use Illuminate\\Mail\\Mailables\\Envelope;
 use Illuminate\\Queue\\SerializesModels;
 
-class {$className} extends Mailable
+class {$className} extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
-{$properties}
-
-    public function __construct({$constructArgs})
-    {
-{$assigns}
-    }
+    public function __construct({$constructArgs}) {}
 
     public function envelope(): Envelope
     {
@@ -106,7 +135,8 @@ class {$className} extends Mailable
     public function content(): Content
     {
         return new Content(
-            view: '{$viewName}',
+            view: 'arkzen.{$slug}.{$name}',
+            with: [{$viewData}],
         );
     }
 
@@ -118,70 +148,25 @@ class {$className} extends Mailable
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Mail] ✓ {$slugNs}\\{$className}");
-
-        self::generateView($slug, $viewName, $subject, $dataFields);
+        Log::info("[Arkzen Mail] ✓ {$slugNs}\\{$className} (subject: {$subject})");
     }
 
-    // ─────────────────────────────────────────────
-    // GENERATE BLADE VIEW STUB
-    // ─────────────────────────────────────────────
-
-    private static function generateView(string $slug, string $viewName, string $subject, array $dataFields): void
+    private static function toPhpType(string $type): string
     {
-        $viewPath = resource_path('views/' . str_replace('.', '/', $viewName) . '.blade.php');
-        $varLines = array_map(fn($f) => "<p>{{ \${$f} }}</p>", array_keys($dataFields));
-        $varBlock = implode("\n", $varLines);
-
-        $view = "<!DOCTYPE html>
-<html>
-<head><meta charset=\"UTF-8\"><title>{$subject}</title></head>
-<body style=\"font-family: sans-serif; padding: 40px; color: #333;\">
-    <h2>{$subject}</h2>
-    <p style=\"color: #666; font-size: 12px;\">Tatemono: {$slug}</p>
-    <hr>
-    {$varBlock}
-    <hr>
-    <p style=\"color: #999; font-size: 12px;\">This email was generated by Arkzen.</p>
-</body>
-</html>
-";
-
-        File::ensureDirectoryExists(dirname($viewPath));
-        File::put($viewPath, $view);
-        Log::info("[Arkzen Mail] ✓ View: {$viewName}");
-    }
-
-    // ─────────────────────────────────────────────
-    // HELPERS
-    // ─────────────────────────────────────────────
-
-    private static function generateProperties(array $fields): string
-    {
-        return implode("\n", array_map(
-            fn($field) => "    public readonly string \${$field};",
-            array_keys($fields)
-        ));
-    }
-
-    private static function generateConstructArgs(array $fields): string
-    {
-        return implode(', ', array_map(
-            fn($field) => "string \${$field}",
-            array_keys($fields)
-        ));
-    }
-
-    private static function generateAssigns(array $fields): string
-    {
-        return implode("\n", array_map(
-            fn($field) => "        \$this->{$field} = \${$field};",
-            array_keys($fields)
-        ));
+        return match (strtolower($type)) {
+            'string'  => 'string',
+            'int',
+            'integer' => 'int',
+            'bool',
+            'boolean' => 'bool',
+            'float'   => 'float',
+            'array'   => 'array',
+            default   => 'string',
+        };
     }
 
     public static function toClassName(string $name): string
     {
-        return str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $name))) . 'Mail';
+        return str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $name)));
     }
 }

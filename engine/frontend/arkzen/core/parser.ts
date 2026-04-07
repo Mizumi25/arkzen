@@ -385,18 +385,93 @@ function parseAllLayouts(content: string): ArkzenLayout[] {
 
 // ─────────────────────────────────────────────
 // PARSE ALL NAMED CODE SECTIONS (store, events, jobs, etc.)
-// v5.1 FIX: These blocks are plain self-closing /* ... */ comment blocks —
-// some with an :identifier suffix (e.g. @arkzen:events:order), some without
-// (e.g. @arkzen:jobs, @arkzen:console). None use :end markers.
-// extractAllNamedSections() looks for :end markers which never exist here,
-// so it always returned empty. Fixed to use extractAllSections() which
-// correctly handles plain /* */ blocks and strips the :identifier prefix.
-// The raw YAML string is what the backend builders receive and parse.
+// v5.2 FIX: Two block formats exist in the wild:
+//
+// FORMAT A — Plain block, YAML is a named map (jobs, events, mail, notifications):
+//   /* @arkzen:jobs
+//   process-data:
+//     queue: default
+//   heavy-computation:
+//     queue: heavy
+//   */
+//   → extractAllSections returns the raw YAML as-is.
+//   → yaml_parse on the backend gives { "process-data": {...}, "heavy-computation": {...} } ✓
+//
+// FORMAT B — Per-item named blocks with :end markers (console, and any :name style):
+//   /* @arkzen:console:cleanup-temp
+//   signature: scheduler-test:cleanup-temp
+//   description: Deletes temporary files older than 24h
+//   schedule: "0 * * * *"
+//   */
+//   /* @arkzen:console:cleanup-temp:end */
+//   → extractAllSections strips ":cleanup-temp" and returns the flat YAML properties.
+//   → yaml_parse gives { signature: "...", description: "...", schedule: "..." }
+//   → The command NAME (cleanup-temp) is lost — backend iterates "signature",
+//     "description", "schedule" as command names. WRONG.
+//
+// The fix for FORMAT B: use extractAllNamedSections which preserves the identifier,
+// then wrap the flat YAML under that identifier key before sending to the backend.
+// Result: "cleanup-temp:\n  signature: ...\n  description: ...\n  schedule: ..."
+// → yaml_parse gives { "cleanup-temp": { signature: ..., description: ..., schedule: ... } } ✓
+//
+// Detection: if any block for this marker has a :name:end closing marker, it's FORMAT B.
+// Otherwise it's FORMAT A. We run both extractors and merge — this handles tatemonos
+// that mix formats (e.g. events-test uses FORMAT A, scheduler-test uses FORMAT B).
 // ─────────────────────────────────────────────
 
 function parseAllNamedCode(content: string, marker: string): ArkzenSection[] {
-  const raws = extractAllSections(content, marker)
-  return raws.map(raw => ({ raw, start: 0, end: 0 }))
+  const results: ArkzenSection[] = []
+
+  // FORMAT A — plain /* @arkzen:marker */ blocks (YAML is already a named map)
+  const plainRaws = extractAllSections(content, marker)
+  for (const raw of plainRaws) {
+    // Skip if this raw content looks like flat properties (FORMAT B content leaking through)
+    // A named-map YAML always has at least one key with a colon NOT at the start of the value.
+    // Flat props look like "signature: ...\ndescription: ..." (no indented sub-keys).
+    // We detect FORMAT B leakage by checking if extractAllNamedSections also found this
+    // block — if so, skip it here to avoid double-processing. We handle it below.
+    results.push({ raw, start: 0, end: 0 })
+  }
+
+  // FORMAT B — named /* @arkzen:marker:name */ ... /* @arkzen:marker:name:end */ blocks
+  // extractAllNamedSections returns { raw (flat YAML), start, end } with identifier known.
+  const namedPattern = `/* @arkzen:${marker}:`
+  if (content.includes(namedPattern)) {
+    const namedSections = extractAllNamedSections(content, marker)
+    for (const section of namedSections) {
+      // Wrap the flat YAML properties under the identifier key so the backend
+      // yaml_parse produces { "identifier": { ...properties } }
+      const identifier = extractIdentifierFromSection(content, marker, section.start)
+      if (!identifier) continue
+
+      // Indent each line of the raw content by 2 spaces to nest under the identifier
+      const indented = section.raw
+        .split('\n')
+        .map(line => line ? `  ${line}` : line)
+        .join('\n')
+
+      const wrappedRaw = `${identifier}:\n${indented}`
+
+      // Remove the plain-format duplicate that extractAllSections picked up for this block.
+      // extractAllSections strips the :identifier and returns just the flat content —
+      // find and remove it from results to avoid the backend processing it twice.
+      const flatIndex = results.findIndex(r => r.raw === section.raw)
+      if (flatIndex !== -1) results.splice(flatIndex, 1)
+
+      results.push({ raw: wrappedRaw, start: section.start, end: section.end })
+    }
+  }
+
+  return results
+}
+
+// Helper: extract the :identifier from a named section opening comment
+// e.g. "/* @arkzen:console:cleanup-temp\n..." → "cleanup-temp"
+function extractIdentifierFromSection(content: string, marker: string, sectionStart: number): string | null {
+  const openPattern = `/* @arkzen:${marker}:`
+  const afterOpen   = content.slice(sectionStart + openPattern.length)
+  const match       = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
+  return match ? match[1] : null
 }
 
 // ─────────────────────────────────────────────

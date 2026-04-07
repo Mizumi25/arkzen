@@ -1,11 +1,11 @@
 <?php
 
 // ============================================================
-// ARKZEN GENERATED JOB — EndJob
+// ARKZEN GENERATED JOB — HeavyComputationJob
 // Tatemono: job-test
-// Queue: default | Tries: 3 | Timeout: 60s
+// Queue: heavy | Tries: 1 | Timeout: 120s
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-06T23:20:46.758627Z
+// Generated: 2026-04-07T00:08:30.595767Z
 // ============================================================
 
 namespace App\Jobs\Arkzen\JobTest;
@@ -17,29 +17,31 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class EndJob implements ShouldQueue
+class HeavyComputationJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries   = 3;
-    public int $timeout = 60;
+    public int $tries   = 1;
+    public int $timeout = 120;
 
     public function __construct(
         public readonly array $data = []
     ) {
-        $this->onQueue('default');
+        $this->onQueue('heavy');
     }
 
     public function handle(): void
     {
-        Log::info('[Arkzen Job] Running: JobTest\\EndJob', $this->data);
+        Log::info('[Arkzen Job] JobTest\\HeavyComputationJob started', $this->data);
 
-        // TODO: implement job logic for end
+        // TODO: implement job logic
+
+        Log::info('[Arkzen Job] JobTest\\HeavyComputationJob completed');
     }
 
     public function failed(\Throwable $exception): void
     {
-        Log::error('[Arkzen Job] Failed: JobTest\\EndJob', [
+        Log::error('[Arkzen Job] JobTest\\HeavyComputationJob failed', [
             'error' => $exception->getMessage(),
             'data'  => $this->data,
         ]);
