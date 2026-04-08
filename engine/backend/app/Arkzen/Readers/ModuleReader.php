@@ -21,6 +21,8 @@
 
 namespace App\Arkzen\Readers;
 
+use Symfony\Component\Yaml\Yaml;
+
 class ModuleReader
 {
 
@@ -160,7 +162,7 @@ class ModuleReader
         foreach ($rawBlocks as $raw) {
             if (empty($raw) || !is_string($raw)) continue;
 
-            $parsed = yaml_parse($raw);
+            $parsed = Yaml::parse($raw);
 
             if (!is_array($parsed)) continue;
 
@@ -193,7 +195,7 @@ class ModuleReader
         foreach ($rawBlocks as $raw) {
             if (empty($raw) || !is_string($raw)) continue;
 
-            $parsed = yaml_parse($raw);
+            $parsed = Yaml::parse($raw);
             if (!is_array($parsed)) continue;
 
             if (!empty($parsed['channels']) && is_array($parsed['channels'])) {
