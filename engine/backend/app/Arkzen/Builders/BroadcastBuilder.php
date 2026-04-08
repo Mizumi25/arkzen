@@ -1,7 +1,7 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — BROADCAST BUILDER v2.2 (FIXED)
+// ARKZEN ENGINE — BROADCAST BUILDER v3.0
 // Generates Laravel Broadcast Event classes for Reverb.
 // Declared in @arkzen:realtime section.
 //
@@ -9,19 +9,9 @@
 //   Path:      app/Events/Arkzen/{slugNs}/Broadcast/{ClassName}.php
 //   Namespace: App\Events\Arkzen\{slugNs}\Broadcast
 //
-// FIXED: Physical directory now uses $slugNs (namespace-safe name)
-//   inventory-management → InventoryManagement (both namespace AND folder)
-//
-// FIXED v2.2: Bridge sends ArkzenSection objects { raw, start, end } —
-//   not raw strings and not pre-parsed arrays. The old fallback path was
-//   doing array_merge($broadcastEvents, $raw['events']) which only worked
-//   if the object had an 'events' key — silently no-oping otherwise and
-//   leaving the builder unable to read any broadcast events.
-//   Now we extract $raw['raw'], yaml_parse it, then pull 'events' from
-//   the parsed result correctly.
-//
-// Works with ChannelBuilder — Broadcast pushes data,
-// Channel controls who can subscribe.
+// v3.0: $module['realtimes'] is now a pre-normalised map:
+//         ['channels' => [...], 'events' => [...]]
+//       from ModuleReader::parseRealtimeSections(). No yaml_parse here.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -33,30 +23,11 @@ class BroadcastBuilder
 {
     public static function build(array $module): void
     {
-        $rawSections = $module['realtimes'] ?? [];
-        if (empty($rawSections)) return;
+        $broadcastEvents = $module['realtimes']['events'] ?? [];
+        if (empty($broadcastEvents)) return;
 
         $slug   = $module['name'];
         $slugNs = EventBuilder::toNamespace($slug);
-
-        $broadcastEvents = [];
-        foreach ($rawSections as $raw) {
-            // Bridge sends ArkzenSection objects: { raw: "yaml...", start: 0, end: 0 }
-            // Extract the 'raw' string from the object before parsing.
-            if (!is_string($raw)) {
-                if (is_array($raw) && isset($raw['raw']) && is_string($raw['raw'])) {
-                    $raw = $raw['raw'];
-                } else {
-                    continue;
-                }
-            }
-            $parsed = ArkzenYaml::parse($raw);
-            if (is_array($parsed) && isset($parsed['events'])) {
-                $broadcastEvents = array_merge($broadcastEvents, $parsed['events']);
-            }
-        }
-
-        if (empty($broadcastEvents)) return;
 
         File::ensureDirectoryExists(app_path("Events/Arkzen/{$slugNs}/Broadcast"));
 
@@ -65,16 +36,11 @@ class BroadcastBuilder
         }
     }
 
-    // ─────────────────────────────────────────────
-    // BUILD BROADCAST EVENT
-    // ─────────────────────────────────────────────
-
     private static function buildBroadcastEvent(string $slug, string $slugNs, string $name, array $config): void
     {
         $className   = self::toClassName($name);
         $channelName = $config['channel'] ?? $slug;
         $channelType = $config['type']    ?? 'public';
-
         $filePath    = app_path("Events/Arkzen/{$slugNs}/Broadcast/{$className}.php");
 
         $channelMethod = match($channelType) {

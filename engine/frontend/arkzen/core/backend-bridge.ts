@@ -49,12 +49,16 @@ export async function triggerBackendBuild(tatemono: ParsedTatemono): Promise<voi
       policy:     api.policy     ?? false,
       factory:    api.factory    ?? false,
     })),
-    events:        tatemono.events,
-    realtimes:     tatemono.realtimes,
-    jobs:          tatemono.jobs,
-    notifications: tatemono.notifications,
-    mails:         tatemono.mails,
-    consoles:      tatemono.consoles,
+    // Send raw YAML strings only — ModuleReader.parse() normalises these
+    // into typed PHP arrays before any builder ever sees them.
+    // ArkzenSection objects ({ raw, start, end }) must be unwrapped here;
+    // PHP builders must never receive the wrapper object.
+    events:        tatemono.events.map(s        => s.raw),
+    realtimes:     tatemono.realtimes.map(s     => s.raw),
+    jobs:          tatemono.jobs.map(s           => s.raw),
+    notifications: tatemono.notifications.map(s => s.raw),
+    mails:         tatemono.mails.map(s          => s.raw),
+    consoles:      tatemono.consoles.map(s       => s.raw),
   }
 
   try {

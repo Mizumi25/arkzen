@@ -1,11 +1,22 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — MODULE READER v6.1
-// Key changes v6.1:
-//   - parse() now includes events, realtimes, jobs,
-//     notifications, mails, consoles from payload
-//     so their builders are no longer dead code
+// ARKZEN ENGINE — MODULE READER v7.0
+// Key changes v7.0:
+//   - ALL section types fully normalised here before any builder
+//     receives the $module array. Builders are now yaml_parse-free.
+//   - events, jobs, consoles, notifications, mails, realtimes
+//     are parsed from raw YAML strings into typed PHP arrays,
+//     exactly the same way databases and apis have always been.
+//   - parseSections() is the single YAML-parsing entry point for
+//     all framework sections — called once, in one place.
+//   - Builders receive clean typed arrays and generate code
+//     directly from them. No builder ever calls yaml_parse().
+//
+// DATA FLOW (all sections):
+//   Tatemono DSL  →  TS parser  →  backend-bridge (.raw strings)
+//   →  ModuleReader::parse()  →  typed PHP arrays
+//   →  Builder::build($module)  →  generated PHP files
 // ============================================================
 
 namespace App\Arkzen\Readers;
@@ -21,14 +32,12 @@ class ModuleReader
     {
         $errors = [];
 
-        // Name is always required
         if (empty($payload['name'])) {
             $errors[] = 'Missing required field: name';
         } elseif (!preg_match('/^[a-z][a-z0-9-]*$/', $payload['name'])) {
             $errors[] = 'name must be lowercase kebab-case (e.g. project-management)';
         }
 
-        // databases and apis are now arrays — both optional (static tatemonos have neither)
         if (!empty($payload['databases'])) {
             if (!is_array($payload['databases'])) {
                 $errors[] = 'databases must be an array';
@@ -60,15 +69,15 @@ class ModuleReader
 
     // ─────────────────────────────────────────────
     // PARSE
-    // Returns normalized module with all sections
+    // Returns a fully-normalised $module array.
+    // Every key holds typed PHP data — no raw strings,
+    // no deferred YAML parsing, no builder-side yaml_parse().
     // ─────────────────────────────────────────────
 
     public static function parse(array $payload): array
     {
+        // ── databases ────────────────────────────
         $databases = [];
-        $apis      = [];
-
-        // ── Parse all database blocks ─────────────
         foreach (($payload['databases'] ?? []) as $db) {
             $table = $db['table'] ?? null;
             if (!$table || $table === '_none') continue;
@@ -83,7 +92,8 @@ class ModuleReader
             ];
         }
 
-        // ── Parse all api blocks ──────────────────
+        // ── apis ─────────────────────────────────
+        $apis = [];
         foreach (($payload['apis'] ?? []) as $api) {
             $model = $api['model'] ?? null;
             if (!$model || $model === '_none') continue;
@@ -100,19 +110,20 @@ class ModuleReader
             ];
         }
 
-        // ── Parse raw section blocks ──────────────
-        // Each is an array of raw YAML strings sent from the frontend parser.
-        // Builders receive them as-is and parse the YAML themselves.
-        $events        = array_values(array_filter($payload['events']        ?? []));
-        $realtimes     = array_values(array_filter($payload['realtimes']     ?? []));
-        $jobs          = array_values(array_filter($payload['jobs']          ?? []));
-        $notifications = array_values(array_filter($payload['notifications'] ?? []));
-        $mails         = array_values(array_filter($payload['mails']         ?? []));
-        $consoles      = array_values(array_filter($payload['consoles']      ?? []));
+        // ── framework sections (all normalised here) ──
+        // Each arrives as an array of raw YAML strings from the bridge.
+        // parseSections() merges all blocks into one flat map and
+        // returns a typed PHP array ready for the relevant builder.
+        $events        = self::parseSections($payload['events']        ?? []);
+        $realtimes     = self::parseRealtimeSections($payload['realtimes'] ?? []);
+        $jobs          = self::parseSections($payload['jobs']          ?? []);
+        $notifications = self::parseSections($payload['notifications'] ?? []);
+        $mails         = self::parseSections($payload['mails']         ?? []);
+        $consoles      = self::parseSections($payload['consoles']      ?? []);
 
         return [
             'name'          => $payload['name'],
-            'version'       => $payload['version']  ?? '1.0.0',
+            'version'       => $payload['version'] ?? '1.0.0',
             'auth'          => (bool) ($payload['auth'] ?? false),
             'databases'     => $databases,
             'apis'          => $apis,
@@ -126,7 +137,81 @@ class ModuleReader
     }
 
     // ─────────────────────────────────────────────
-    // HELPER — find a database entry by table name
+    // parseSections — generic flat-map normaliser
+    //
+    // Accepts an array of raw YAML strings (one per tatemono block),
+    // merges all parsed key→config maps into a single flat array.
+    //
+    // Input example (@arkzen:events):
+    //   [ "order-placed:\n  listeners: [SendOrderConfirmation]\n..." ]
+    //
+    // Output (what every builder now receives):
+    //   [ 'order-placed' => ['listeners' => ['SendOrderConfirmation']], ... ]
+    //
+    // This is the exact same contract that ModelBuilder / ControllerBuilder
+    // have always had from the database/api normalisation above — now
+    // applied uniformly to every section type.
+    // ─────────────────────────────────────────────
+
+    private static function parseSections(array $rawBlocks): array
+    {
+        $merged = [];
+
+        foreach ($rawBlocks as $raw) {
+            if (empty($raw) || !is_string($raw)) continue;
+
+            $parsed = yaml_parse($raw);
+
+            if (!is_array($parsed)) continue;
+
+            // Each parsed block is a name → config map.
+            // Merge all blocks into one flat map.
+            $merged = array_merge($merged, $parsed);
+        }
+
+        return $merged;
+    }
+
+    // ─────────────────────────────────────────────
+    // parseRealtimeSections — realtime has two sub-keys
+    //
+    // @arkzen:realtime blocks contain two distinct sub-maps:
+    //   channels: { name → config }
+    //   events:   { name → config }
+    //
+    // BroadcastBuilder reads $module['realtimes']['events']
+    // ChannelBuilder reads  $module['realtimes']['channels']
+    //
+    // Returns: ['channels' => [...], 'events' => [...]]
+    // ─────────────────────────────────────────────
+
+    private static function parseRealtimeSections(array $rawBlocks): array
+    {
+        $channels = [];
+        $events   = [];
+
+        foreach ($rawBlocks as $raw) {
+            if (empty($raw) || !is_string($raw)) continue;
+
+            $parsed = yaml_parse($raw);
+            if (!is_array($parsed)) continue;
+
+            if (!empty($parsed['channels']) && is_array($parsed['channels'])) {
+                $channels = array_merge($channels, $parsed['channels']);
+            }
+            if (!empty($parsed['events']) && is_array($parsed['events'])) {
+                $events = array_merge($events, $parsed['events']);
+            }
+        }
+
+        return [
+            'channels' => $channels,
+            'events'   => $events,
+        ];
+    }
+
+    // ─────────────────────────────────────────────
+    // HELPERS
     // ─────────────────────────────────────────────
 
     public static function findDatabase(array $module, string $tableName): ?array
@@ -136,11 +221,6 @@ class ModuleReader
         }
         return null;
     }
-
-    // ─────────────────────────────────────────────
-    // HELPER — find a database entry by model name
-    // Convention: model Product → table products
-    // ─────────────────────────────────────────────
 
     public static function findDatabaseForModel(array $module, string $modelName): ?array
     {

@@ -1,7 +1,7 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — CONSOLE BUILDER v2.2 (FIXED)
+// ARKZEN ENGINE — CONSOLE BUILDER v3.0
 // Generates Artisan Command classes.
 // Declared in @arkzen:console section.
 //
@@ -9,20 +9,12 @@
 //   Path:      app/Console/Commands/Arkzen/{slugNs}/{ClassName}Command.php
 //   Namespace: App\Console\Commands\Arkzen\{slugNs}
 //
-// FIXED: Physical directory now uses $slugNs (namespace-safe name)
-//   inventory-management → InventoryManagement (both namespace AND folder)
-//
-// FIXED v2.2: Bridge sends ArkzenSection objects { raw, start, end } —
-//   not raw strings and not pre-parsed arrays. The old fallback path was
-//   doing array_merge($commands, $raw) which merged the object's own keys
-//   (raw, start, end) as command names, generating StartCommand, RawCommand,
-//   EndCommand. Now we extract $raw['raw'] and yaml_parse it correctly.
-//
 // NOTE ON SIGNATURES: Artisan signatures are globally unique in
-// Laravel (they're registered in the CLI table). To avoid collision
-// between tatemonos, the signature is auto-scoped to:
-//   {slug}:{command-name}
-// Unless the tatemono explicitly overrides it.
+// Laravel. To avoid collision between tatemonos, the signature
+// is auto-scoped to {slug}:{command-name} unless overridden.
+//
+// v3.0: $module['consoles'] is now a pre-normalised name→config map
+//       from ModuleReader::parse(). No yaml_parse here.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -34,30 +26,11 @@ class ConsoleBuilder
 {
     public static function build(array $module): void
     {
-        $rawSections = $module['consoles'] ?? [];
-        if (empty($rawSections)) return;
+        $commands = $module['consoles'] ?? [];
+        if (empty($commands)) return;
 
         $slug   = $module['name'];
         $slugNs = EventBuilder::toNamespace($slug);
-
-        $commands = [];
-        foreach ($rawSections as $raw) {
-            // Bridge sends ArkzenSection objects: { raw: "yaml...", start: 0, end: 0 }
-            // Extract the 'raw' string from the object before parsing.
-            if (!is_string($raw)) {
-                if (is_array($raw) && isset($raw['raw']) && is_string($raw['raw'])) {
-                    $raw = $raw['raw'];
-                } else {
-                    continue;
-                }
-            }
-            $parsed = ArkzenYaml::parse($raw);
-            if (is_array($parsed)) {
-                $commands = array_merge($commands, $parsed);
-            }
-        }
-
-        if (empty($commands)) return;
 
         File::ensureDirectoryExists(app_path("Console/Commands/Arkzen/{$slugNs}"));
 
@@ -66,17 +39,12 @@ class ConsoleBuilder
         }
     }
 
-    // ─────────────────────────────────────────────
-    // BUILD SINGLE COMMAND
-    // ─────────────────────────────────────────────
-
     private static function buildCommand(string $slug, string $slugNs, string $name, array $config): void
     {
         $className   = self::toClassName($name);
         $signature   = $config['signature']   ?? "{$slug}:{$name}";
         $description = $config['description'] ?? "Arkzen [{$slug}] command: {$name}";
         $schedule    = $config['schedule']    ?? null;
-
         $filePath    = app_path("Console/Commands/Arkzen/{$slugNs}/{$className}.php");
 
         $scheduleComment = $schedule

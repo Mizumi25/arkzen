@@ -1,7 +1,7 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — EVENT BUILDER v2.2 (FIXED)
+// ARKZEN ENGINE — EVENT BUILDER v3.0
 // Generates Laravel Event classes.
 // Declared in @arkzen:events section as:
 //   events:
@@ -12,13 +12,8 @@
 //   Path:      app/Events/Arkzen/{slugNs}/{ClassName}.php
 //   Namespace: App\Events\Arkzen\{slugNs}
 //
-// FIXED: Physical directory now uses $slugNs (namespace-safe name)
-//
-// FIXED v2.2: Bridge sends ArkzenSection objects { raw, start, end } —
-//   not raw strings and not pre-parsed arrays. The old fallback path was
-//   doing array_merge($events, $raw) which merged the object's own keys
-//   (raw, start, end) as event names, generating Start, Raw, End classes.
-//   Now we extract $raw['raw'] and yaml_parse it correctly.
+// v3.0: $module['events'] is now a pre-normalised name→config map
+//       from ModuleReader::parse(). No yaml_parse here.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -30,30 +25,11 @@ class EventBuilder
 {
     public static function build(array $module): void
     {
-        $rawSections = $module['events'] ?? [];
-        if (empty($rawSections)) return;
+        $events = $module['events'] ?? [];
+        if (empty($events)) return;
 
         $slug   = $module['name'];
         $slugNs = self::toNamespace($slug);
-
-        $events = [];
-        foreach ($rawSections as $raw) {
-            // Bridge sends ArkzenSection objects: { raw: "yaml...", start: 0, end: 0 }
-            // Extract the 'raw' string from the object before parsing.
-            if (!is_string($raw)) {
-                if (is_array($raw) && isset($raw['raw']) && is_string($raw['raw'])) {
-                    $raw = $raw['raw'];
-                } else {
-                    continue;
-                }
-            }
-            $parsed = ArkzenYaml::parse($raw);
-            if (is_array($parsed)) {
-                $events = array_merge($events, $parsed);
-            }
-        }
-
-        if (empty($events)) return;
 
         File::ensureDirectoryExists(app_path("Events/Arkzen/{$slugNs}"));
 
