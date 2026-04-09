@@ -5,7 +5,7 @@
 // Tatemono: job-test
 // Queue: default | Tries: 3 | Timeout: 30s
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-07T00:08:30.594634Z
+// Generated: 2026-04-09T07:54:26.469890Z
 // ============================================================
 
 namespace App\Jobs\Arkzen\JobTest;
@@ -32,16 +32,14 @@ class ProcessDataJob implements ShouldQueue
 
     public function handle(): void
     {
-        Log::info('[Arkzen Job] JobTest\\ProcessDataJob started', $this->data);
+        Log::info('[Arkzen Job] Running: JobTest\\ProcessDataJob', $this->data);
 
-        // TODO: implement job logic
-
-        Log::info('[Arkzen Job] JobTest\\ProcessDataJob completed');
+        // TODO: implement job logic for process-data
     }
 
     public function failed(\Throwable $exception): void
     {
-        Log::error('[Arkzen Job] JobTest\\ProcessDataJob failed', [
+        Log::error('[Arkzen Job] Failed: JobTest\\ProcessDataJob', [
             'error' => $exception->getMessage(),
             'data'  => $this->data,
         ]);

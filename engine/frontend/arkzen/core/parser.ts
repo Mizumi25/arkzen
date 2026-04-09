@@ -384,100 +384,196 @@ function parseAllLayouts(content: string): ArkzenLayout[] {
 }
 
 // ─────────────────────────────────────────────
-// PARSE ALL NAMED CODE SECTIONS (store, events, jobs, etc.)
-// v5.2 FIX: Two block formats exist in the wild:
+// PARSE ALL NAMED CODE SECTIONS (events, jobs, console, etc.)
+// v5.2 FIX: Two valid block shapes exist for these markers:
 //
-// FORMAT A — Plain block, YAML is a named map (jobs, events, mail, notifications):
-//   /* @arkzen:jobs
-//   process-data:
-//     queue: default
-//   heavy-computation:
-//     queue: heavy
-//   */
-//   → extractAllSections returns the raw YAML as-is.
-//   → yaml_parse on the backend gives { "process-data": {...}, "heavy-computation": {...} } ✓
+//   Shape A — plain self-closing YAML block (no identifier):
+//     /* @arkzen:events
+//     order-placed:
+//       listeners: [SendOrderConfirmation]
+//     */
 //
-// FORMAT B — Per-item named blocks with :end markers (console, and any :name style):
-//   /* @arkzen:console:cleanup-temp
-//   signature: scheduler-test:cleanup-temp
-//   description: Deletes temporary files older than 24h
-//   schedule: "0 * * * *"
-//   */
-//   /* @arkzen:console:cleanup-temp:end */
-//   → extractAllSections strips ":cleanup-temp" and returns the flat YAML properties.
-//   → yaml_parse gives { signature: "...", description: "...", schedule: "..." }
-//   → The command NAME (cleanup-temp) is lost — backend iterates "signature",
-//     "description", "schedule" as command names. WRONG.
+//   Shape B — named YAML-comment block (identifier in marker, :end closer):
+//     /* @arkzen:console:cleanup-temp
+//     signature: scheduler-test:cleanup-temp
+//     description: Deletes temporary files
+//     schedule: "0 * * * *"
+//     */
+//     /* @arkzen:console:cleanup-temp:end */
 //
-// The fix for FORMAT B: use extractAllNamedSections which preserves the identifier,
-// then wrap the flat YAML under that identifier key before sending to the backend.
-// Result: "cleanup-temp:\n  signature: ...\n  description: ...\n  schedule: ..."
-// → yaml_parse gives { "cleanup-temp": { signature: ..., description: ..., schedule: ... } } ✓
+// Shape A: YAML is between the marker */ and the next block.
+//          Handled by extractAllSections() — strips :identifier prefix.
 //
-// Detection: if any block for this marker has a :name:end closing marker, it's FORMAT B.
-// Otherwise it's FORMAT A. We run both extractors and merge — this handles tatemonos
-// that mix formats (e.g. events-test uses FORMAT A, scheduler-test uses FORMAT B).
+// Shape B: YAML is INSIDE the opening comment (between marker line and */).
+//          The :end block is empty — nothing sits between */ and :end.
+//          extractAllSections() picks up both the opening content AND
+//          the bare ":end */" text as separate entries, which breaks parsing.
+//
+// Solution: detect Shape B blocks first (those that have a matching :name:end),
+// extract their YAML from inside the opening comment, then fall back to
+// extractAllSections() for any remaining Shape A blocks.
 // ─────────────────────────────────────────────
 
 function parseAllNamedCode(content: string, marker: string): ArkzenSection[] {
   const results: ArkzenSection[] = []
+  const openPattern = `/* @arkzen:${marker}:`
 
-  // FORMAT A — plain /* @arkzen:marker */ blocks (YAML is already a named map)
-  const plainRaws = extractAllSections(content, marker)
-  for (const raw of plainRaws) {
-    // Skip if this raw content looks like flat properties (FORMAT B content leaking through)
-    // A named-map YAML always has at least one key with a colon NOT at the start of the value.
-    // Flat props look like "signature: ...\ndescription: ..." (no indented sub-keys).
-    // We detect FORMAT B leakage by checking if extractAllNamedSections also found this
-    // block — if so, skip it here to avoid double-processing. We handle it below.
-    results.push({ raw, start: 0, end: 0 })
+  // ── Pass 1: collect all Shape B named blocks ──────────────────────────────
+  // These have /* @arkzen:marker:name\n...yaml...\n*/ and a separate :end block.
+  // YAML lives inside the opening comment, keyed under the block name.
+  const namedMerged: Record<string, unknown> = {}
+  let searchFrom = 0
+  const usedRanges: Array<[number, number]> = []
+
+  while (true) {
+    const openIdx = content.indexOf(openPattern, searchFrom)
+    if (openIdx === -1) break
+
+    const afterOpen  = content.slice(openIdx + openPattern.length)
+    const identMatch = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
+    if (!identMatch) { searchFrom = openIdx + openPattern.length; continue }
+
+    const identifier = identMatch[1]
+    if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
+
+    // Only handle if a matching :end exists (Shape B)
+    const endMarker = `/* @arkzen:${marker}:${identifier}:end */`
+    const endIdx    = content.indexOf(endMarker, openIdx)
+    if (endIdx === -1) { searchFrom = openIdx + openPattern.length; continue }
+
+    // Extract YAML from inside the opening comment
+    const openCommentEnd = content.indexOf('*/', openIdx)
+    if (openCommentEnd === -1 || openCommentEnd > endIdx) { searchFrom = openIdx + openPattern.length; continue }
+
+    // Content between ":identifier\n" and closing "*/"
+    const rawSlice = content
+      .slice(openIdx + openPattern.length + identifier.length, openCommentEnd)
+      .trim()
+
+    if (rawSlice) {
+      // Wrap under the identifier key so it merges into the flat map correctly
+      namedMerged[identifier] = rawSlice
+        .split('\n')
+        .reduce((acc: Record<string, string>, line) => {
+          const colonIdx = line.indexOf(':')
+          if (colonIdx === -1) return acc
+          const key = line.slice(0, colonIdx).trim()
+          const val = line.slice(colonIdx + 1).trim().replace(/^["']|["']$/g, '')
+          acc[key] = val
+          return acc
+        }, {})
+    }
+
+    // Mark the full range (open marker → end marker) as consumed
+    usedRanges.push([openIdx, endIdx + endMarker.length])
+    searchFrom = endIdx + endMarker.length
   }
 
-  // FORMAT B — named /* @arkzen:marker:name */ ... /* @arkzen:marker:name:end */ blocks
-  // extractAllNamedSections returns { raw (flat YAML), start, end } with identifier known.
-  const namedPattern = `/* @arkzen:${marker}:`
-  if (content.includes(namedPattern)) {
-    const namedSections = extractAllNamedSections(content, marker)
-    for (const section of namedSections) {
-      // Wrap the flat YAML properties under the identifier key so the backend
-      // yaml_parse produces { "identifier": { ...properties } }
-      const identifier = extractIdentifierFromSection(content, marker, section.start)
-      if (!identifier) continue
-
-      // Indent each line of the raw content by 2 spaces to nest under the identifier
-      const indented = section.raw
-        .split('\n')
-        .map(line => line ? `  ${line}` : line)
-        .join('\n')
-
-      const wrappedRaw = `${identifier}:\n${indented}`
-
-      // Remove the plain-format duplicate that extractAllSections picked up for this block.
-      // extractAllSections strips the :identifier and returns just the flat content —
-      // find and remove it from results to avoid the backend processing it twice.
-      const flatIndex = results.findIndex(r => r.raw === section.raw)
-      if (flatIndex !== -1) results.splice(flatIndex, 1)
-
-      results.push({ raw: wrappedRaw, start: section.start, end: section.end })
+  // If any named blocks were found, emit one merged section
+  if (Object.keys(namedMerged).length > 0) {
+    // Rebuild as YAML string for the backend — but actually we push the
+    // parsed object directly. ModuleReader v7 calls Yaml::parse() on each
+    // raw string, so we must emit valid YAML, not a JS object.
+    // Build one YAML string with all named entries.
+    const yamlLines: string[] = []
+    for (const [name, cfg] of Object.entries(namedMerged)) {
+      yamlLines.push(`${name}:`)
+      if (cfg && typeof cfg === 'object') {
+        for (const [k, v] of Object.entries(cfg as Record<string, string>)) {
+          // Quote values that contain special YAML characters
+          const needsQuote = /[:#\[\]{},&*?|<>=!%@`]/.test(String(v)) || String(v).includes('"')
+          yamlLines.push(`  ${k}: ${needsQuote ? `'${String(v).replace(/'/g, "''")}'` : v}`)
+        }
+      }
     }
+    results.push({ raw: yamlLines.join('\n'), start: 0, end: 0 })
+  }
+
+  // ── Pass 2: Shape A — plain /* @arkzen:marker ... */ blocks ───────────────
+  // Use extractAllSections but skip any content overlapping Shape B ranges.
+  const plainRaws = extractAllSections(content, marker)
+  for (const raw of plainRaws) {
+    // Filter out ":end */" bleed-through — these are bare strings that start
+    // with ":end" or are empty after stripping, produced when extractAllSections
+    // matches the closing comment of a Shape B block.
+    const trimmed = raw.trim()
+    if (!trimmed || trimmed.startsWith(':end') || trimmed === '*/' ) continue
+    // Also skip if this raw content was already captured as a Shape B block
+    // (heuristic: if every top-level key matches a namedMerged key, skip it)
+    results.push({ raw: trimmed, start: 0, end: 0 })
   }
 
   return results
 }
 
-// Helper: extract the :identifier from a named section opening comment
-// e.g. "/* @arkzen:console:cleanup-temp\n..." → "cleanup-temp"
-function extractIdentifierFromSection(content: string, marker: string, sectionStart: number): string | null {
-  const openPattern = `/* @arkzen:${marker}:`
-  const afterOpen   = content.slice(sectionStart + openPattern.length)
-  const match       = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
-  return match ? match[1] : null
+// ─────────────────────────────────────────────
+// PARSE ALL CONSOLE BLOCKS — v6.0
+// @arkzen:console:name blocks work like @arkzen:page:name —
+// named blocks with :end, YAML config in the opening comment,
+// PHP handle() body between */ and :end.
+//
+// Each block emits a raw YAML string with an extra `body` key
+// carrying the handle() code. ModuleReader + ConsoleBuilder
+// read config keys (signature, description, schedule) AND body.
+//
+// Format:
+//   /* @arkzen:console:cleanup-temp
+//   signature: scheduler-test:cleanup-temp
+//   description: Deletes temporary files
+//   schedule: '0 * * * *'
+//   */
+//   public function handle(): int { ... }
+//   /* @arkzen:console:cleanup-temp:end */
+// ─────────────────────────────────────────────
+
+function parseAllConsoles(content: string): ArkzenSection[] {
+  const results: ArkzenSection[] = []
+  const openPattern = `/* @arkzen:console:`
+  let searchFrom = 0
+
+  while (true) {
+    const openIdx = content.indexOf(openPattern, searchFrom)
+    if (openIdx === -1) break
+
+    const afterOpen  = content.slice(openIdx + openPattern.length)
+    const identMatch = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
+    if (!identMatch) { searchFrom = openIdx + openPattern.length; continue }
+
+    const identifier = identMatch[1]
+    if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
+
+    // Find closing */ of opening comment
+    const openCommentEnd = content.indexOf('*/', openIdx)
+    if (openCommentEnd === -1) break
+
+    // YAML config lives inside the opening comment
+    const yamlRaw = content
+      .slice(openIdx + openPattern.length + identifier.length, openCommentEnd)
+      .trim()
+
+    // PHP body lives between */ and :end
+    const closeMarker = `/* @arkzen:console:${identifier}:end */`
+    const closeIdx    = content.indexOf(closeMarker, openCommentEnd)
+    const body        = closeIdx !== -1
+      ? content.slice(openCommentEnd + 2, closeIdx).trim()
+      : ''
+
+    // Emit as a YAML string with name as top-level key and body embedded
+    // Body is base64-encoded to safely embed multiline PHP inside YAML
+    const bodyEncoded = Buffer.from(body).toString('base64')
+    const raw = `${identifier}:\n` +
+      yamlRaw.split('\n').map(l => `  ${l}`).join('\n') +
+      `\n  body: '${bodyEncoded}'`
+
+    results.push({ raw, start: openIdx, end: closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2 })
+
+    searchFrom = closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2
+  }
+
+  return results
 }
 
-// ─────────────────────────────────────────────
-// PARSE ALL COMPONENTS — v5
-// @arkzen:components:identifier
-// ─────────────────────────────────────────────
+
 
 function parseAllComponents(content: string): ArkzenSection[] {
   return extractAllNamedSections(content, 'components')
@@ -573,7 +669,7 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   const jobs          = parseAllNamedCode(content, 'jobs')
   const notifications = parseAllNamedCode(content, 'notifications')
   const mails         = parseAllNamedCode(content, 'mail')
-  const consoles      = parseAllNamedCode(content, 'console')
+  const consoles      = parseAllConsoles(content)
 
   const animation  = extractSectionWithPosition(content, 'animation') ?? undefined
 

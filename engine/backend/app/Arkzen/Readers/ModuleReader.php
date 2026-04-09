@@ -162,12 +162,20 @@ class ModuleReader
         foreach ($rawBlocks as $raw) {
             if (empty($raw) || !is_string($raw)) continue;
 
-            $parsed = Yaml::parse($raw);
+            try {
+                $parsed = Yaml::parse($raw);
+            } catch (\Throwable $e) {
+                // Malformed YAML in one block must not crash the entire build.
+                // Log it and skip — the builder will generate what it can.
+                \Illuminate\Support\Facades\Log::warning(
+                    '[Arkzen ModuleReader] Skipping malformed YAML block: ' . $e->getMessage(),
+                    ['raw' => substr($raw, 0, 200)]
+                );
+                continue;
+            }
 
             if (!is_array($parsed)) continue;
 
-            // Each parsed block is a name → config map.
-            // Merge all blocks into one flat map.
             $merged = array_merge($merged, $parsed);
         }
 
@@ -195,7 +203,15 @@ class ModuleReader
         foreach ($rawBlocks as $raw) {
             if (empty($raw) || !is_string($raw)) continue;
 
-            $parsed = Yaml::parse($raw);
+            try {
+                $parsed = Yaml::parse($raw);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning(
+                    '[Arkzen ModuleReader] Skipping malformed realtime YAML block: ' . $e->getMessage(),
+                    ['raw' => substr($raw, 0, 200)]
+                );
+                continue;
+            }
             if (!is_array($parsed)) continue;
 
             if (!empty($parsed['channels']) && is_array($parsed['channels'])) {
