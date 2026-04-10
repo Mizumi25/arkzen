@@ -13,14 +13,11 @@ class ArkzenServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->ensureDirectories();
-        $this->registerSqliteConnections();  // <-- ADD THIS LINE
+        $this->registerSqliteConnections();
+        $this->ensureReverbConfig();
         $this->bootActiveTatemonos();
     }
 
-    // ─────────────────────────────────────────────
-    // NEW METHOD: Register all SQLite connections
-    // ─────────────────────────────────────────────
-    
     private function registerSqliteConnections(): void
     {
         $arkzenDbDir = database_path('arkzen');
@@ -29,14 +26,12 @@ class ArkzenServiceProvider extends ServiceProvider
             return;
         }
         
-        // Scan all SQLite files in database/arkzen/
         $dbFiles = File::glob($arkzenDbDir . '/*.sqlite');
         
         foreach ($dbFiles as $dbFile) {
-            $slug = basename($dbFile, '.sqlite');  // "inventory-management"
-            $connection = str_replace('-', '_', $slug);  // "inventory_management"
+            $slug = basename($dbFile, '.sqlite');
+            $connection = str_replace('-', '_', $slug);
             
-            // Check if connection already exists
             if (!Config::has("database.connections.{$connection}")) {
                 Config::set("database.connections.{$connection}", [
                     'driver' => 'sqlite',
@@ -50,8 +45,39 @@ class ArkzenServiceProvider extends ServiceProvider
         }
     }
 
-    // ... rest of your existing code stays exactly the same ...
-    
+    private function ensureReverbConfig(): void
+    {
+        // Ensure Reverb environment variables exist
+        $envPath = base_path('.env');
+        if (!File::exists($envPath)) {
+            return;
+        }
+        
+        $reverbVars = [
+            'BROADCAST_CONNECTION' => 'reverb',
+            'REVERB_APP_ID' => config('arkzen.reverb.app_id', 'arkzen'),
+            'REVERB_APP_KEY' => config('arkzen.reverb.app_key', 'arkzen-key'),
+            'REVERB_APP_SECRET' => config('arkzen.reverb.app_secret', 'arkzen-secret'),
+            'REVERB_HOST' => config('arkzen.reverb.host', 'localhost'),
+            'REVERB_PORT' => config('arkzen.reverb.port', 8080),
+            'REVERB_SCHEME' => config('arkzen.reverb.scheme', 'http'),
+        ];
+        
+        $content = File::get($envPath);
+        $changed = false;
+        
+        foreach ($reverbVars as $key => $value) {
+            if (!str_contains($content, "{$key}=")) {
+                File::append($envPath, "\n{$key}={$value}");
+                $changed = true;
+            }
+        }
+        
+        if ($changed) {
+            \Log::info('[Arkzen] Reverb environment variables added to .env');
+        }
+    }
+
     private function ensureDirectories(): void
     {
         $dirs = [
@@ -60,7 +86,8 @@ class ArkzenServiceProvider extends ServiceProvider
             database_path('migrations/arkzen'),
             database_path('seeders/arkzen'),
             base_path('routes/modules'),
-            database_path('arkzen'),  // <-- ADD THIS LINE
+            database_path('arkzen'),
+            config_path(),
         ];
 
         foreach ($dirs as $dir) {

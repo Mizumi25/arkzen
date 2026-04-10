@@ -42,63 +42,63 @@ class BroadcastBuilder
         $channelName = $config['channel'] ?? $slug;
         $channelType = $config['type']    ?? 'public';
         $filePath    = app_path("Events/Arkzen/{$slugNs}/Broadcast/{$className}.php");
-
+    
         $channelMethod = match($channelType) {
             'private'  => "new PrivateChannel('{$channelName}')",
             'presence' => "new PresenceChannel('{$channelName}')",
             default    => "new Channel('{$channelName}')",
         };
-
+    
         $useStatements = match($channelType) {
             'private'  => "use Illuminate\\Broadcasting\\PrivateChannel;",
             'presence' => "use Illuminate\\Broadcasting\\PresenceChannel;",
             default    => "use Illuminate\\Broadcasting\\Channel;",
         };
-
+    
         $content = "<?php
-
-// ============================================================
-// ARKZEN GENERATED BROADCAST EVENT — {$className}
-// Tatemono: {$slug}
-// Channel: {$channelName} ({$channelType})
-// DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: " . now()->toISOString() . "
-// ============================================================
-
-namespace App\\Events\\Arkzen\\{$slugNs}\\Broadcast;
-
-use Illuminate\\Broadcasting\\InteractsWithSockets;
-use Illuminate\\Contracts\\Broadcasting\\ShouldBroadcast;
-use Illuminate\\Foundation\\Events\\Dispatchable;
-use Illuminate\\Queue\\SerializesModels;
-{$useStatements}
-
-class {$className} implements ShouldBroadcast
-{
-    use Dispatchable, InteractsWithSockets, SerializesModels;
-
-    public function __construct(
-        public readonly array \$data = []
-    ) {}
-
-    public function broadcastOn(): array
+    
+    // ============================================================
+    // ARKZEN GENERATED BROADCAST EVENT — {$className}
+    // Tatemono: {$slug}
+    // Channel: {$channelName} ({$channelType})
+    // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
+    // Generated: " . now()->toISOString() . "
+    // ============================================================
+    
+    namespace App\\Events\\Arkzen\\{$slugNs}\\Broadcast;
+    
+    use Illuminate\\Broadcasting\\InteractsWithSockets;
+    use Illuminate\\Contracts\\Broadcasting\\ShouldBroadcastNow;
+    use Illuminate\\Foundation\\Events\\Dispatchable;
+    use Illuminate\\Queue\\SerializesModels;
+    {$useStatements}
+    
+    class {$className} implements ShouldBroadcastNow
     {
-        return [{$channelMethod}];
+        use Dispatchable, InteractsWithSockets, SerializesModels;
+    
+        public function __construct(
+            public readonly array \$data = []
+        ) {}
+    
+        public function broadcastOn(): array
+        {
+            return [{$channelMethod}];
+        }
+    
+        public function broadcastAs(): string
+        {
+            // Scoped event name: tatemono.event-name
+            return '{$slug}.{$name}';
+        }
+    
+        public function broadcastWith(): array
+        {
+            return \$this->data;
+        }
     }
-
-    public function broadcastAs(): string
-    {
-        // Scoped event name: tatemono.event-name
-        return '{$slug}.{$name}';
-    }
-
-    public function broadcastWith(): array
-    {
-        return \$this->data;
-    }
-}
-";
-
+    ";
+    
         File::put($filePath, $content);
         Log::info("[Arkzen Broadcast] ✓ {$slugNs}\\Broadcast\\{$className} on {$channelName}");
     }

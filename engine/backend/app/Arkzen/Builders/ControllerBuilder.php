@@ -1,16 +1,11 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — CONTROLLER BUILDER v5.5
+// ARKZEN ENGINE — CONTROLLER BUILDER v5.6
 // FIXED v5.4: Now uses Resource class when resource: true is set
 // FIXED v5.5: Role endpoint generators rewritten for real Sanctum auth.
-//   generateRoleMe()        → REMOVED (auth store uses /auth/me built-in)
-//   generateRoleAdminOnly() → checks $request->user()->role via CheckRole
-//   generateRoleUserOnly()  → logs audit entry; auth guard already ran
-//   generateRolePromote()   → $user->update(['role' => 'admin'])
-//   generateRoleDemote()    → $user->update(['role' => 'user'])
-//   All session()->get/put('role_test_user', ...) calls eliminated.
-//   Audit log entries now record the real $request->user()->id.
+// FIXED v5.6: Added 'run' endpoint support for scheduler-test commands
+//   generateCommandRun() executes Artisan commands and records results
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -28,14 +23,13 @@ class ControllerBuilder
         $controllerName = $api['controller'];
         $modelName      = $api['model'];
         $endpoints      = $api['endpoints'];
-        $useResource    = $api['resource'] ?? false;               // ← ADD THIS
+        $useResource    = $api['resource'] ?? false;
         
-        // FIXED: Use $slugNs for directory (namespace-safe), not $name
         $filePath       = app_path("Http/Controllers/Arkzen/{$slugNs}/{$controllerName}.php");
 
         File::ensureDirectoryExists(app_path("Http/Controllers/Arkzen/{$slugNs}"));
 
-        $methods = self::generateMethods($modelName, $endpoints, $slugNs, $useResource);  // ← ADD params
+        $methods = self::generateMethods($modelName, $endpoints, $slugNs, $useResource);
 
         $resourceImport = $useResource 
             ? "use App\\Http\\Resources\\Arkzen\\{$slugNs}\\{$modelName}Resource;\n" 
@@ -86,20 +80,25 @@ class {$controllerName} extends Controller
         return match ($name) {
             'index'   => self::generateIndex($modelName, $endpoint, $slugNs, $useResource),
             'show'    => self::generateShow($modelName, $endpoint, $slugNs, $useResource),
-            'store'   => match ($endpoint['type'] ?? '') {
-                'upload'         => self::generateUploadStore($modelName, $endpoint),
-                default          => self::generateStore($modelName, $endpoint, $slugNs, $useResource),
+            'store' => match ($endpoint['type'] ?? '') {
+                'upload'      => self::generateUploadStore($modelName, $endpoint),
+                'command_run' => self::generateCommandRun($modelName, $endpoint),
+                'job_dispatch' => self::generateJobDispatch($modelName, $endpoint),
+                'event_fire' => self::generateEventFire($modelName, $endpoint),
+                'broadcast' => self::generateBroadcast($modelName, $slugNs, $endpoint),
+                default       => self::generateStore($modelName, $endpoint, $slugNs, $useResource),
             },
             'destroy' => match ($endpoint['type'] ?? '') {
                 'upload_destroy' => self::generateUploadDestroy($modelName, $endpoint),
                 default          => self::generateDestroy($modelName, $endpoint),
             },
             'fileUrl'    => self::generateUploadUrl($modelName, $endpoint),
-            'me'         => self::generateCustomMethod($name, $modelName, $endpoint),   // auth:true Tatemonos use /auth/me built-in
+            'me'         => self::generateCustomMethod($name, $modelName, $endpoint),
             'adminOnly'  => self::generateRoleAdminOnly($modelName, $endpoint),
             'userOnly'   => self::generateRoleUserOnly($modelName, $endpoint),
             'promote'    => self::generateRolePromote($endpoint),
             'demote'     => self::generateRoleDemote($endpoint),
+            'run'        => self::generateCommandRun($modelName, $endpoint),
             default      => self::generateCustomMethod($name, $modelName, $endpoint),
         };
     }
@@ -414,10 +413,6 @@ class {$controllerName} extends Controller
 
     // ─────────────────────────────────────────────
     // ROLE ME — DEPRECATED in v5.5
-    // auth:true Tatemonos use the built-in /auth/me endpoint from AuthBuilder.
-    // If an endpoint named 'me' still appears in a Tatemono, route it through
-    // generateCustomMethod instead (see dispatch above). This stub is kept only
-    // so any external call sites don't get a fatal error.
     // ─────────────────────────────────────────────
 
     /** @deprecated Use AuthBuilder's /auth/me instead */
@@ -428,12 +423,6 @@ class {$controllerName} extends Controller
 
     // ─────────────────────────────────────────────
     // ROLE ADMIN ONLY — Sanctum auth + role check
-    // The auth middleware guarantees $request->user() is non-null.
-    // CheckRole (role:admin) runs at the route level and returns 403
-    // before this method is reached if the role is wrong. We still
-    // do the check here as well so the audit log captures denied
-    // attempts that slip through (e.g. if per-endpoint middleware is
-    // not yet supported by RouteRegistrar).
     // ─────────────────────────────────────────────
 
     private static function generateRoleAdminOnly(string $model, array $endpoint): string
@@ -463,7 +452,6 @@ class {$controllerName} extends Controller
 
     // ─────────────────────────────────────────────
     // ROLE USER ONLY — any authenticated user
-    // Auth middleware already ran. Just log and return.
     // ─────────────────────────────────────────────
 
     private static function generateRoleUserOnly(string $model, array $endpoint): string
@@ -520,6 +508,157 @@ class {$controllerName} extends Controller
 
         return response()->json(['message' => 'Demoted to user', 'user' => \$user->fresh()]);
     }";
+    }
+
+    // ─────────────────────────────────────────────
+    // COMMAND RUN — executes Artisan command and records result
+    // ─────────────────────────────────────────────
+
+    private static function generateCommandRun(string $model, array $endpoint): string
+    {
+        $description = $endpoint['description'] ?? 'Execute a command and record the result';
+        
+        return "    /**
+     * {$description}
+     */
+    public function store(Request \$request): JsonResponse
+    {
+        \$validated = \$request->validate([
+            'command' => 'required|string',
+            'triggered_by' => 'sometimes|string'
+        ]);
+
+        \$commandName = \$validated['command'];
+        \$triggeredBy = \$validated['triggered_by'] ?? 'manual';
+
+        // Map command name to signature (extracted from tatemono)
+        \$signatures = [
+            'cleanup-temp' => 'scheduler-test:cleanup-temp',
+            'generate-report' => 'scheduler-test:generate-report',
+            'ping-health' => 'scheduler-test:ping-health',
+            'sync-data' => 'scheduler-test:sync-data',
+        ];
+
+        \$signature = \$signatures[\$commandName] ?? null;
+        if (!\$signature) {
+            return response()->json(['message' => 'Invalid command'], 400);
+        }
+
+        \$start = microtime(true);
+        
+        try {
+            \$exitCode = \Artisan::call(\$signature);
+            \$output = \Artisan::output();
+        } catch (\Exception \$e) {
+            \$exitCode = 1;
+            \$output = \$e->getMessage();
+        }
+
+        \$durationMs = (int) ((microtime(true) - \$start) * 1000);
+
+        \$commandRun = {$model}::create([
+            'command_name' => \$commandName,
+            'signature' => \$signature,
+            'exit_code' => \$exitCode,
+            'output' => \$output,
+            'triggered_by' => \$triggeredBy,
+            'duration_ms' => \$durationMs,
+        ]);
+
+        return response()->json(\$commandRun, 201);
+    }";
+    }
+    
+    // ─────────────────────────────────────────────
+    // JOB DISPATCH — queues a job and returns immediately
+    // ─────────────────────────────────────────────
+    
+    private static function generateJobDispatch(string $model, array $endpoint): string
+    {
+        $description = $endpoint['description'] ?? 'Dispatch a job';
+        
+        return "    /**
+         * {$description}
+         */
+        public function store(Request \$request): JsonResponse
+        {
+            \$validated = \$request->validate([
+                'job' => 'required|string'
+            ]);
+    
+            \$jobClass = match(\$validated['job']) {
+                'process-data' => \\App\\Jobs\\Arkzen\\JobTest\\ProcessDataJob::class,
+                'heavy-computation' => \\App\\Jobs\\Arkzen\\JobTest\\HeavyComputationJob::class,
+                'always-fails' => \\App\\Jobs\\Arkzen\\JobTest\\AlwaysFailsJob::class,
+                default => throw new \\Exception('Unknown job: ' . \$validated['job']),
+            };
+    
+            dispatch(new \$jobClass());
+    
+            return response()->json(['message' => 'Job dispatched'], 202);
+        }";
+    }
+    
+    // ─────────────────────────────────────────────
+    // EVENT FIRE — fires an event and returns immediately
+    // ─────────────────────────────────────────────
+    
+    private static function generateEventFire(string $model, array $endpoint): string
+    {
+        $description = $endpoint['description'] ?? 'Fire an event';
+        
+        return "    /**
+         * {$description}
+         */
+        public function store(Request \$request): JsonResponse
+        {
+            \$validated = \$request->validate([
+                'event' => 'required|string',
+                'payload' => 'sometimes|array'
+            ]);
+    
+            \$eventClass = match(\$validated['event']) {
+                'user-signed-up' => \\App\\Events\\Arkzen\\EventsTest\\UserSignedUp::class,
+                'order-placed' => \\App\\Events\\Arkzen\\EventsTest\\OrderPlaced::class,
+                'data-exported' => \\App\\Events\\Arkzen\\EventsTest\\DataExported::class,
+                default => throw new \\Exception('Unknown event: ' . \$validated['event']),
+            };
+    
+            event(new \$eventClass(\$validated['payload'] ?? []));
+    
+            return response()->json(['message' => 'Event fired'], 202);
+        }";
+    }
+    
+    // ─────────────────────────────────────────────
+    // BROADCAST — stores message and broadcasts it
+    // ─────────────────────────────────────────────
+    
+        // ─────────────────────────────────────────────
+    // BROADCAST — stores message and broadcasts it
+    // ─────────────────────────────────────────────
+    
+    private static function generateBroadcast(string $model, string $slugNs, array $endpoint): string
+    {
+        $description = $endpoint['description'] ?? 'Store and broadcast';
+        $eventClass = "\\App\\Events\\Arkzen\\{$slugNs}\\Broadcast\\MessageSent";
+        $validation = self::generateValidation($endpoint['validation'] ?? []);
+        
+        return "    /**
+         * {$description}
+         */
+        public function store(Request \$request): JsonResponse
+        {
+            \$validated = \$request->validate([
+    {$validation}
+            ]);
+    
+            \$message = {$model}::create(\$validated);
+            
+            broadcast(new {$eventClass}(\$message->toArray()));
+    
+            return response()->json(\$message, 201);
+        }";
     }
 
     // ─────────────────────────────────────────────

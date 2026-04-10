@@ -5,37 +5,107 @@ description: Tests Laravel Queue Jobs. Dispatch a job, watch it process, see the
 auth: false
 */
 
-/* @arkzen:database:job_results
-columns:
-  job_name: string
-  status: string
-  result: text
-  processed_at: timestamp
+/* @arkzen:database
+table: job_results
 timestamps: true
+softDeletes: false
+columns:
+  id:
+    type: integer
+    primary: true
+    autoIncrement: true
+  job_name:
+    type: string
+    length: 100
+    nullable: false
+  status:
+    type: string
+    length: 50
+    nullable: false
+  result:
+    type: text
+    nullable: true
+  processed_at:
+    type: datetime
+    nullable: true
 */
 
 /* @arkzen:api
+model: JobResult
+controller: JobResultController
+prefix: /api/job-test
 middleware: []
-routes:
-  - GET  /job-test/results         → index
-  - POST /job-test/dispatch        → store
-  - GET  /job-test/failed          → failed
+resource: false
+policy: false
+factory: false
+
+endpoints:
+  index:
+    method: GET
+    route: /results
+    description: Get all job results
+    response:
+      type: paginated
+
+  store:
+    method: POST
+    route: /dispatch
+    description: Dispatch a job
+    type: job_dispatch
+    validation:
+      job: required|string
+    response:
+      type: single
 */
 
-/* @arkzen:jobs
-process-data:
-  queue: default
-  tries: 3
-  timeout: 30
-heavy-computation:
-  queue: heavy
-  tries: 1
-  timeout: 120
-always-fails:
-  queue: default
-  tries: 2
-  timeout: 10
+/* @arkzen:jobs:process-data
+queue: default
+tries: 3
+timeout: 30
 */
+public function handle(): void
+{
+    $start = microtime(true);
+    // Simulate work
+    sleep(2);
+    \App\Models\Arkzen\JobTest\JobResult::create([
+        'job_name'     => 'process-data',
+        'status'       => 'completed',
+        'result'       => 'Data processed successfully in ' . round((microtime(true) - $start) * 1000) . 'ms',
+        'processed_at' => now(),
+    ]);
+}
+/* @arkzen:jobs:process-data:end */
+
+/* @arkzen:jobs:heavy-computation
+queue: heavy
+tries: 1
+timeout: 120
+*/
+public function handle(): void
+{
+    $start = microtime(true);
+    // Simulate heavy work
+    sleep(5);
+    \App\Models\Arkzen\JobTest\JobResult::create([
+        'job_name'     => 'heavy-computation',
+        'status'       => 'completed',
+        'result'       => 'Heavy computation completed in ' . round((microtime(true) - $start) * 1000) . 'ms',
+        'processed_at' => now(),
+    ]);
+}
+/* @arkzen:jobs:heavy-computation:end */
+
+/* @arkzen:jobs:always-fails
+queue: default
+tries: 2
+timeout: 10
+*/
+public function handle(): void
+{
+    throw new \Exception('This job always fails');
+}
+/* @arkzen:jobs:always-fails:end */
 
 /* @arkzen:components:shared */
 
@@ -45,8 +115,6 @@ import React, { useState, useEffect } from 'react'
 import { arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 /* @arkzen:components:shared:end */
-
-
 
 /* @arkzen:page:dashboard */
 /* @arkzen:page:layout:guest */
@@ -81,7 +149,7 @@ const DashboardPage = () => {
         method: 'POST',
         body: JSON.stringify({ job: jobName })
       })
-      setTimeout(loadResults, 1500)
+      setTimeout(loadResults, 2000) // allow time for job to process
     } catch (e) {
       console.error(e)
     } finally {
@@ -106,10 +174,8 @@ const DashboardPage = () => {
             <h1 className="text-2xl font-bold">⚙️ Job Test</h1>
             <p className="text-sm text-neutral-500 mt-1">Queue: <code>php artisan queue:work</code></p>
           </div>
-          
         </div>
 
-        {/* Dispatch buttons */}
         <div className="grid gap-3">
           {jobs.map(job => (
             <div key={job.name} className="bg-white rounded-2xl border border-neutral-100 p-5 flex items-center justify-between">
@@ -131,7 +197,6 @@ const DashboardPage = () => {
           ))}
         </div>
 
-        {/* Results */}
         <div className="bg-white rounded-2xl border border-neutral-100 overflow-hidden">
           <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
             <h2 className="font-semibold">Results</h2>

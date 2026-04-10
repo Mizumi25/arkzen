@@ -59,6 +59,7 @@ endpoints:
     method: POST
     route: /fire
     description: Fire an event
+    type: event_fire
     validation:
       event: required|string
       payload: nullable|array
@@ -73,20 +74,20 @@ endpoints:
       value: Log cleared
 */
 
-/* @arkzen:events:order
-order-placed:
-  listeners: [ProcessPayment, UpdateInventory, SendOrderConfirmation]
+/* @arkzen:events:user-signed-up
+listeners: [SendWelcomeEmail, UpdateUserStats, NotifyAdmins]
 */
+/* @arkzen:events:user-signed-up:end */
 
-/* @arkzen:events:user
-user-signed-up:
-  listeners: [SendWelcomeEmail, UpdateUserStats, NotifyAdmins]
+/* @arkzen:events:order-placed
+listeners: [ProcessPayment, UpdateInventory, SendOrderConfirmation]
 */
+/* @arkzen:events:order-placed:end */
 
-/* @arkzen:events:data
-data-exported:
-  listeners: [LogExportActivity, CleanupTempFiles]
+/* @arkzen:events:data-exported
+listeners: [LogExportActivity, CleanupTempFiles]
 */
+/* @arkzen:events:data-exported:end */
 
 /* @arkzen:components:shared */
 

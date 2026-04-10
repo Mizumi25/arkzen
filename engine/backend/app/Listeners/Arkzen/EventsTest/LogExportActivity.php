@@ -5,7 +5,7 @@
 // Tatemono: events-test
 // Listens to: App\Events\Arkzen\EventsTest\DataExported
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-09T07:54:26.024745Z
+// Generated: 2026-04-10T13:43:58.301611Z
 // ============================================================
 
 namespace App\Listeners\Arkzen\EventsTest;
@@ -14,6 +14,7 @@ use App\Events\Arkzen\EventsTest\DataExported;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Log;
+use \App\Models\Arkzen\EventsTest\EventLog;
 
 class LogExportActivity implements ShouldQueue
 {
@@ -21,8 +22,14 @@ class LogExportActivity implements ShouldQueue
 
     public function handle(DataExported $event): void
     {
-        Log::info('[Arkzen Listener] EventsTest\\LogExportActivity fired', $event->data);
-
-        // TODO: implement listener logic
+        $start = microtime(true);
+        
+        \App\Models\Arkzen\EventsTest\EventLog::create([
+            'event_name'    => class_basename($event),
+            'listener_name' => class_basename($this),
+            'status'        => 'completed',
+            'payload'       => json_encode($event->data),
+            'duration_ms'   => (int) ((microtime(true) - $start) * 1000),
+        ]);
     }
 }

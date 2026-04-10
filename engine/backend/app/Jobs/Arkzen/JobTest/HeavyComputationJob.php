@@ -5,7 +5,7 @@
 // Tatemono: job-test
 // Queue: heavy | Tries: 1 | Timeout: 120s
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-09T07:54:26.470537Z
+// Generated: 2026-04-10T13:43:58.792861Z
 // ============================================================
 
 namespace App\Jobs\Arkzen\JobTest;
@@ -32,9 +32,15 @@ class HeavyComputationJob implements ShouldQueue
 
     public function handle(): void
     {
-        Log::info('[Arkzen Job] Running: JobTest\\HeavyComputationJob', $this->data);
-
-        // TODO: implement job logic for heavy-computation
+        $start = microtime(true);
+            // Simulate heavy work
+            sleep(5);
+            \App\Models\Arkzen\JobTest\JobResult::create([
+                'job_name'     => 'heavy-computation',
+                'status'       => 'completed',
+                'result'       => 'Heavy computation completed in ' . round((microtime(true) - $start) * 1000) . 'ms',
+                'processed_at' => now(),
+            ]);
     }
 
     public function failed(\Throwable $exception): void

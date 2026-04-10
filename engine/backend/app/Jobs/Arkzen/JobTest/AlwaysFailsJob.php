@@ -5,7 +5,7 @@
 // Tatemono: job-test
 // Queue: default | Tries: 2 | Timeout: 10s
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-09T07:54:26.471106Z
+// Generated: 2026-04-10T13:43:58.795814Z
 // ============================================================
 
 namespace App\Jobs\Arkzen\JobTest;
@@ -32,9 +32,7 @@ class AlwaysFailsJob implements ShouldQueue
 
     public function handle(): void
     {
-        Log::info('[Arkzen Job] Running: JobTest\\AlwaysFailsJob', $this->data);
-
-        // TODO: implement job logic for always-fails
+        throw new \Exception('This job always fails');
     }
 
     public function failed(\Throwable $exception): void

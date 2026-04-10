@@ -2,16 +2,12 @@
 
 // ============================================================
 // ARKZEN ENGINE — LARAVEL CONFIG
-// Place this in /config/arkzen.php in your Laravel project
 // ============================================================
 
 return [
 
-    // Secret key shared between frontend bridge and backend
-    // Must match ARKZEN_ENGINE_SECRET in frontend .env.local
     'engine_secret' => env('ARKZEN_ENGINE_SECRET', 'arkzen-engine-secret'),
 
-    // Paths where Arkzen generates files
     'paths' => [
         'models'      => app_path('Models/Arkzen'),
         'controllers' => app_path('Http/Controllers/Arkzen'),
@@ -20,10 +16,19 @@ return [
         'routes'      => base_path('routes/modules'),
     ],
 
-    // SQLite database path
     'database' => [
         'connection' => 'sqlite',
         'path'       => database_path('database.sqlite'),
+    ],
+
+    // Reverb broadcasting configuration
+    'reverb' => [
+        'app_id' => env('REVERB_APP_ID', 'arkzen'),
+        'app_key' => env('REVERB_APP_KEY', 'arkzen-key'),
+        'app_secret' => env('REVERB_APP_SECRET', 'arkzen-secret'),
+        'host' => env('REVERB_HOST', 'localhost'),
+        'port' => env('REVERB_PORT', 8080),
+        'scheme' => env('REVERB_SCHEME', 'http'),
     ],
 
 ];

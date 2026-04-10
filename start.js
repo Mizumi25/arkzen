@@ -2,7 +2,7 @@
 
 // ============================================================
 // ARKZEN ENGINE — START SCRIPT
-// Starts the Arkzen Engine (frontend + backend)
+// Starts the Arkzen Engine (frontend + backend + queue worker + reverb)
 // Usage: node start.js
 // ============================================================
 
@@ -16,7 +16,11 @@ const FRONTEND_DIR = path.join(ENGINE_DIR, 'frontend')
 const BACKEND_DIR  = path.join(ENGINE_DIR, 'backend')
 
 function log(src, msg) {
-  const prefix = src === 'frontend' ? '\x1b[36m[Frontend]\x1b[0m' : '\x1b[35m[Backend] \x1b[0m'
+  let prefix = ''
+  if (src === 'frontend') prefix = '\x1b[36m[Frontend]\x1b[0m'
+  else if (src === 'backend') prefix = '\x1b[35m[Backend] \x1b[0m'
+  else if (src === 'queue') prefix = '\x1b[33m[Queue]   \x1b[0m'
+  else if (src === 'reverb') prefix = '\x1b[35m[Reverb]  \x1b[0m'
   console.log(`${prefix} ${msg}`)
 }
 
@@ -62,6 +66,60 @@ function startBackend() {
   return proc
 }
 
+function startQueueWorker() {
+  log('queue', 'Starting queue worker (php artisan queue:work --queue=default,heavy)')
+
+  const proc = spawn('php', ['artisan', 'queue:work', '--queue=default,heavy'], {
+    cwd: BACKEND_DIR,
+    stdio: 'pipe',
+  })
+
+  proc.stdout.on('data', (data) => {
+    String(data).trim().split('\n').forEach(line => {
+      if (line.trim()) log('queue', line.trim())
+    })
+  })
+
+  proc.stderr.on('data', (data) => {
+    String(data).trim().split('\n').forEach(line => {
+      if (line.trim()) log('queue', line.trim())
+    })
+  })
+
+  proc.on('exit', (code) => {
+    if (code !== 0) log('queue', `Exited with code ${code}`)
+  })
+
+  return proc
+}
+
+function startReverb() {
+  log('reverb', 'Starting Laravel Reverb WebSocket server on port 8080')
+
+  const proc = spawn('php', ['artisan', 'reverb:start', '--host=0.0.0.0', '--port=8080'], {
+    cwd: BACKEND_DIR,
+    stdio: 'pipe',
+  })
+
+  proc.stdout.on('data', (data) => {
+    String(data).trim().split('\n').forEach(line => {
+      if (line.trim()) log('reverb', line.trim())
+    })
+  })
+
+  proc.stderr.on('data', (data) => {
+    String(data).trim().split('\n').forEach(line => {
+      if (line.trim()) log('reverb', line.trim())
+    })
+  })
+
+  proc.on('exit', (code) => {
+    if (code !== 0) log('reverb', `Exited with code ${code}`)
+  })
+
+  return proc
+}
+
 function startFrontend() {
   log('frontend', 'Starting Next.js + Arkzen Watcher on http://localhost:3000')
 
@@ -97,11 +155,15 @@ console.log('╚═════════════════════�
 checkSetup()
 
 const backend  = startBackend()
+const queue    = startQueueWorker()
+const reverb   = startReverb()
 const frontend = startFrontend()
 
 process.on('SIGINT', () => {
   console.log('\n\n  Shutting down Arkzen Engine...')
   backend.kill()
+  queue.kill()
+  reverb.kill()
   frontend.kill()
   process.exit(0)
 })

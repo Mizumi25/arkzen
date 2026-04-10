@@ -70,6 +70,7 @@ endpoints:
     method: POST
     route: /run
     description: Execute a command and record the result
+    type: command_run
     validation:
       command: required|string
       triggered_by: sometimes|string
@@ -224,14 +225,20 @@ const DashboardPage = () => {
   const { mutate: runCommand, isLoading: running, variables: runningKey } = useMutation<CommandRun, { command: string; triggered_by: string }>({
     method:      'POST',
     invalidates: ['/api/scheduler-test/runs'],
-    onSuccess:   () => toast.success('Command executed'),
+    onSuccess:   () => {
+      toast.success('Command executed');
+      refetch();   // Force a refetch to update the history immediately
+    },
     onError:     (err) => toast.error(err),
   })
 
   const { mutate: clearRuns, isLoading: clearing } = useMutation({
     method:      'DELETE',
     invalidates: ['/api/scheduler-test/runs'],
-    onSuccess:   () => toast.success('Runs cleared'),
+    onSuccess:   () => {
+      toast.success('Runs cleared');
+      refetch();   // Also refetch after clearing
+    },
   })
 
   const exitCodeBadge  = (code: number) => code === 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'

@@ -5,7 +5,7 @@
 // Tatemono: job-test
 // Queue: default | Tries: 3 | Timeout: 30s
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-09T07:54:26.469890Z
+// Generated: 2026-04-10T13:43:58.790897Z
 // ============================================================
 
 namespace App\Jobs\Arkzen\JobTest;
@@ -32,9 +32,15 @@ class ProcessDataJob implements ShouldQueue
 
     public function handle(): void
     {
-        Log::info('[Arkzen Job] Running: JobTest\\ProcessDataJob', $this->data);
-
-        // TODO: implement job logic for process-data
+        $start = microtime(true);
+            // Simulate work
+            sleep(2);
+            \App\Models\Arkzen\JobTest\JobResult::create([
+                'job_name'     => 'process-data',
+                'status'       => 'completed',
+                'result'       => 'Data processed successfully in ' . round((microtime(true) - $start) * 1000) . 'ms',
+                'processed_at' => now(),
+            ]);
     }
 
     public function failed(\Throwable $exception): void

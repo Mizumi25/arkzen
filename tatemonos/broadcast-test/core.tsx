@@ -30,7 +30,7 @@ columns:
   channel:
     type: string
     length: 100
-    nullable: false
+    nullable: true
 */
 
 /* @arkzen:api:messages
@@ -49,8 +49,10 @@ endpoints:
     method: POST
     route: /
     description: Send a message and broadcast it
+    type: broadcast
     validation:
       content: required|string|max:500
+      channel: sometimes|string|max:100
     response:
       type: single
   destroy:
@@ -62,15 +64,16 @@ endpoints:
       value: Message deleted
 */
 
-/* @arkzen:realtime:broadcast
-channels:
-  broadcast-test-public:
-    type: public
-events:
-  message-sent:
-    channel: broadcast-test-public
-    type: public
+/* @arkzen:realtime:broadcast-test-public
+type: public
 */
+/* @arkzen:realtime:broadcast-test-public:end */
+
+/* @arkzen:realtime:message-sent
+channel: broadcast-test-public
+type: public
+*/
+/* @arkzen:realtime:message-sent:end */
 
 /* @arkzen:components:shared */
 
@@ -82,7 +85,7 @@ import { arkzenFetch } from '@/arkzen/core/stores/authStore'
 interface Message {
   id:         number
   content:    string
-  channel:    string
+  channel:    string | null
   created_at: string
 }
 
@@ -109,23 +112,42 @@ const IndexPage = () => {
 
       ws.onopen = () => {
         setWsStatus('connected')
-        ws.send(JSON.stringify({ event: 'pusher:subscribe', data: { channel: 'broadcast-test-public' } }))
+        ws.send(JSON.stringify({ 
+          event: 'pusher:subscribe', 
+          data: { channel: 'broadcast-test-public' } 
+        }))
       }
 
       ws.onmessage = (e) => {
-        const payload = JSON.parse(e.data)
-        if (payload.event === 'broadcast-test.message-sent') {
-          const data = JSON.parse(payload.data)
-          setMessages(prev => [data, ...prev].slice(0, 50))
-          setPublicCount(c => c + 1)
+        try {
+          const payload = JSON.parse(e.data)
+          if (payload.event === 'broadcast-test.message-sent') {
+            const data = typeof payload.data === 'string' ? JSON.parse(payload.data) : payload.data
+            setMessages(prev => [data, ...prev].slice(0, 50))
+            setPublicCount(c => c + 1)
+          }
+        } catch (err) {
+          console.error('Failed to parse message:', err)
         }
       }
 
-      ws.onerror  = () => setWsStatus('error')
-      ws.onclose  = () => setWsStatus('error')
+      ws.onerror = () => {
+        setWsStatus('error')
+        console.error('WebSocket error')
+      }
+      
+      ws.onclose = () => {
+        setWsStatus('error')
+        console.log('WebSocket closed')
+      }
 
-      return () => ws.close()
-    } catch {
+      return () => {
+        if (wsRef.current) {
+          wsRef.current.close()
+        }
+      }
+    } catch (err) {
+      console.error('Failed to create WebSocket:', err)
       setWsStatus('error')
     }
   }, [])
@@ -135,10 +157,12 @@ const IndexPage = () => {
     try {
       await arkzenFetch('/api/broadcast-test/messages', {
         method: 'POST',
-        body:   JSON.stringify({ content: input }),
+        body:   JSON.stringify({ content: input, channel: 'broadcast-test-public' }),
       })
       setInput('')
-    } catch (e) { console.error(e) }
+    } catch (e) { 
+      console.error(e) 
+    }
   }
 
   const statusColor = {
@@ -151,7 +175,6 @@ const IndexPage = () => {
     <div className="min-h-screen p-8">
       <div className="max-w-2xl mx-auto space-y-6">
 
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">📡 Broadcast Test</h1>
@@ -163,7 +186,6 @@ const IndexPage = () => {
           </div>
         </div>
 
-        {/* Stats */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white rounded-2xl p-5 border border-neutral-100">
             <div className="text-3xl font-bold text-neutral-900">{publicCount}</div>
@@ -175,7 +197,6 @@ const IndexPage = () => {
           </div>
         </div>
 
-        {/* Send message */}
         <div className="bg-white rounded-2xl p-5 border border-neutral-100">
           <h2 className="font-semibold mb-3">Send broadcast message</h2>
           <div className="flex gap-2">
@@ -193,7 +214,6 @@ const IndexPage = () => {
           </p>
         </div>
 
-        {/* Message feed */}
         <div className="bg-white rounded-2xl border border-neutral-100 overflow-hidden">
           <div className="px-5 py-4 border-b border-neutral-100">
             <h2 className="font-semibold">Live feed</h2>

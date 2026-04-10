@@ -575,6 +575,141 @@ function parseAllConsoles(content: string): ArkzenSection[] {
 
 
 
+function parseAllJobs(content: string): ArkzenSection[] {
+  const results: ArkzenSection[] = []
+  const openPattern = `/* @arkzen:jobs:`
+  let searchFrom = 0
+
+  while (true) {
+    const openIdx = content.indexOf(openPattern, searchFrom)
+    if (openIdx === -1) break
+
+    const afterOpen = content.slice(openIdx + openPattern.length)
+    const identMatch = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
+    if (!identMatch) { searchFrom = openIdx + openPattern.length; continue }
+
+    const identifier = identMatch[1]
+    if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
+
+    const openCommentEnd = content.indexOf('*/', openIdx)
+    if (openCommentEnd === -1) break
+
+    // YAML config inside the opening comment
+    const yamlRaw = content
+      .slice(openIdx + openPattern.length + identifier.length, openCommentEnd)
+      .trim()
+
+    // PHP body between */ and :end
+    const closeMarker = `/* @arkzen:jobs:${identifier}:end */`
+    const closeIdx = content.indexOf(closeMarker, openCommentEnd)
+    const body = closeIdx !== -1
+      ? content.slice(openCommentEnd + 2, closeIdx).trim()
+      : ''
+
+    const bodyEncoded = Buffer.from(body).toString('base64')
+    const raw = `${identifier}:\n` +
+      yamlRaw.split('\n').map(l => `  ${l}`).join('\n') +
+      `\n  body: '${bodyEncoded}'`
+
+    results.push({ raw, start: openIdx, end: closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2 })
+
+    searchFrom = closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2
+  }
+
+  return results
+}
+
+
+function parseAllEvents(content: string): ArkzenSection[] {
+  const results: ArkzenSection[] = []
+  const openPattern = `/* @arkzen:events:`
+  let searchFrom = 0
+
+  while (true) {
+    const openIdx = content.indexOf(openPattern, searchFrom)
+    if (openIdx === -1) break
+
+    const afterOpen = content.slice(openIdx + openPattern.length)
+    const identMatch = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
+    if (!identMatch) { searchFrom = openIdx + openPattern.length; continue }
+
+    const identifier = identMatch[1]
+    if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
+
+    const openCommentEnd = content.indexOf('*/', openIdx)
+    if (openCommentEnd === -1) break
+
+    // YAML config inside the opening comment
+    const yamlRaw = content
+      .slice(openIdx + openPattern.length + identifier.length, openCommentEnd)
+      .trim()
+
+    // No PHP body for events — only YAML config with listeners
+    const closeMarker = `/* @arkzen:events:${identifier}:end */`
+    const closeIdx = content.indexOf(closeMarker, openCommentEnd)
+    const body = '' // events don't have PHP body
+
+    const bodyEncoded = Buffer.from(body).toString('base64')
+    const raw = `${identifier}:\n` +
+      yamlRaw.split('\n').map(l => `  ${l}`).join('\n') +
+      `\n  body: '${bodyEncoded}'`
+
+    results.push({ raw, start: openIdx, end: closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2 })
+
+    searchFrom = closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2
+  }
+
+  return results
+}
+
+
+
+
+function parseAllRealtime(content: string): ArkzenSection[] {
+  const results: ArkzenSection[] = []
+  const openPattern = `/* @arkzen:realtime:`
+  let searchFrom = 0
+
+  while (true) {
+    const openIdx = content.indexOf(openPattern, searchFrom)
+    if (openIdx === -1) break
+
+    const afterOpen = content.slice(openIdx + openPattern.length)
+    const identMatch = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
+    if (!identMatch) { searchFrom = openIdx + openPattern.length; continue }
+
+    const identifier = identMatch[1]
+    if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
+
+    const openCommentEnd = content.indexOf('*/', openIdx)
+    if (openCommentEnd === -1) break
+
+    // YAML config inside the opening comment
+    const yamlRaw = content
+      .slice(openIdx + openPattern.length + identifier.length, openCommentEnd)
+      .trim()
+
+    // No PHP body for realtime sections
+    const closeMarker = `/* @arkzen:realtime:${identifier}:end */`
+    const closeIdx = content.indexOf(closeMarker, openCommentEnd)
+    const body = ''
+
+    const bodyEncoded = Buffer.from(body).toString('base64')
+    const raw = `${identifier}:\n` +
+      yamlRaw.split('\n').map(l => `  ${l}`).join('\n') +
+      `\n  body: '${bodyEncoded}'`
+
+    results.push({ raw, start: openIdx, end: closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2 })
+
+    searchFrom = closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2
+  }
+
+  return results
+}
+
+
+
+
 function parseAllComponents(content: string): ArkzenSection[] {
   return extractAllNamedSections(content, 'components')
 }
@@ -664,9 +799,9 @@ export function parseTatemono(filePath: string): ParsedTatemono {
 
   // Repeatable sections
   const stores        = parseAllNamedCode(content, 'store')
-  const realtimes     = parseAllNamedCode(content, 'realtime')
-  const events        = parseAllNamedCode(content, 'events')
-  const jobs          = parseAllNamedCode(content, 'jobs')
+  const realtimes = parseAllRealtime(content)
+  const events = parseAllEvents(content)
+  const jobs = parseAllJobs(content)
   const notifications = parseAllNamedCode(content, 'notifications')
   const mails         = parseAllNamedCode(content, 'mail')
   const consoles      = parseAllConsoles(content)
@@ -679,7 +814,18 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   validateNoDuplicateControllers(apis)
   validatePages(pages)
 
-  const isStatic = databases.length === 0 && apis.length === 0
+   const hasBackend = 
+      databases.length > 0 ||
+      apis.length > 0 ||
+      stores.length > 0 ||
+      events.length > 0 ||
+      realtimes.length > 0 ||
+      jobs.length > 0 ||
+      notifications.length > 0 ||
+      mails.length > 0 ||
+      consoles.length > 0
+    
+    const isStatic = !hasBackend
 
   const parsed: ParsedTatemono = {
     filePath,

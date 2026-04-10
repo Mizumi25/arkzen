@@ -1,16 +1,27 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — JOB BUILDER v3.0
+// ARKZEN ENGINE — JOB BUILDER v3.1
 // Generates Laravel Job classes for background processing.
-// Declared in @arkzen:jobs section.
+// Declared in @arkzen:jobs:name ... @arkzen:jobs:name:end blocks.
+//
+// Block format (mirrors @arkzen:console):
+//   /* @arkzen:jobs:process-data
+//   queue: default
+//   tries: 3
+//   timeout: 30
+//   */
+//   public function handle(): void
+//   {
+//       // your job logic here
+//   }
+//   /* @arkzen:jobs:process-data:end */
 //
 // ISOLATION:
 //   Path:      app/Jobs/Arkzen/{slugNs}/{ClassName}Job.php
 //   Namespace: App\Jobs\Arkzen\{slugNs}
 //
-// v3.0: $module['jobs'] is now a pre-normalised name→config map
-//       from ModuleReader::parse(). No yaml_parse here.
+// v3.1: Body from tatemono injected into handle(). No yaml_parse here.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -42,6 +53,15 @@ class JobBuilder
         $tries     = $config['tries']   ?? 3;
         $timeout   = $config['timeout'] ?? 60;
         $filePath  = app_path("Jobs/Arkzen/{$slugNs}/{$className}.php");
+
+        // Decode handle() body written in the tatemono
+        $bodyEncoded = $config['body'] ?? '';
+        $body        = $bodyEncoded ? base64_decode($bodyEncoded) : null;
+
+        // If no body was written, emit a stub
+        $handleBody = $body
+            ? self::indentBody($body)
+            : "        Log::info('[Arkzen Job] Running: {$slugNs}\\\\{$className}', \$this->data);\n\n        // TODO: implement job logic for {$name}";
 
         $content = "<?php
 
@@ -77,9 +97,7 @@ class {$className} implements ShouldQueue
 
     public function handle(): void
     {
-        Log::info('[Arkzen Job] Running: {$slugNs}\\\\{$className}', \$this->data);
-
-        // TODO: implement job logic for {$name}
+{$handleBody}
     }
 
     public function failed(\Throwable \$exception): void
@@ -94,6 +112,26 @@ class {$className} implements ShouldQueue
 
         File::put($filePath, $content);
         Log::info("[Arkzen Job] ✓ {$slugNs}\\{$className} (queue: {$queue})");
+    }
+
+    // ─────────────────────────────────────────────
+    // INDENT BODY — ensure handle() body is properly indented
+    // ─────────────────────────────────────────────
+
+    private static function indentBody(string $body): string
+    {
+        // Strip the outer function signature if the user wrote it —
+        // we only want the lines inside handle() { ... }
+        // Match: public function handle(): void { ... }
+        if (preg_match('/public\s+function\s+handle\s*\(\s*\)\s*(?::\s*void\s*)?\{(.+)\}/s', $body, $matches)) {
+            $inner = trim($matches[1]);
+        } else {
+            $inner = trim($body);
+        }
+
+        // Re-indent each line to 8 spaces (inside handle())
+        $lines = explode("\n", $inner);
+        return implode("\n", array_map(fn($l) => '        ' . $l, $lines));
     }
 
     public static function toClassName(string $name): string

@@ -1,7 +1,7 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — LISTENER BUILDER v3.0
+// ARKZEN ENGINE — LISTENER BUILDER v3.1
 // Generates Laravel Listener classes tied to Events.
 // Called by EventBuilder — not called directly.
 //
@@ -10,10 +10,8 @@
 //   Namespace: App\Listeners\Arkzen\{slugNs}
 //   Imports:   App\Events\Arkzen\{slugNs}\{EventClass}
 //
-// v3.0: $module['events'] is now a pre-normalised name→config map
-//       from ModuleReader::parse(). No yaml_parse here.
-//       build() is kept for completeness but listeners are
-//       primarily created by EventBuilder calling buildForEvent().
+// v3.1: Listeners now insert records into the tatemono's event_log table
+//       instead of just logging. The UI shows these entries.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -47,6 +45,7 @@ class ListenerBuilder
     ): void {
         $className = str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $listenerName)));
         $filePath  = app_path("Listeners/Arkzen/{$slugNs}/{$className}.php");
+        $logModel = "\\App\\Models\\Arkzen\\{$slugNs}\\EventLog";
 
         File::ensureDirectoryExists(app_path("Listeners/Arkzen/{$slugNs}"));
 
@@ -66,6 +65,7 @@ use App\\Events\\Arkzen\\{$slugNs}\\{$eventClassName};
 use Illuminate\\Contracts\\Queue\\ShouldQueue;
 use Illuminate\\Queue\\InteractsWithQueue;
 use Illuminate\\Support\\Facades\\Log;
+use {$logModel};
 
 class {$className} implements ShouldQueue
 {
@@ -73,9 +73,15 @@ class {$className} implements ShouldQueue
 
     public function handle({$eventClassName} \$event): void
     {
-        Log::info('[Arkzen Listener] {$slugNs}\\\\{$className} fired', \$event->data);
-
-        // TODO: implement listener logic
+        \$start = microtime(true);
+        
+        {$logModel}::create([
+            'event_name'    => class_basename(\$event),
+            'listener_name' => class_basename(\$this),
+            'status'        => 'completed',
+            'payload'       => json_encode(\$event->data),
+            'duration_ms'   => (int) ((microtime(true) - \$start) * 1000),
+        ]);
     }
 }
 ";
