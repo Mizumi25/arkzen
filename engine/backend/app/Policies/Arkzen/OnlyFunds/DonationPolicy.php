@@ -4,7 +4,7 @@
 // ARKZEN GENERATED POLICY — DonationPolicy
 // Tatemono: only-funds
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-10T13:43:59.586968Z
+// Generated: 2026-04-11T01:31:19.858812Z
 // ============================================================
 
 namespace App\Policies\Arkzen\OnlyFunds;
