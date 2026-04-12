@@ -11,9 +11,13 @@ layout:
     className: "min-h-screen"
 */
 
-/* @arkzen:api
+/* @arkzen:routes
+controller: SimulateController
+middleware: []
 routes:
-  - GET /errors-test/simulate/{code}  → simulate
+  - method: GET
+    route: /api/errors-test/simulate/{code}
+    handler: simulate
 */
 
 /* @arkzen:components:shared */

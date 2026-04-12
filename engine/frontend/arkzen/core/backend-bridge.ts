@@ -1,5 +1,20 @@
 // ============================================================
-// ARKZEN ENGINE — BACKEND BRIDGE v5.1
+// ARKZEN ENGINE — BACKEND BRIDGE v5.2
+// v5.2: customRoutes added to hasBackend check and payload.
+//       @arkzen:routes blocks now trigger backend build and
+//       are forwarded to Laravel for CustomRouteBuilder.
+//
+// v5.1 (kept):
+//   - arkzenFetch now sends `Accept: application/json` on every
+//     request. Without this header Laravel's unauthenticated handler
+//     returns a redirect to route('login') instead of a 401 JSON
+//     response, causing "Route [login] not defined" errors on all
+//     auth-protected API routes.
+//   - Added `refreshUser()` as a public alias for `fetchMe()`.
+//     Tatemonos that call refreshUser() after promote/demote now
+//     work correctly. fetchMe() remains for backwards compatibility.
+//   - All internal fetch() calls (login, register, logout, fetchMe)
+//     also gain `Accept: application/json` for consistency.
 // ============================================================
 
 import type { ParsedTatemono } from '../types'
@@ -11,6 +26,7 @@ export async function triggerBackendBuild(tatemono: ParsedTatemono): Promise<voi
   const hasBackend =
     tatemono.databases.length     > 0 ||
     tatemono.apis.length          > 0 ||
+    tatemono.customRoutes.length  > 0 ||  // ← v5.2
     tatemono.meta.auth            === true ||
     tatemono.events.length        > 0 ||
     tatemono.realtimes.length     > 0 ||
@@ -25,30 +41,45 @@ export async function triggerBackendBuild(tatemono: ParsedTatemono): Promise<voi
   }
 
   console.log(`[Arkzen Bridge] Sending to Laravel: ${tatemono.meta.name}`)
-  if (tatemono.databases.length)     console.log(`[Arkzen Bridge]   Tables: ${tatemono.databases.map(d => d.table).join(', ')}`)
-  if (tatemono.apis.length)          console.log(`[Arkzen Bridge]   Resources: ${tatemono.apis.map(a => a.model).join(', ')}`)
-  if (tatemono.events.length)        console.log(`[Arkzen Bridge]   Events: ${tatemono.events.length} block(s)`)
-  if (tatemono.realtimes.length)     console.log(`[Arkzen Bridge]   Realtime: ${tatemono.realtimes.length} block(s)`)
-  if (tatemono.jobs.length)          console.log(`[Arkzen Bridge]   Jobs: ${tatemono.jobs.length} block(s)`)
+  if (tatemono.databases.length)    console.log(`[Arkzen Bridge]   Tables: ${tatemono.databases.map(d => d.table).join(', ')}`)
+  if (tatemono.apis.length)         console.log(`[Arkzen Bridge]   Resources: ${tatemono.apis.map(a => a.model).join(', ')}`)
+  if (tatemono.customRoutes.length) console.log(`[Arkzen Bridge]   Custom routes: ${tatemono.customRoutes.map(c => c.controller).join(', ')}`)
+  if (tatemono.events.length)       console.log(`[Arkzen Bridge]   Events: ${tatemono.events.length} block(s)`)
+  if (tatemono.realtimes.length)    console.log(`[Arkzen Bridge]   Realtime: ${tatemono.realtimes.length} block(s)`)
+  if (tatemono.jobs.length)         console.log(`[Arkzen Bridge]   Jobs: ${tatemono.jobs.length} block(s)`)
   if (tatemono.notifications.length) console.log(`[Arkzen Bridge]   Notifications: ${tatemono.notifications.length} block(s)`)
-  if (tatemono.mails.length)         console.log(`[Arkzen Bridge]   Mail: ${tatemono.mails.length} block(s)`)
-  if (tatemono.consoles.length)      console.log(`[Arkzen Bridge]   Console: ${tatemono.consoles.length} block(s)`)
+  if (tatemono.mails.length)        console.log(`[Arkzen Bridge]   Mail: ${tatemono.mails.length} block(s)`)
+  if (tatemono.consoles.length)     console.log(`[Arkzen Bridge]   Console: ${tatemono.consoles.length} block(s)`)
 
   const payload = {
-    name:          tatemono.meta.name,
-    version:       tatemono.meta.version,
-    auth:          tatemono.meta.auth,
-    databases:     tatemono.databases,
-    apis:          tatemono.apis.map(api => ({
+    name:    tatemono.meta.name,
+    version: tatemono.meta.version,
+    auth:    tatemono.meta.auth,
+
+    databases: tatemono.databases,
+
+    apis: tatemono.apis.map(api => ({
       model:      api.model,
       controller: api.controller,
       prefix:     api.prefix,
       middleware: api.middleware,
       endpoints:  api.endpoints,
-      resource:   api.resource   ?? false,
-      policy:     api.policy     ?? false,
-      factory:    api.factory    ?? false,
+      resource:   api.resource  ?? false,
+      policy:     api.policy    ?? false,
+      factory:    api.factory   ?? false,
     })),
+
+    // ← v5.2: custom routes forwarded to Laravel
+    customRoutes: tatemono.customRoutes.map(cr => ({
+      controller: cr.controller,
+      middleware: cr.middleware,
+      routes:     cr.routes.map(r => ({
+        method:  r.method,
+        route:   r.route,
+        handler: r.handler,
+      })),
+    })),
+
     // Send raw YAML strings only — ModuleReader.parse() normalises these
     // into typed PHP arrays before any builder ever sees them.
     // ArkzenSection objects ({ raw, start, end }) must be unwrapped here;

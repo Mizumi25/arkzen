@@ -1,8 +1,14 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — MODULE READER v7.0
-// Key changes v7.0:
+// ARKZEN ENGINE — MODULE READER v7.1
+// v7.1: customRoutes added to parse() and $isStatic check.
+//       @arkzen:routes blocks are forwarded by the bridge as
+//       a typed array of { controller, middleware, routes[] }.
+//       ModuleReader normalises them into $module['customRoutes']
+//       for CustomRouteBuilder and RouteRegistrar to consume.
+//
+// Key changes v7.0 (kept):
 //   - ALL section types fully normalised here before any builder
 //     receives the $module array. Builders are now yaml_parse-free.
 //   - events, jobs, consoles, notifications, mails, realtimes
@@ -63,6 +69,18 @@ class ModuleReader
             }
         }
 
+        // customRoutes validation — each block needs a controller and at least one route
+        if (!empty($payload['customRoutes'])) {
+            if (!is_array($payload['customRoutes'])) {
+                $errors[] = 'customRoutes must be an array';
+            } else {
+                foreach ($payload['customRoutes'] as $i => $cr) {
+                    if (empty($cr['controller'])) $errors[] = "customRoutes[{$i}]: controller is required";
+                    if (empty($cr['routes']))     $errors[] = "customRoutes[{$i}]: routes array is required";
+                }
+            }
+        }
+
         return [
             'valid'  => empty($errors),
             'errors' => $errors,
@@ -112,6 +130,36 @@ class ModuleReader
             ];
         }
 
+        // ── custom routes — v7.1 ─────────────────
+        // Lightweight one-off endpoints with no model/database.
+        // Each entry: { controller, middleware, routes: [{method, route, handler}] }
+        $customRoutes = [];
+        foreach (($payload['customRoutes'] ?? []) as $cr) {
+            $controller = $cr['controller'] ?? null;
+            if (!$controller) continue;
+
+            $routes = [];
+            foreach (($cr['routes'] ?? []) as $r) {
+                $method  = strtoupper($r['method']  ?? 'GET');
+                $route   = $r['route']   ?? '/';
+                $handler = $r['handler'] ?? 'handle';
+
+                $routes[] = [
+                    'method'  => $method,
+                    'route'   => $route,
+                    'handler' => $handler,
+                ];
+            }
+
+            if (empty($routes)) continue;
+
+            $customRoutes[] = [
+                'controller' => $controller,
+                'middleware' => $cr['middleware'] ?? [],
+                'routes'     => $routes,
+            ];
+        }
+
         // ── framework sections (all normalised here) ──
         // Each arrives as an array of raw YAML strings from the bridge.
         // parseSections() merges all blocks into one flat map and
@@ -129,6 +177,7 @@ class ModuleReader
             'auth'          => (bool) ($payload['auth'] ?? false),
             'databases'     => $databases,
             'apis'          => $apis,
+            'customRoutes'  => $customRoutes,   // ← v7.1
             'events'        => $events,
             'realtimes'     => $realtimes,
             'jobs'          => $jobs,

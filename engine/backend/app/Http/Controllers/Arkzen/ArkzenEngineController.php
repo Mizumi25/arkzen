@@ -1,18 +1,17 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — ENGINE CONTROLLER v5.3 (FIXED)
-// PATCHED: remove() now uses $slugNs (camel case) to match fixed builders
-//          build() registers isolated DB connection before migrations.
-// FIXED v5.3: Three module key mismatches between ModuleReader output
-//   and the phase checks here — caused broadcast, mail, and console
-//   builders to never run even when those sections were declared:
+// ARKZEN ENGINE — ENGINE CONTROLLER v5.4
+// v5.4: Added Phase 4.5 — CustomRouteBuilder for @arkzen:routes.
+//       Fixed $isStatic check to include customRoutes so tatemonos
+//       with only @arkzen:routes blocks are not treated as static.
+//       Added `use` statement for CustomRouteBuilder.
+//
+// FIXED v5.3 (kept): Three module key mismatches:
 //     $module['realtime']  → $module['realtimes']  (Phase 9)
 //     $module['mail']      → $module['mails']       (Phase 11b)
 //     $module['console']   → $module['consoles']    (Phase 12)
-//   Also fixed $isStatic check — previously only checked databases/apis/auth,
-//   so tatemonos with only events/jobs/mail/console sections were treated
-//   as static and the entire build was skipped before phase 8.
+//   Also fixed $isStatic check for events/jobs/mail/console-only tatemonos.
 // ============================================================
 
 namespace App\Http\Controllers\Arkzen;
@@ -27,6 +26,7 @@ use App\Arkzen\Builders\AuthBuilder;
 use App\Arkzen\Builders\MigrationBuilder;
 use App\Arkzen\Builders\ModelBuilder;
 use App\Arkzen\Builders\ControllerBuilder;
+use App\Arkzen\Builders\CustomRouteBuilder;   // ← v5.4
 use App\Arkzen\Builders\RouteRegistrar;
 use App\Arkzen\Builders\SeederBuilder;
 use App\Arkzen\Builders\MiddlewareBuilder;
@@ -50,7 +50,7 @@ class ArkzenEngineController extends Controller
         return response()->json([
             'status'  => 'ok',
             'engine'  => 'Arkzen Backend Engine',
-            'version' => '5.2.0',
+            'version' => '5.4.0',
         ]);
     }
 
@@ -77,17 +77,19 @@ class ArkzenEngineController extends Controller
             ], 422);
         }
 
-        $module    = ModuleReader::parse($payload);
-        $databases = $module['databases'];
-        $apis      = $module['apis'];
-        $hasAuth   = $module['auth'];
-        // FIXED v5.3: Also check all section types — previously a tatemono with only
-        // events/jobs/mail/console and no databases/apis would be treated as static
-        // and skip the entire build before reaching phases 8-12.
-        $isStatic  = empty($databases) && empty($apis) && !$hasAuth
-            && empty($module['events']) && empty($module['realtimes'])
-            && empty($module['jobs'])   && empty($module['notifications'])
-            && empty($module['mails'])  && empty($module['consoles']);
+        $module       = ModuleReader::parse($payload);
+        $databases    = $module['databases'];
+        $apis         = $module['apis'];
+        $customRoutes = $module['customRoutes'];  // ← v5.4
+        $hasAuth      = $module['auth'];
+
+        // FIXED v5.4: customRoutes added to $isStatic check.
+        // A tatemono with only @arkzen:routes blocks is NOT static —
+        // it needs a backend build to generate controllers and routes.
+        $isStatic = empty($databases) && empty($apis) && empty($customRoutes) && !$hasAuth
+            && empty($module['events'])        && empty($module['realtimes'])
+            && empty($module['jobs'])          && empty($module['notifications'])
+            && empty($module['mails'])         && empty($module['consoles']);
 
         if ($isStatic) {
             return response()->json([
@@ -99,12 +101,12 @@ class ArkzenEngineController extends Controller
         }
 
         // ── PHASE 0: Register isolated DB connections ──
-        // Must happen before ANY migration or model usage
+        // Must happen before ANY migration or model usage.
+        // Safe to run even when databases is empty — ensureDatabase
+        // is a no-op if no tables are declared.
         Log::info("[Arkzen] Phase 0: Register isolated DB connections");
         $dbConn = ModelBuilder::slugToConnection($name);
         MigrationBuilder::ensureDatabase($name, $dbConn);
-
-  
 
         // ── PHASE 1: Migrations ───────────────────
         Log::info("[Arkzen] Phase 1: Migrations");
@@ -142,6 +144,15 @@ class ArkzenEngineController extends Controller
             $this->run("Controller: {$api['controller']}", $steps, $errors, fn() => ControllerBuilder::build($apiModule));
         }
 
+        // ── PHASE 4.5: Custom Route Controllers ── v5.4
+        // Generates lightweight controllers for @arkzen:routes blocks.
+        // Runs after resource controllers (Phase 4) so the same slugNs
+        // folder already exists for tatemonos that mix both types.
+        if (!empty($customRoutes)) {
+            Log::info("[Arkzen] Phase 4.5: Custom Route Controllers");
+            $this->run("Custom Routes: {$name}", $steps, $errors, fn() => CustomRouteBuilder::build($module));
+        }
+
         // ── PHASE 5: Resources ────────────────────
         Log::info("[Arkzen] Phase 5: Resources");
         foreach ($apis as $api) {
@@ -151,9 +162,11 @@ class ArkzenEngineController extends Controller
         }
 
         // ── PHASE 6: Routes ───────────────────────
+        // RouteRegistrar v4.6 handles both resource routes and custom routes
+        // in one pass — both are written to the same routes/modules/{name}.php file.
         Log::info("[Arkzen] Phase 6: Routes");
         $this->run("Routes: {$name}", $steps, $errors, fn() => RouteRegistrar::buildAll($module));
-        
+
         // ── PHASE 6.5: Isolated Auth ──────────────
         if ($hasAuth) {
             Log::info("[Arkzen] Phase 6.5: Isolated auth for {$name}");
@@ -206,7 +219,7 @@ class ArkzenEngineController extends Controller
         }
 
         $success = empty($errors);
-        $summary = count($databases) . ' table(s), ' . count($apis) . ' resource(s)';
+        $summary = count($databases) . ' table(s), ' . count($apis) . ' resource(s), ' . count($customRoutes) . ' custom route block(s)';
         Log::info("[Arkzen] ═══ " . ($success ? "✓ COMPLETE" : "✗ PARTIAL") . ": {$name} ═══");
 
         return response()->json([
@@ -226,7 +239,7 @@ class ArkzenEngineController extends Controller
     public function remove(Request $request): JsonResponse
     {
         $name = $request->input('name');
-        
+
         // FIXED: Convert to namespace-safe name for directories
         $slugNs = EventBuilder::toNamespace($name);
 
@@ -238,7 +251,7 @@ class ArkzenEngineController extends Controller
         // Remove isolated auth artifacts (controller, User model, token model)
         AuthBuilder::removeForTatemono($name);
 
-        // 2. Slug folders — NOW USING $slugNs (camel case) to match fixed builders
+        // 2. Slug folders — using $slugNs (camel case) to match fixed builders
         $slugFolders = [
             app_path("Http/Controllers/Arkzen/{$slugNs}"),
             app_path("Models/Arkzen/{$slugNs}"),

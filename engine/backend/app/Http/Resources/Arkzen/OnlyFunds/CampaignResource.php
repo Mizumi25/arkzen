@@ -4,7 +4,7 @@
 // ARKZEN GENERATED RESOURCE — CampaignResource
 // Tatemono: only-funds
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-12T00:12:06.953915Z
+// Generated: 2026-04-12T04:27:33.840923Z
 // ============================================================
 
 namespace App\Http\Resources\Arkzen\OnlyFunds;

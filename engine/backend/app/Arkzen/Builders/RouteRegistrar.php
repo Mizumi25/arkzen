@@ -1,16 +1,21 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — ROUTE REGISTRAR v4.5
-// FIXED v4.4: Route parameters rewritten from {id} to {modelVar}
-//   so Laravel implicit model binding always works correctly.
+// ARKZEN ENGINE — ROUTE REGISTRAR v4.6
+// v4.6: Custom routes support added.
+//       @arkzen:routes blocks generate route entries in the
+//       same route file as resource routes, after all resource
+//       groups. Each custom route block becomes a separate
+//       Route::middleware()->group() entry so middleware is
+//       applied correctly per block.
+//
+// FIXED v4.5 (kept): auth:true tatemonos now emit a
+//   Sanctum::usePersonalAccessTokenModel() call at the top of
+//   their generated route file.
+//
+// FIXED v4.4 (kept): Route parameters rewritten from {id} to
+//   {modelVar} so Laravel implicit model binding works correctly.
 //   e.g. /items/{id} → /items/{item} for Item model
-// FIXED v4.5: auth:true tatemonos now emit a Sanctum::usePersonalAccessTokenModel()
-//   call at the top of their generated route file. Without this, auth:sanctum
-//   middleware on non-auth routes (promote, demote, adminOnly etc.) resolves
-//   tokens against the global default connection — missing the tatemono's
-//   isolated SQLite — and returns 401 Unauthenticated even for valid tokens.
-//   The call is injected once per route file, before any middleware groups.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -22,13 +27,13 @@ use App\Providers\Arkzen\ArkzenServiceProvider;
 class RouteRegistrar
 {
     // ─────────────────────────────────────────────
-    // BUILD ALL — one file, all resources
+    // BUILD ALL — one file, all resources + custom routes
     // ─────────────────────────────────────────────
 
     public static function buildAll(array $module): void
     {
         $name      = $module['name'];
-        $slugNs    = EventBuilder::toNamespace($name);             // inventory-management → InventoryManagement
+        $slugNs    = EventBuilder::toNamespace($name);
         $hasAuth   = $module['auth'] ?? false;
         $apis      = $module['apis'];
         $routesDir = base_path('routes/modules');
@@ -39,17 +44,57 @@ class RouteRegistrar
         $useStatements = [];
         $routeGroups   = [];
 
+        // ── Resource API routes ───────────────────
         foreach ($apis as $api) {
             $controllerName = $api['controller'];
             $prefix         = $api['prefix'];
 
             $useStatements[] = "use App\\Http\\Controllers\\Arkzen\\{$slugNs}\\{$controllerName};";
 
-            $resolvedMiddleware = MiddlewareBuilder::build(['api' => $api, 'name' => $name, 'databases' => $module['databases'], 'apis' => $apis]);
-            $middlewareStr      = "['" . implode("', '", $resolvedMiddleware) . "']";
-            $routeLines         = self::generateRouteLines($controllerName, $api['endpoints'], $api['model']);
+            $resolvedMiddleware = MiddlewareBuilder::build([
+                'api'       => $api,
+                'name'      => $name,
+                'databases' => $module['databases'],
+                'apis'      => $apis,
+            ]);
+            $middlewareStr = "['" . implode("', '", $resolvedMiddleware) . "']";
+            $routeLines    = self::generateRouteLines($controllerName, $api['endpoints'], $api['model']);
 
-            $routeGroups[] = "// ── {$api['model']} ─────────────────────────────\nRoute::middleware({$middlewareStr})\n    ->prefix('{$prefix}')\n    ->group(function () {\n\n{$routeLines}\n    });";
+            $routeGroups[] = "// ── {$api['model']} ─────────────────────────────\n"
+                . "Route::middleware({$middlewareStr})\n"
+                . "    ->prefix('{$prefix}')\n"
+                . "    ->group(function () {\n\n"
+                . "{$routeLines}\n"
+                . "    });";
+        }
+
+        // ── Custom routes — v4.6 ─────────────────
+        // Generated after resource routes. Each @arkzen:routes block
+        // becomes its own middleware group so per-block middleware is
+        // honoured correctly. No prefix is applied — the full route path
+        // is declared in the tatemono as-is (e.g. /api/errors-test/simulate/{code}).
+        foreach (($module['customRoutes'] ?? []) as $cr) {
+            $controllerName  = $cr['controller'];
+            $useStatements[] = "use App\\Http\\Controllers\\Arkzen\\{$slugNs}\\{$controllerName};";
+
+            // Default to ['api'] middleware if none declared
+            $middleware    = !empty($cr['middleware']) ? $cr['middleware'] : ['api'];
+            $middlewareStr = "['" . implode("', '", $middleware) . "']";
+
+            $lines = [];
+            foreach ($cr['routes'] as $r) {
+                $httpMethod  = strtolower($r['method']);
+                $route       = ltrim($r['route'], '/');
+                $handler     = $r['handler'];
+                $lines[]     = "        Route::{$httpMethod}('{$route}', [{$controllerName}::class, '{$handler}']);";
+            }
+
+            $linesBlock    = implode("\n", $lines);
+            $routeGroups[] = "// ── Custom: {$controllerName} ─────────────────────────────\n"
+                . "Route::middleware({$middlewareStr})\n"
+                . "    ->group(function () {\n"
+                . "{$linesBlock}\n"
+                . "    });";
         }
 
         $useBlock    = implode("\n", array_unique($useStatements));
@@ -58,11 +103,11 @@ class RouteRegistrar
         // For auth:true tatemonos, swap the Sanctum token model at the top of the
         // route file so auth:sanctum middleware resolves tokens against the tatemono's
         // own isolated SQLite connection — not the global default connection.
-        // Without this, tokens written by AuthController are invisible to auth:sanctum
-        // on all other routes, producing 401 Unauthenticated for valid tokens.
         $sanctumBootstrap = '';
         if ($hasAuth) {
-            $sanctumBootstrap = "\nuse Laravel\\Sanctum\\Sanctum;\nuse App\\Models\\Arkzen\\{$slugNs}\\PersonalAccessToken as {$slugNs}Token;\n\nSanctum::usePersonalAccessTokenModel({$slugNs}Token::class);\n";
+            $sanctumBootstrap = "\nuse Laravel\\Sanctum\\Sanctum;\n"
+                . "use App\\Models\\Arkzen\\{$slugNs}\\PersonalAccessToken as {$slugNs}Token;\n\n"
+                . "Sanctum::usePersonalAccessTokenModel({$slugNs}Token::class);\n";
         }
 
         $content = "<?php
@@ -72,6 +117,7 @@ class RouteRegistrar
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: " . now()->toISOString() . "
 // Resources: " . implode(', ', array_column($apis, 'model')) . "
+// Custom controllers: " . implode(', ', array_column($module['customRoutes'] ?? [], 'controller')) . "
 // ============================================================
 
 use Illuminate\\Support\\Facades\\Route;
