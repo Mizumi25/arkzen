@@ -22,6 +22,8 @@ import type {
   ArkzenSection,
   ArkzenPage,
   ArkzenLayout,
+  ArkzenErrorHandler,
+  ArkzenErrorHandlerType,
 } from '../types'
 
 // ─────────────────────────────────────────────
@@ -715,6 +717,41 @@ function parseAllComponents(content: string): ArkzenSection[] {
 }
 
 // ─────────────────────────────────────────────
+// PARSE ERROR HANDLERS — v6
+// Extracts @arkzen:error:404 and @arkzen:error:500 blocks.
+// These generate Next.js segment-scoped not-found.tsx / error.tsx
+// rather than routed pages. Each has an :end closer.
+//
+// Format:
+//   /* @arkzen:error:404 */
+//   const NotFoundPage = () => <ErrorScreen code={404} />
+//   /* @arkzen:error:404:end */
+// ─────────────────────────────────────────────
+
+function parseAllErrorHandlers(content: string): ArkzenErrorHandler[] {
+  const results: ArkzenErrorHandler[] = []
+  const validTypes: ArkzenErrorHandlerType[] = ['404', '500']
+
+  for (const type of validTypes) {
+    const openMarker  = `/* @arkzen:error:${type} */`
+    const closeMarker = `/* @arkzen:error:${type}:end */`
+
+    const openIdx = content.indexOf(openMarker)
+    if (openIdx === -1) continue
+
+    const closeIdx = content.indexOf(closeMarker, openIdx)
+    if (closeIdx === -1) continue
+
+    const raw = content.slice(openIdx + openMarker.length, closeIdx).trim()
+    if (!raw) continue
+
+    results.push({ type, raw })
+  }
+
+  return results
+}
+
+// ─────────────────────────────────────────────
 // VALIDATION
 // ─────────────────────────────────────────────
 
@@ -758,8 +795,9 @@ function validateNoDuplicateControllers(apis: ArkzenApi[]): void {
   }
 }
 
-function validatePages(pages: ArkzenPage[]): void {
-  if (pages.length === 0) {
+function validatePages(pages: ArkzenPage[], errorHandlers: ArkzenErrorHandler[]): void {
+  // A tatemono with only error handlers and no routed pages is valid
+  if (pages.length === 0 && errorHandlers.length === 0) {
     throw new Error('[Arkzen Parser] At least one @arkzen:page:name section is required')
   }
   const seen = new Set<string>()
@@ -796,6 +834,7 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   const pages     = parseAllPages(content)
   const layouts   = parseAllLayouts(content)
   const components = parseAllComponents(content)
+  const errorHandlers = parseAllErrorHandlers(content)
 
   // Repeatable sections
   const stores        = parseAllNamedCode(content, 'store')
@@ -812,7 +851,7 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   validateTableNames(databases)
   validateNoDuplicateTables(databases)
   validateNoDuplicateControllers(apis)
-  validatePages(pages)
+  validatePages(pages, errorHandlers)
 
    const hasBackend = 
       databases.length > 0 ||
@@ -837,6 +876,7 @@ export function parseTatemono(filePath: string): ParsedTatemono {
     pages,
     layouts,
     components,
+    errorHandlers,
     stores,
     realtimes,
     events,
@@ -850,6 +890,7 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   console.log(`[Arkzen Parser] ✓ Parsed: ${meta.name} v${meta.version}`)
   console.log(`[Arkzen Parser]   Auth: ${meta.auth} | Static: ${isStatic}`)
   console.log(`[Arkzen Parser]   Pages (${pages.length}): ${pages.map(p => `${p.name}[${p.layout}]`).join(', ')}`)
+  if (errorHandlers.length) console.log(`[Arkzen Parser]   Error handlers (${errorHandlers.length}): ${errorHandlers.map(e => e.type).join(', ')}`)
   if (databases.length)     console.log(`[Arkzen Parser]   Tables (${databases.length}): ${databases.map(d => d.table).join(', ')}`)
   if (apis.length)          console.log(`[Arkzen Parser]   Resources (${apis.length}): ${apis.map(a => a.model).join(', ')}`)
   if (events.length)        console.log(`[Arkzen Parser]   Events (${events.length}): ${events.length} block(s)`)
@@ -865,13 +906,14 @@ export function parseTatemono(filePath: string): ParsedTatemono {
 export function hasSections(filePath: string) {
   const content = fs.readFileSync(filePath, 'utf-8')
   return {
-    meta:       content.includes('/* @arkzen:meta'),
-    config:     content.includes('/* @arkzen:config'),
-    database:   content.includes('/* @arkzen:database'),
-    api:        content.includes('/* @arkzen:api'),
-    store:      content.includes('/* @arkzen:store:'),
-    components: content.includes('/* @arkzen:components:'),
-    page:       content.includes('/* @arkzen:page:'),
-    animation:  content.includes('/* @arkzen:animation'),
+    meta:          content.includes('/* @arkzen:meta'),
+    config:        content.includes('/* @arkzen:config'),
+    database:      content.includes('/* @arkzen:database'),
+    api:           content.includes('/* @arkzen:api'),
+    store:         content.includes('/* @arkzen:store:'),
+    components:    content.includes('/* @arkzen:components:'),
+    page:          content.includes('/* @arkzen:page:'),
+    animation:     content.includes('/* @arkzen:animation'),
+    errorHandler:  content.includes('/* @arkzen:error:'),
   }
 }

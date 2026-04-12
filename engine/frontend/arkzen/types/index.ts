@@ -168,6 +168,19 @@ export interface ArkzenPage {
   end: number
 }
 
+// ─────────────────────────────────────────────
+// ERROR HANDLERS — Next.js segment-scoped files
+// @arkzen:error:404 → app/{name}/not-found.tsx
+// @arkzen:error:500 → app/{name}/error.tsx
+// ─────────────────────────────────────────────
+
+export type ArkzenErrorHandlerType = '404' | '500'
+
+export interface ArkzenErrorHandler {
+  type: ArkzenErrorHandlerType
+  raw: string  // the ErrorScreen (or custom) component raw code
+}
+
 export interface ArkzenLayout {
   name: string
   raw: string
@@ -185,6 +198,8 @@ export interface ParsedTatemono {
   apis:      ArkzenApi[]
   pages:     ArkzenPage[]
   layouts:   ArkzenLayout[]
+
+  errorHandlers: ArkzenErrorHandler[]
 
   stores:        ArkzenStore[]
   realtimes:     ArkzenRealtime[]

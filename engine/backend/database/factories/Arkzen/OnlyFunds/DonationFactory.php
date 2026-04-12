@@ -4,7 +4,7 @@
 // ARKZEN GENERATED FACTORY — DonationFactory
 // Tatemono: only-funds
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-11T01:31:19.849776Z
+// Generated: 2026-04-12T00:12:06.947078Z
 // ============================================================
 
 namespace Database\Factories\Arkzen\OnlyFunds;

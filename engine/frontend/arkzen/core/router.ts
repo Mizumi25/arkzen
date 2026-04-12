@@ -7,7 +7,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import type { ParsedTatemono, ArkzenPage } from '../types'
+import type { ParsedTatemono, ArkzenPage, ArkzenErrorHandler } from '../types'
 
 const APP_DIR   = path.resolve(process.cwd(), 'app')
 const PAGES_DIR = path.resolve(process.cwd(), 'pages')
@@ -201,6 +201,95 @@ function generateCustomLayouts(tatemono: ParsedTatemono, baseDir: string): void 
 }
 
 // ─────────────────────────────────────────────
+// GENERATE ERROR HANDLER FILES — v6 (fixed imports + catch‑all for 404)
+// ─────────────────────────────────────────────
+
+function generateNotFoundFile(tatemono: ParsedTatemono, handler: ArkzenErrorHandler): string {
+  // Strip 'use client' from raw if present — not-found can be server component
+  const raw = handler.raw.replace(/'use client'[;]?\n?/, '').trim()
+
+  return `// ============================================================
+// ARKZEN GENERATED — ${tatemono.meta.name}/not-found.tsx
+// Next.js segment-scoped 404 handler.
+// Rendered when notFound() is called or no route matches under /${tatemono.meta.name}.
+// DO NOT EDIT DIRECTLY. Edit the @arkzen:error:404 block in the tatemono instead.
+// Generated: ${new Date().toISOString()}
+// ============================================================
+
+import React from 'react'
+import { ErrorScreen } from './_components'
+
+${raw}
+
+export default NotFoundPage
+`
+}
+
+function generateErrorFile(tatemono: ParsedTatemono, handler: ArkzenErrorHandler): string {
+  const raw = handler.raw.replace(/'use client'[;]?\n?/, '').trim()
+
+  return `'use client'
+// ============================================================
+// ARKZEN GENERATED — ${tatemono.meta.name}/error.tsx
+// Next.js segment-scoped runtime error boundary.
+// Rendered when an unhandled exception is thrown during render under /${tatemono.meta.name}.
+// Must be a Client Component — Next.js requirement.
+// DO NOT EDIT DIRECTLY. Edit the @arkzen:error:500 block in the tatemono instead.
+// Generated: ${new Date().toISOString()}
+// ============================================================
+
+import React from 'react'
+import { ErrorScreen } from './_components'
+
+${raw}
+
+export default function ArkzenError_${toPascalCase(tatemono.meta.name)}({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string }
+  reset: () => void
+}) {
+  return <ServerErrorPage reset={reset} />
+}
+`
+}
+
+function generateCatchAllRoute(tatemono: ParsedTatemono, tatemonoDir: string): void {
+  const catchAllDir = path.join(tatemonoDir, '[...catchAll]')
+  fs.mkdirSync(catchAllDir, { recursive: true })
+  const content = `import { notFound } from 'next/navigation'
+
+export default function CatchAllPage() {
+  notFound()
+}
+`
+  fs.writeFileSync(path.join(catchAllDir, 'page.tsx'), content, 'utf-8')
+  console.log(`[Arkzen Router] ✓ Catch-all route created for ${tatemono.meta.name} (real 404 status)`)
+}
+
+function generateErrorHandlers(tatemono: ParsedTatemono, tatemonoDir: string): void {
+  if (!tatemono.errorHandlers || tatemono.errorHandlers.length === 0) return
+
+  let has404 = false
+  for (const handler of tatemono.errorHandlers) {
+    if (handler.type === '404') {
+      has404 = true
+      const content = generateNotFoundFile(tatemono, handler)
+      fs.writeFileSync(path.join(tatemonoDir, 'not-found.tsx'), content, 'utf-8')
+      console.log(`[Arkzen Router] ✓ Error handler: not-found.tsx → /${tatemono.meta.name}/**`)
+    } else if (handler.type === '500') {
+      const content = generateErrorFile(tatemono, handler)
+      fs.writeFileSync(path.join(tatemonoDir, 'error.tsx'), content, 'utf-8')
+      console.log(`[Arkzen Router] ✓ Error handler: error.tsx → /${tatemono.meta.name}/**`)
+    }
+  }
+  if (has404) {
+    generateCatchAllRoute(tatemono, tatemonoDir)
+  }
+}
+
+// ─────────────────────────────────────────────
 // MAIN REGISTER — creates one route per page
 // ─────────────────────────────────────────────
 
@@ -287,6 +376,9 @@ export function registerPage(tatemono: ParsedTatemono): void {
     // Write shared _components.tsx at the root of the tatemono folder
     fs.writeFileSync(path.join(tatemonoDir, '_components.tsx'), componentsContent, 'utf-8')
 
+    // v6: generate segment-scoped Next.js error handler files + catch‑all for 404
+    generateErrorHandlers(tatemono, tatemonoDir)
+
     // v5.1: auto-generate root redirect when no index page is declared
     const rootRedirect = generateRootRedirect(tatemono)
     if (rootRedirect) {
@@ -318,6 +410,9 @@ export function registerPage(tatemono: ParsedTatemono): void {
     const tatemonoDir = path.join(PAGES_DIR, tatemono.meta.name)
     fs.mkdirSync(tatemonoDir, { recursive: true })
     fs.writeFileSync(path.join(tatemonoDir, '_components.tsx'), componentsContent, 'utf-8')
+
+    // v6: generate segment-scoped error handler files + catch‑all for 404
+    generateErrorHandlers(tatemono, tatemonoDir)
 
     // v5.1: auto-generate root redirect when no index page is declared
     const rootRedirectPages = generateRootRedirect(tatemono)

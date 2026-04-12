@@ -4,7 +4,7 @@
 // ARKZEN GENERATED FACTORY — CampaignFactory
 // Tatemono: only-funds
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-11T01:31:19.845533Z
+// Generated: 2026-04-12T00:12:06.945540Z
 // ============================================================
 
 namespace Database\Factories\Arkzen\OnlyFunds;
