@@ -19,12 +19,12 @@
       "status": "active",
       "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/auth-test/core.tsx",
       "pages": [
-        "register",
         "login",
+        "register",
         "dashboard"
       ],
       "registered": "2026-04-04T03:21:43.921Z",
-      "lastUpdated": "2026-04-05T03:19:48.019Z"
+      "lastUpdated": "2026-04-12T08:13:09.454Z"
     },
     {
       "name": "broadcast-test",
