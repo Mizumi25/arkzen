@@ -263,6 +263,7 @@ export interface ArkzenRegistryEntry {
   pages: string[]
   registered: string
   lastUpdated: string
+  auth?: boolean   // ← v5.1: indicates auth:true in meta
 }
 
 export interface BuildResult {

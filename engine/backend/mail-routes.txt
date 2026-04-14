@@ -1,0 +1,14 @@
+
+  POST       api/mail-test/auth/login Arkzen\MailTest\AuthController@login
+             ⇂ api
+  POST       api/mail-test/auth/logout Arkzen\MailTest\AuthController@logout
+             ⇂ api
+             ⇂ Illuminate\Auth\Middleware\Authenticate:sanctum
+  POST       api/mail-test/auth/register Arkzen\MailTest\AuthController@register
+             ⇂ api
+  POST       api/mail-test/send Arkzen\MailTest\MailLogController@store
+             ⇂ api
+             ⇂ Illuminate\Auth\Middleware\Authenticate:sanctum
+
+                                       Showing [4] routes
+

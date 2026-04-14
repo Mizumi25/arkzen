@@ -1,11 +1,12 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — CONTROLLER BUILDER v5.6
+// ARKZEN ENGINE — CONTROLLER BUILDER v5.7
 // FIXED v5.4: Now uses Resource class when resource: true is set
 // FIXED v5.5: Role endpoint generators rewritten for real Sanctum auth.
 // FIXED v5.6: Added 'run' endpoint support for scheduler-test commands
-//   generateCommandRun() executes Artisan commands and records results
+// FIXED v5.7: Mail send captures $request->user() before Mail::send()
+//             to avoid Sanctum guard cache poisoning.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -81,13 +82,13 @@ class {$controllerName} extends Controller
             'index'   => self::generateIndex($modelName, $endpoint, $slugNs, $useResource),
             'show'    => self::generateShow($modelName, $endpoint, $slugNs, $useResource),
             'store' => match ($endpoint['type'] ?? '') {
-                'upload'      => self::generateUploadStore($modelName, $endpoint),
-                'command_run' => self::generateCommandRun($modelName, $endpoint),
+                'upload'       => self::generateUploadStore($modelName, $endpoint),
+                'command_run'  => self::generateCommandRun($modelName, $endpoint),
                 'job_dispatch' => self::generateJobDispatch($modelName, $endpoint),
-                'event_fire' => self::generateEventFire($modelName, $endpoint),
-                'broadcast' => self::generateBroadcast($modelName, $slugNs, $endpoint),
-                 'mail_send'      => self::generateMailSend($modelName, $endpoint, $slugNs),
-                default       => self::generateStore($modelName, $endpoint, $slugNs, $useResource),
+                'event_fire'   => self::generateEventFire($modelName, $endpoint),
+                'broadcast'    => self::generateBroadcast($modelName, $slugNs, $endpoint),
+                'mail_send'    => self::generateMailSend($modelName, $endpoint, $slugNs),
+                default        => self::generateStore($modelName, $endpoint, $slugNs, $useResource),
             },
             'destroy' => match ($endpoint['type'] ?? '') {
                 'upload_destroy' => self::generateUploadDestroy($modelName, $endpoint),
@@ -635,10 +636,6 @@ class {$controllerName} extends Controller
     // BROADCAST — stores message and broadcasts it
     // ─────────────────────────────────────────────
     
-        // ─────────────────────────────────────────────
-    // BROADCAST — stores message and broadcasts it
-    // ─────────────────────────────────────────────
-    
     private static function generateBroadcast(string $model, string $slugNs, array $endpoint): string
     {
         $description = $endpoint['description'] ?? 'Store and broadcast';
@@ -662,11 +659,10 @@ class {$controllerName} extends Controller
         }";
     }
     
-    
-    
     // ─────────────────────────────────────────────
     // MAIL SEND — sends a mailable and logs the attempt
     // ─────────────────────────────────────────────
+
     private static function generateMailSend(string $model, array $endpoint, string $slugNs): string
     {
         $description = $endpoint['description'] ?? 'Send an email';
@@ -681,27 +677,26 @@ class {$controllerName} extends Controller
 {$validation}
         ]);
 
-        // Capture authenticated user first — explicit guard avoids cache poisoning
-        \$user = \$request->user('sanctum');
+        // Capture the authenticated user BEFORE any mailer code runs
+        \$user = \$request->user();
 
-        // Dynamically resolve the Mailable class from the mail key
-        \$mailKey = \$validated['mail'];
-        \$className = \\Illuminate\\Support\\Str::studly(str_replace('-', '_', \$mailKey)) . 'Mail';
-        \$fullClass = \"\\\\App\\\\Mail\\\\Arkzen\\\\{$slugNs}\\\\\" . \$className;
-
-        if (!class_exists(\$fullClass)) {
-            throw new \\InvalidArgumentException('Unknown mail type: ' . \$mailKey);
-        }
+        // Map mail key to Mailable class
+        \$mailClass = match (\$validated['mail']) {
+            'welcome-mail'       => \\App\\Mail\\Arkzen\\{$slugNs}\\WelcomeMailMail::class,
+            'order-confirmation' => \\App\\Mail\\Arkzen\\{$slugNs}\\OrderConfirmationMail::class,
+            'password-reset'     => \\App\\Mail\\Arkzen\\{$slugNs}\\PasswordResetMail::class,
+            default => throw new \\InvalidArgumentException('Unknown mail type: ' . \$validated['mail']),
+        };
 
         // Send the email (queued if the mailable implements ShouldQueue)
-        \\Mail::to(\$validated['to'])->send(new \$fullClass( ...array_values(\$validated['data'] ?? []) ));
+        \\Mail::to(\$validated['to'])->send(new \$mailClass(\$validated['data'] ?? []));
 
         // Log the attempt using the captured user
         \$mailLog = {$model}::create([
             'user_id'   => \$user?->id,
             'to_email'  => \$validated['to'],
-            'subject'   => \$fullClass::\$subject ?? \$mailKey,
-            'mail_class'=> \$fullClass,
+            'subject'   => \$mailClass::\$subject ?? \$validated['mail'],
+            'mail_class'=> \$mailClass,
             'status'    => 'sent',
         ]);
 

@@ -11,7 +11,8 @@
         "index"
       ],
       "registered": "2026-03-29T05:18:40.255Z",
-      "lastUpdated": "2026-04-12T04:27:32.732Z"
+      "lastUpdated": "2026-04-14T09:58:06.779Z",
+      "auth": false
     },
     {
       "name": "auth-test",
@@ -24,7 +25,8 @@
         "dashboard"
       ],
       "registered": "2026-04-04T03:21:43.921Z",
-      "lastUpdated": "2026-04-12T08:13:09.454Z"
+      "lastUpdated": "2026-04-14T09:58:05.371Z",
+      "auth": true
     },
     {
       "name": "broadcast-test",
@@ -35,7 +37,8 @@
         "index"
       ],
       "registered": "2026-04-04T06:17:46.456Z",
-      "lastUpdated": "2026-04-12T04:27:31.731Z"
+      "lastUpdated": "2026-04-14T09:58:05.603Z",
+      "auth": false
     },
     {
       "name": "crud-test",
@@ -46,7 +49,8 @@
         "index"
       ],
       "registered": "2026-04-04T06:17:46.866Z",
-      "lastUpdated": "2026-04-12T04:27:31.977Z"
+      "lastUpdated": "2026-04-14T09:58:06.022Z",
+      "auth": false
     },
     {
       "name": "events-test",
@@ -57,7 +61,8 @@
         "index"
       ],
       "registered": "2026-04-04T06:17:46.875Z",
-      "lastUpdated": "2026-04-12T04:27:32.459Z"
+      "lastUpdated": "2026-04-14T09:58:06.508Z",
+      "auth": false
     },
     {
       "name": "job-test",
@@ -68,20 +73,8 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.972Z",
-      "lastUpdated": "2026-04-12T04:27:32.994Z"
-    },
-    {
-      "name": "mail-test",
-      "version": "1.0.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/mail-test/core.tsx",
-      "pages": [
-        "login",
-        "register",
-        "dashboard"
-      ],
-      "registered": "2026-04-04T06:17:46.980Z",
-      "lastUpdated": "2026-04-12T04:27:33.269Z"
+      "lastUpdated": "2026-04-14T09:58:07.024Z",
+      "auth": false
     },
     {
       "name": "notification-test",
@@ -94,7 +87,8 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.988Z",
-      "lastUpdated": "2026-04-12T04:27:33.547Z"
+      "lastUpdated": "2026-04-14T09:58:07.569Z",
+      "auth": true
     },
     {
       "name": "roles-test",
@@ -107,7 +101,8 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.998Z",
-      "lastUpdated": "2026-04-12T04:27:34.116Z"
+      "lastUpdated": "2026-04-14T09:58:07.826Z",
+      "auth": true
     },
     {
       "name": "upload-test",
@@ -118,21 +113,8 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:47.014Z",
-      "lastUpdated": "2026-04-12T04:27:34.550Z"
-    },
-    {
-      "name": "only-funds",
-      "version": "1.0.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/only-funds/core.tsx",
-      "pages": [
-        "register",
-        "login",
-        "index",
-        "campaign-slug"
-      ],
-      "registered": "2026-04-08T07:14:46.131Z",
-      "lastUpdated": "2026-04-12T04:27:33.899Z"
+      "lastUpdated": "2026-04-14T09:58:08.339Z",
+      "auth": false
     },
     {
       "name": "scheduler-test",
@@ -143,7 +125,8 @@
         "dashboard"
       ],
       "registered": "2026-04-09T08:20:28.450Z",
-      "lastUpdated": "2026-04-12T04:27:34.338Z"
+      "lastUpdated": "2026-04-14T09:58:08.091Z",
+      "auth": false
     },
     {
       "name": "errors-test",
@@ -154,7 +137,22 @@
         "index"
       ],
       "registered": "2026-04-11T13:03:20.834Z",
-      "lastUpdated": "2026-04-12T04:27:32.188Z"
+      "lastUpdated": "2026-04-14T09:58:06.239Z",
+      "auth": false
+    },
+    {
+      "name": "mail-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/mail-test/core.tsx",
+      "pages": [
+        "login",
+        "register",
+        "dashboard"
+      ],
+      "registered": "2026-04-14T09:31:29.424Z",
+      "lastUpdated": "2026-04-14T09:58:07.300Z",
+      "auth": true
     }
   ]
 }

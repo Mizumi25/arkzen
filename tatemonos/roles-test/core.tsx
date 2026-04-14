@@ -89,6 +89,7 @@ endpoints:
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuthStore, setActiveTatemono, arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 if (typeof window !== 'undefined') {
@@ -255,6 +256,7 @@ const RegisterPage = () => {
 /* @arkzen:page:dashboard */
 /* @arkzen:page:layout:auth */
 const DashboardPage = () => {
+  const router = useRouter()
   const { user, logout, refreshUser } = useAuthStore()
 
   type TestResult = { status: 'idle' | 'pass' | 'fail'; message: string }
@@ -299,11 +301,16 @@ const DashboardPage = () => {
     setPromoting(true)
     try {
       await arkzenFetch(`/api/roles-test/${action}`, { method: 'POST' })
-      // Re-fetch /auth/me so the store's user.role reflects the DB change
       await refreshUser()
     } catch {} finally {
       setPromoting(false)
     }
+  }
+
+  const handleLogout = async () => {
+    await logout()
+    router.refresh()
+    router.replace('/roles-test/login')
   }
 
   const resultStyle = (s: TestResult['status']) =>
@@ -320,7 +327,7 @@ const DashboardPage = () => {
           <h1 className="text-2xl font-bold">🛡️ Roles Test</h1>
           <button
             className="text-xs text-neutral-400 hover:text-neutral-700"
-            onClick={logout}
+            onClick={handleLogout}
           >
             Sign out
           </button>

@@ -110,6 +110,7 @@ subject: "All Channels Test"
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuthStore, setActiveTatemono, arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 if (typeof window !== 'undefined') {
@@ -269,7 +270,8 @@ const RegisterPage = () => {
 /* @arkzen:page:dashboard */
 /* @arkzen:page:layout:auth */
 const DashboardPage = () => {
-  const { user } = useAuthStore()
+  const router = useRouter()
+  const { user, logout } = useAuthStore()
   const [inbox, setInbox] = useState<any[]>([])
   const [popup, setPopup] = useState<string | null>(null)
   const [sending, setSending] = useState<string | null>(null)
@@ -379,6 +381,12 @@ const DashboardPage = () => {
     }
   }
 
+  const handleLogout = async () => {
+    await logout()
+    router.refresh()
+    router.replace('/notification-test/login')
+  }
+
   return (
     <div className="min-h-screen p-8">
       {/* Broadcast popup */}
@@ -396,9 +404,12 @@ const DashboardPage = () => {
               Signed in as <span className="font-medium">{user?.email}</span>
             </p>
           </div>
-          <a href="/notification-test/logout" className="text-xs text-neutral-400 hover:text-neutral-700">
+          <button
+            className="text-xs text-neutral-400 hover:text-neutral-700"
+            onClick={handleLogout}
+          >
             Sign out
-          </a>
+          </button>
         </div>
 
         {/* Stats */}

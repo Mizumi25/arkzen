@@ -1,14 +1,14 @@
 /* @arkzen:meta
 name: mail-test
 version: 1.0.0
-description: Tests Laravel Mailable system. Send real emails via SMTP/Mailtrap. Tests subject, body fields, queue delivery.
+description: Tests Laravel Mail system. Send emails via SMTP/Mailtrap. Logs attempts.
 auth: true
 */
 
 /* @arkzen:config
 toast:
   position: top-right
-  duration: 4000
+  duration: 3000
 layout:
   guest:
     className: "min-h-screen bg-neutral-50"
@@ -17,19 +17,31 @@ layout:
 */
 
 /* @arkzen:database:mail_logs
+table: mail_logs
+timestamps: true
 columns:
+  id:
+    type: integer
+    primary: true
+    autoIncrement: true
   user_id:
     type: integer
     nullable: true
-  to_email: string
-  subject: string
-  mail_class: string
-  status: string
-  error: text
-timestamps: true
+  to_email:
+    type: string
+  subject:
+    type: string
+  mail_class:
+    type: string
+  status:
+    type: string
+    default: sent
+  error:
+    type: text
+    nullable: true
 */
 
-/* @arkzen:api
+/* @arkzen:api:mail_logs
 model: MailLog
 controller: MailLogController
 prefix: /api/mail-test
@@ -45,6 +57,7 @@ endpoints:
     method: POST
     route: /send
     description: Send an email
+    type: mail_send
     validation:
       mail: required|string
       to: required|email
@@ -77,6 +90,7 @@ password-reset:
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuthStore, setActiveTatemono, arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 if (typeof window !== 'undefined') {
@@ -89,9 +103,9 @@ if (typeof window !== 'undefined') {
 /* @arkzen:page:layout:guest */
 const LoginPage = () => {
   const { login, isLoading } = useAuthStore()
-  const [email,    setEmail]    = useState('')
-  const [password, setPassword] = useState('')
-  const [error,    setError]    = useState<string | null>(null)
+  const [email, setEmail] = useState('test@arkzen.local')
+  const [password, setPassword] = useState('password')
+  const [error, setError] = useState<string | null>(null)
 
   const handleLogin = async () => {
     setError(null)
@@ -145,6 +159,10 @@ const LoginPage = () => {
             Register
           </a>
         </p>
+
+        <div className="text-xs text-neutral-400 text-center border-t border-neutral-100 pt-4">
+          Test credentials: test@arkzen.local / password
+        </div>
       </div>
     </div>
   )
@@ -155,15 +173,18 @@ const LoginPage = () => {
 /* @arkzen:page:layout:guest */
 const RegisterPage = () => {
   const { register, isLoading } = useAuthStore()
-  const [name,     setName]     = useState('')
-  const [email,    setEmail]    = useState('')
-  const [password, setPassword] = useState('')
-  const [confirm,  setConfirm]  = useState('')
-  const [error,    setError]    = useState<string | null>(null)
+  const [name, setName] = useState('Test User')
+  const [email, setEmail] = useState('test@arkzen.local')
+  const [password, setPassword] = useState('password')
+  const [confirm, setConfirm] = useState('password')
+  const [error, setError] = useState<string | null>(null)
 
   const handleRegister = async () => {
     setError(null)
-    if (password !== confirm) { setError('Passwords do not match'); return }
+    if (password !== confirm) {
+      setError('Passwords do not match')
+      return
+    }
     try {
       await register(name, email, password, confirm)
     } catch (e) {
@@ -177,7 +198,7 @@ const RegisterPage = () => {
         <div>
           <h1 className="text-xl font-bold">✉️ Mail Test</h1>
           <p className="text-sm text-neutral-500 mt-1">
-            Create an account to test email sending
+            Create an account
           </p>
         </div>
 
@@ -236,41 +257,36 @@ const RegisterPage = () => {
 /* @arkzen:page:dashboard */
 /* @arkzen:page:layout:auth */
 const DashboardPage = () => {
-  const { user } = useAuthStore()
+  const router = useRouter()
+  const { user, logout } = useAuthStore()
 
   const mailTypes = [
     {
       key: 'welcome-mail',
       label: 'Welcome Mail',
-      desc: 'Sends WelcomeMail to the address below',
       fields: { username: user?.name || 'User', app_name: 'Arkzen' },
-      color: 'bg-blue-500',
     },
     {
       key: 'order-confirmation',
       label: 'Order Confirmation',
-      desc: 'Sends OrderConfirmationMail with order details',
       fields: { order_id: 'ORD-1234', total: '$99.00', customer_name: user?.name || 'Customer' },
-      color: 'bg-green-500',
     },
     {
       key: 'password-reset',
       label: 'Password Reset',
-      desc: 'Sends PasswordResetMail with a fake reset link',
       fields: { reset_link: 'https://example.com/reset/fake-token', expires_in: '60 minutes' },
-      color: 'bg-orange-500',
     },
   ]
 
-  const [toEmail, setToEmail]   = useState(user?.email ?? '')
-  const [sending, setSending]   = useState<string | null>(null)
-  const [logs, setLogs]         = useState<any[]>([])
-  const [result, setResult]     = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
+  const [toEmail, setToEmail] = useState(user?.email ?? '')
+  const [sending, setSending] = useState<string | null>(null)
+  const [logs, setLogs] = useState<any[]>([])
+  const [result, setResult] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
 
   const loadLogs = async () => {
     try {
       const res = await arkzenFetch('/api/mail-test/logs')
-      const d   = await res.json()
+      const d = await res.json()
       setLogs(d.data ?? [])
     } catch {}
   }
@@ -287,7 +303,7 @@ const DashboardPage = () => {
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.message ?? 'Failed to send')
-      setResult({ type: 'success', msg: `✓ ${d.message ?? 'Mail queued successfully'}` })
+      setResult({ type: 'success', msg: `✓ Mail queued successfully` })
       setTimeout(loadLogs, 1000)
     } catch (e) {
       setResult({ type: 'error', msg: e instanceof Error ? e.message : 'Send failed' })
@@ -296,11 +312,11 @@ const DashboardPage = () => {
     }
   }
 
-  const statusBadge = (s: string) => s === 'sent'
-    ? 'bg-green-100 text-green-700'
-    : s === 'failed'
-    ? 'bg-red-100 text-red-700'
-    : 'bg-yellow-100 text-yellow-700'
+  const handleLogout = async () => {
+    await logout()
+    router.refresh()
+    router.replace('/mail-test/login')
+  }
 
   return (
     <div className="min-h-screen p-8">
@@ -311,16 +327,15 @@ const DashboardPage = () => {
             <p className="text-sm text-neutral-500 mt-1">
               Signed in as <span className="font-medium">{user?.email}</span>
             </p>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              Configure <code>MAIL_*</code> in .env. Use Mailtrap for local testing.
-            </p>
           </div>
-          <a href="/mail-test/logout" className="text-xs text-neutral-400 hover:text-neutral-700">
+          <button
+            className="text-xs text-neutral-400 hover:text-neutral-700"
+            onClick={handleLogout}
+          >
             Sign out
-          </a>
+          </button>
         </div>
 
-        {/* To address */}
         <div className="bg-white rounded-2xl border border-neutral-100 p-5">
           <label className="text-sm font-medium text-neutral-700 block mb-2">Send to address</label>
           <input
@@ -332,29 +347,23 @@ const DashboardPage = () => {
           />
         </div>
 
-        {/* Result banner */}
         {result && (
           <div className={`p-4 rounded-2xl text-sm ${result.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
             {result.msg}
           </div>
         )}
 
-        {/* Mail types */}
         <div className="space-y-3">
           {mailTypes.map(m => (
             <div key={m.key} className="bg-white rounded-2xl border border-neutral-100 p-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full ${m.color}`} />
-                <div>
-                  <div className="font-medium text-sm">{m.label}</div>
-                  <div className="text-xs text-neutral-500">{m.desc}</div>
-                  <div className="text-xs text-neutral-400 mt-1">
-                    Fields: {Object.entries(m.fields).map(([k, v]) => `${k}="${v}"`).join(', ')}
-                  </div>
+              <div>
+                <div className="font-medium text-sm">{m.label}</div>
+                <div className="text-xs text-neutral-500">
+                  Fields: {Object.entries(m.fields).map(([k, v]) => `${k}="${v}"`).join(', ')}
                 </div>
               </div>
               <button
-                className="arkzen-btn text-sm shrink-0"
+                className="arkzen-btn text-sm"
                 onClick={() => send(m.key, m.fields)}
                 disabled={!!sending || !toEmail}
               >
@@ -364,11 +373,10 @@ const DashboardPage = () => {
           ))}
         </div>
 
-        {/* Logs */}
         <div className="bg-white rounded-2xl border border-neutral-100 overflow-hidden">
           <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
             <h2 className="font-semibold">Send log</h2>
-            <button className="text-xs text-neutral-400 hover:text-neutral-700" onClick={loadLogs}>Refresh</button>
+            <button className="text-xs text-neutral-400" onClick={loadLogs}>Refresh</button>
           </div>
           {logs.length === 0 ? (
             <div className="p-8 text-center text-sm text-neutral-400">No mails sent yet.</div>
@@ -381,7 +389,9 @@ const DashboardPage = () => {
                     <p className="text-xs text-neutral-500">To: {l.to_email} · {l.subject}</p>
                     {l.error && <p className="text-xs text-red-500 mt-0.5">{l.error}</p>}
                   </div>
-                  <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusBadge(l.status)}`}>{l.status}</span>
+                  <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                    l.status === 'sent' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                  }`}>{l.status}</span>
                 </div>
               ))}
             </div>
