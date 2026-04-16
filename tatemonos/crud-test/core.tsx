@@ -97,7 +97,10 @@ endpoints:
     description: Update item
     validation:
       name: sometimes|string|max:255
+      description: nullable|string
       status: sometimes|string|in:active,pending,archived
+      priority: sometimes|integer|min:0
+      tags: nullable|string
     response:
       type: single
   destroy:
