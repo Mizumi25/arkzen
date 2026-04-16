@@ -69,11 +69,13 @@ class AuthBuilder
     // SQLite file these tables land in.
     // ─────────────────────────────────────────────
 
-    private static function migrateAuthTables(string $dbConn, string $prefix): void
+     private static function migrateAuthTables(string $dbConn, string $prefix): void
     {
         $usersTable  = "{$prefix}_users";
         $tokensTable = "{$prefix}_personal_access_tokens";
-
+        $notificationsTable = "{$prefix}_notifications";
+    
+        // Users table
         if (!Schema::connection($dbConn)->hasTable($usersTable)) {
             Schema::connection($dbConn)->create($usersTable, function ($table) {
                 $table->id();
@@ -81,21 +83,21 @@ class AuthBuilder
                 $table->string('email')->unique();
                 $table->timestamp('email_verified_at')->nullable();
                 $table->string('password');
-                $table->string('role', 20)->default('user'); // Role-based access control
+                $table->string('role', 20)->default('user');
                 $table->rememberToken();
                 $table->timestamps();
             });
             Log::info("[Arkzen Auth] ✓ Created table: {$usersTable}");
         }
-
-        // Ensure `role` column exists on pre-existing users tables (idempotent upgrade)
+    
         if (!Schema::connection($dbConn)->hasColumn($usersTable, 'role')) {
             Schema::connection($dbConn)->table($usersTable, function ($table) {
                 $table->string('role', 20)->default('user')->after('password');
             });
             Log::info("[Arkzen Auth] ✓ Added `role` column to existing table: {$usersTable}");
         }
-
+    
+        // Personal access tokens table
         if (!Schema::connection($dbConn)->hasTable($tokensTable)) {
             Schema::connection($dbConn)->create($tokensTable, function ($table) {
                 $table->id();
@@ -108,6 +110,19 @@ class AuthBuilder
                 $table->timestamps();
             });
             Log::info("[Arkzen Auth] ✓ Created table: {$tokensTable}");
+        }
+    
+        // Native notifications table (polymorphic)
+        if (!Schema::connection($dbConn)->hasTable($notificationsTable)) {
+            Schema::connection($dbConn)->create($notificationsTable, function ($table) {
+                $table->uuid('id')->primary();
+                $table->string('type');
+                $table->morphs('notifiable');
+                $table->text('data');
+                $table->timestamp('read_at')->nullable();
+                $table->timestamps();
+            });
+            Log::info("[Arkzen Auth] ✓ Created table: {$notificationsTable}");
         }
     }
 

@@ -1,7 +1,7 @@
 /* @arkzen:meta
 name: notification-test
-version: 1.0.0
-description: Tests Laravel Notifications across all three channels — database (bell), mail, and broadcast (real-time popup).
+version: 2.0.0
+description: Tests Laravel Notifications across all three channels — database (bell), mail, and broadcast (real-time popup). Uses Laravel's native notifications table.
 auth: true
 */
 
@@ -16,33 +16,9 @@ layout:
     className: "min-h-screen bg-neutral-50"
 */
 
-/* @arkzen:database:notification_tests
-table: notification_tests
-timestamps: true
-softDeletes: false
-columns:
-  id:
-    type: integer
-    primary: true
-    autoIncrement: true
-  user_id:
-    type: integer
-    nullable: false
-  type:
-    type: string
-    length: 255
-    nullable: false
-  data:
-    type: text
-    nullable: true
-  read_at:
-    type: datetime
-    nullable: true
-*/
-
 /* @arkzen:api:notifications
-model: NotificationTest
-controller: NotificationTestController
+model: Notification
+controller: NotificationController
 prefix: /api/notification-test
 middleware: [auth]
 endpoints:
@@ -311,7 +287,6 @@ const DashboardPage = () => {
       
       ws.onopen = () => {
         console.log('WebSocket connected')
-        // Subscribe to private channel for this user
         if (user?.id) {
           ws.send(JSON.stringify({
             event: 'pusher:subscribe',
@@ -389,7 +364,6 @@ const DashboardPage = () => {
 
   return (
     <div className="min-h-screen p-8">
-      {/* Broadcast popup */}
       {popup && (
         <div className="fixed top-5 right-5 z-50 bg-neutral-900 text-white text-sm rounded-2xl px-5 py-3 shadow-xl flex items-center gap-2 animate-fade-in">
           <span>🔔</span> {popup}
@@ -412,7 +386,6 @@ const DashboardPage = () => {
           </button>
         </div>
 
-        {/* Stats */}
         <div className="bg-white rounded-2xl p-5 border border-neutral-100">
           <div className="flex items-center justify-between">
             <div>
@@ -426,7 +399,6 @@ const DashboardPage = () => {
           </div>
         </div>
 
-        {/* Trigger buttons */}
         <div className="grid grid-cols-2 gap-3">
           {notifTypes.map(n => (
             <div key={n.key} className="bg-white rounded-2xl border border-neutral-100 p-4">
@@ -446,7 +418,6 @@ const DashboardPage = () => {
           ))}
         </div>
 
-        {/* Inbox */}
         <div className="bg-white rounded-2xl border border-neutral-100 overflow-hidden">
           <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
             <h2 className="font-semibold">Database inbox ({unread} unread)</h2>
@@ -467,22 +438,18 @@ const DashboardPage = () => {
             </div>
           ) : (
             <div className="divide-y divide-neutral-50">
-              {inbox.map((n, i) => {
-                let notificationData = {}
-                try {
-                  notificationData = typeof n.data === 'string' ? JSON.parse(n.data) : (n.data || {})
-                } catch { notificationData = { message: 'Notification' } }
-                
+              {inbox.map((n) => {
+                const data = n.data && typeof n.data === 'string' ? JSON.parse(n.data) : (n.data || {})
                 return (
-                  <div key={i} className={`px-5 py-3 flex items-center gap-3 ${!n.read_at ? 'bg-blue-50/40' : ''}`}>
+                  <div key={n.id} className={`px-5 py-3 flex items-center gap-3 ${!n.read_at ? 'bg-blue-50/40' : ''}`}>
                     {!n.read_at && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
                     {n.read_at && <div className="w-1.5 h-1.5 shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-neutral-700 truncate">
-                        {(notificationData as any).message ?? 'Notification'}
+                        {data.message ?? 'Notification'}
                       </p>
                       <p className="text-xs text-neutral-400">
-                        {(notificationData as any).subject ?? n.type} · {n.created_at?.slice(0, 19).replace('T', ' ')}
+                        {data.subject ?? n.type} · {n.created_at?.slice(0, 19).replace('T', ' ')}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -503,7 +470,7 @@ const DashboardPage = () => {
 
         <div className="text-xs text-neutral-400 bg-neutral-50 rounded-xl p-4">
           <strong>Channels tested:</strong><br/>
-          🗄️ <strong>database</strong> — stored in notifications table, shown in inbox above<br/>
+          🗄️ <strong>database</strong> — stored in native notifications table, shown in inbox above<br/>
           ✉️ <strong>mail</strong> — sent to {user?.email} (check Mailtrap)<br/>
           📡 <strong>broadcast</strong> — fires WebSocket event, shows popup top-right<br/>
           Run <code>php artisan reverb:start</code> for broadcast + <code>php artisan queue:work</code> for mail.

@@ -12,3 +12,23 @@ use Illuminate\Support\Facades\Broadcast;
 Broadcast::channel('broadcast-test-public', function ($user) {
     return $user !== null;
 });
+
+// Module: auth-test
+Broadcast::channel('private-auth-test.{userId}', function ($user, $userId = null) {
+    return (int) $user->id === (int) $userId;
+});
+
+// Module: mail-test
+Broadcast::channel('private-mail-test.{userId}', function ($user, $userId = null) {
+    return (int) $user->id === (int) $userId;
+});
+
+// Module: notification-test
+Broadcast::channel('private-notification-test.{userId}', function ($user, $userId = null) {
+    return (int) $user->id === (int) $userId;
+});
+
+// Module: roles-test
+Broadcast::channel('private-roles-test.{userId}', function ($user, $userId = null) {
+    return (int) $user->id === (int) $userId;
+});

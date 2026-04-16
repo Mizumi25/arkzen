@@ -87,6 +87,7 @@ class {$controllerName} extends Controller
                 'event_fire' => self::generateEventFire($modelName, $endpoint),
                 'broadcast' => self::generateBroadcast($modelName, $slugNs, $endpoint),
                  'mail_send'      => self::generateMailSend($modelName, $endpoint, $slugNs),
+                 'notification_trigger' => self::generateNotificationTrigger($modelName, $endpoint, $slugNs),
                 default       => self::generateStore($modelName, $endpoint, $slugNs, $useResource),
             },
             'destroy' => match ($endpoint['type'] ?? '') {
@@ -708,6 +709,46 @@ class {$controllerName} extends Controller
         return response()->json(\$mailLog, 201);
     }";
     }
+    
+    
+    // ─────────────────────────────────────────────
+    // NOTIFICATION TRIGGER — dispatches a notification to the authenticated user
+    // ─────────────────────────────────────────────
+          private static function generateNotificationTrigger(string $model, array $endpoint, string $slugNs): string
+      {
+          $description = $endpoint['description'] ?? 'Trigger a notification';
+          $validation  = self::generateValidation($endpoint['validation'] ?? []);
+  
+          return "    /**
+       * {$description}
+       */
+      public function store(Request \$request): JsonResponse
+      {
+          \$validated = \$request->validate([
+  {$validation}
+          ]);
+  
+          \$user = \$request->user();
+          \$notificationKey = \$validated['notification'];
+  
+          // Dynamically resolve the notification class
+          \$className = \\Illuminate\\Support\\Str::studly(str_replace('-', '_', \$notificationKey));
+          \$fullClass = \"\\\\App\\\\Notifications\\\\Arkzen\\\\{$slugNs}\\\\\" . \$className;
+  
+          if (!class_exists(\$fullClass)) {
+              throw new \\InvalidArgumentException('Unknown notification type: ' . \$notificationKey);
+          }
+  
+          // Dispatch the notification (Laravel handles database storage via the Notifiable trait)
+          \$user->notify(new \$fullClass());
+  
+          return response()->json([
+              'message' => 'Notification triggered successfully',
+              'type'    => \$notificationKey,
+          ], 201);
+      }";
+      }
+    
 
     // ─────────────────────────────────────────────
     // HELPERS

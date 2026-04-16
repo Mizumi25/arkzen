@@ -1,14 +1,8 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — CHANNEL BUILDER v3.0
-// Generates Laravel channel authorization in channels.php.
-// Controls who can subscribe to private/presence channels.
-// Works alongside BroadcastBuilder.
-//
-// v3.0: $module['realtimes'] is now a pre-normalised map:
-//         ['channels' => [...], 'events' => [...]]
-//       from ModuleReader::parseRealtimeSections(). No yaml_parse here.
+// ARKZEN ENGINE — CHANNEL BUILDER v3.1
+// v3.1: Auto-register private-{tatemono}.{userId} channel for auth tatemonos.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -21,6 +15,17 @@ class ChannelBuilder
     public static function build(array $module): void
     {
         $channels = $module['realtimes']['channels'] ?? [];
+        $hasAuth  = $module['auth'] ?? false;
+
+        // If this is an auth tatemono, ensure its private notification channel is authorized
+        if ($hasAuth) {
+            $slug = $module['name'];
+            $channels["private-{$slug}.{userId}"] = [
+                'type' => 'private',
+                'auth' => 'owner',
+            ];
+        }
+
         if (empty($channels)) return;
 
         self::ensureChannelsFile();
@@ -62,26 +67,23 @@ use Illuminate\Support\Facades\Broadcast;
         }
 
         $authLogic = match($auth) {
-            'owner'         => "return \$user->id === (int) \$id;",
+            'owner'         => "return (int) \$user->id === (int) \$userId;",
             'admin'         => "return \$user->role === 'admin';",
             'authenticated' => "return \$user !== null;",
             default         => "return \$user !== null;",
         };
 
-        $idParam = $auth === 'owner' ? ", \$id" : "";
-
         $channelLine = match($type) {
             'presence' => "
 // Module: {$moduleName}
-Broadcast::channel('{$channelName}', function (\$user{$idParam}) {
+Broadcast::channel('{$channelName}', function (\$user, \$userId = null) {
     {$authLogic}
-    // Presence: return user info array for member list
     return ['id' => \$user->id, 'name' => \$user->name];
 });
 ",
             default => "
 // Module: {$moduleName}
-Broadcast::channel('{$channelName}', function (\$user{$idParam}) {
+Broadcast::channel('{$channelName}', function (\$user, \$userId = null) {
     {$authLogic}
 });
 ",

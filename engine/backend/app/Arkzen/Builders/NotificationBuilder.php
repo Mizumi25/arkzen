@@ -1,16 +1,8 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — NOTIFICATION BUILDER v3.0
-// Generates Laravel Notification classes.
-// Declared in @arkzen:notifications section.
-//
-// ISOLATION:
-//   Path:      app/Notifications/Arkzen/{slugNs}/{ClassName}Notification.php
-//   Namespace: App\Notifications\Arkzen\{slugNs}
-//
-// v3.0: $module['notifications'] is now a pre-normalised name→config map
-//       from ModuleReader::parse(). No yaml_parse here.
+// ARKZEN ENGINE — NOTIFICATION BUILDER v3.1
+// v3.1: Added broadcastOn() method for proper private channel routing.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -45,6 +37,9 @@ class NotificationBuilder
 
         $channelList    = self::generateChannelList($channels);
         $channelMethods = self::generateChannelMethods($channels, $message, $subject);
+        $broadcastOnMethod = in_array('broadcast', $channels)
+            ? self::generateBroadcastOnMethod($slug)
+            : '';
 
         $content = "<?php
 
@@ -77,7 +72,7 @@ class {$className} extends Notification implements ShouldQueue
     }
 
 {$channelMethods}
-
+{$broadcastOnMethod}
     public function toArray(object \$notifiable): array
     {
         return array_merge([
@@ -131,6 +126,16 @@ class {$className} extends Notification implements ShouldQueue
         }
 
         return implode("\n\n", $methods);
+    }
+
+    private static function generateBroadcastOnMethod(string $slug): string
+    {
+        return "
+    public function broadcastOn(object \$notifiable): array
+    {
+        return [new \\Illuminate\\Broadcasting\\PrivateChannel('private-{$slug}.' . \$notifiable->id)];
+    }
+";
     }
 
     public static function toClassName(string $name): string
