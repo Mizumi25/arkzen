@@ -25,6 +25,12 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // ── CRITICAL: Must run before auth:sanctum so Sanctum uses the
+        // correct per-tatemono PersonalAccessToken model during token lookup.
+        // Without this, auth:sanctum resolves the token against the wrong
+        // (default) table and returns 401 before the controller runs.
+        $middleware->prepend(\App\Http\Middleware\ArkzenSanctumTokenResolver::class);
+
         $middleware->alias([
             'arkzen.engine' => \App\Http\Middleware\ArkzenEngineMiddleware::class,
         ]);
