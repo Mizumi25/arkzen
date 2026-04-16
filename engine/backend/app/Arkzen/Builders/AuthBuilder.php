@@ -1,7 +1,7 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — AUTH BUILDER v2.1 (PER-TATEMONO)
+// ARKZEN ENGINE — AUTH BUILDER v2.2 (PER-TATEMONO)
 // Auth is now fully isolated per tatemono.
 //
 // Each tatemono with auth:true gets:
@@ -14,15 +14,10 @@
 // Called by ArkzenEngineController::build() during Phase 0.5.
 // setup.js no longer touches auth at all.
 //
-// v2.1 — Added `role` column to all auth users tables.
-//   migrateAuthTables() now always includes `role varchar(20) default 'user'`
-//   on CREATE, and adds it via ALTER if the table already exists (idempotent).
-//   generateUserModel() adds 'role' to $fillable so update/promote/demote
-//   calls go through without mass-assignment guards.
-//   This aligns the engine with CheckRole middleware (MiddlewareBuilder) which
-//   reads $request->user()->role — that field must exist for role:* middleware
-//   to function on any auth:true tatemono.
-// ============================================================
+// v2.2 — FIXED: AuthController methods now explicitly set the
+//        correct PersonalAccessToken model before any token
+//        operation. This ensures tokens are always written to
+//        and read from the isolated tatemono database.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -208,6 +203,9 @@ class AuthBuilder
 
         File::ensureDirectoryExists(app_path("Http/Controllers/Arkzen/{$slugNs}"));
 
+        // The explicit model setter line to inject into each method
+        $setModelLine = "        \\\\Laravel\\\\Sanctum\\\\Sanctum::usePersonalAccessTokenModel(\\\\App\\\\Models\\\\Arkzen\\\\{$slugNs}\\\\PersonalAccessToken::class);";
+
         $content = "<?php\n\n"
             . "// ============================================================\n"
             . "// ARKZEN GENERATED AUTH CONTROLLER — {$tatSlug}\n"
@@ -230,6 +228,7 @@ class AuthBuilder
             . "    }\n\n"
             . "    // ── Register ──────────────────────────────────\n\n"
             . "    public function register(Request \$request): JsonResponse\n    {\n"
+            . "{$setModelLine}\n\n"
             . "        \$validated = \$request->validate([\n"
             . "            'name'     => 'required|string|max:255',\n"
             . "            'email'    => 'required|email|unique:{$dbConn}.{$usersTable},email',\n"
@@ -245,6 +244,7 @@ class AuthBuilder
             . "    }\n\n"
             . "    // ── Login ─────────────────────────────────────\n\n"
             . "    public function login(Request \$request): JsonResponse\n    {\n"
+            . "{$setModelLine}\n\n"
             . "        \$validated = \$request->validate([\n"
             . "            'email'    => 'required|email',\n"
             . "            'password' => 'required|string',\n"
@@ -261,11 +261,13 @@ class AuthBuilder
             . "    }\n\n"
             . "    // ── Logout ────────────────────────────────────\n\n"
             . "    public function logout(Request \$request): JsonResponse\n    {\n"
+            . "{$setModelLine}\n\n"
             . "        \$request->user()->currentAccessToken()->delete();\n"
             . "        return response()->json(['message' => 'Logged out successfully']);\n"
             . "    }\n\n"
             . "    // ── Me ────────────────────────────────────────\n\n"
             . "    public function me(Request \$request): JsonResponse\n    {\n"
+            . "{$setModelLine}\n\n"
             . "        return response()->json(\$request->user());\n"
             . "    }\n}\n";
 

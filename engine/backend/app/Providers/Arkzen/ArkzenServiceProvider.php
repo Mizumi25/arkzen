@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Config;
 use App\Arkzen\Readers\RegistryReader;
+use Illuminate\Support\Facades\Auth; 
+
 
 class ArkzenServiceProvider extends ServiceProvider
 {
@@ -125,8 +127,20 @@ class ArkzenServiceProvider extends ServiceProvider
         }
     }
 
-    public function register(): void
-    {
-        $this->app->singleton(RegistryReader::class);
-    }
+      public function register(): void
+  {
+      // 🔧 Wait for the 'auth' service to be resolved, then extend the Sanctum guard.
+      // This gives the guard a proper 'users' provider, fixing the 401 Unauthenticated
+      // error without breaking isolated User models or requiring a static auth.php file.
+      $this->app->afterResolving('auth', function ($auth) {
+          $auth->extend('sanctum', function ($app, $name, array $config) {
+              return new \Laravel\Sanctum\Guard(
+                  $auth->createUserProvider('users'),
+                  $app['request']
+              );
+          });
+      });
+  
+      $this->app->singleton(RegistryReader::class);
+  }
 }
