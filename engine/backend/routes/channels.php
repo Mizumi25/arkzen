@@ -32,3 +32,8 @@ Broadcast::channel('private-notification-test.{userId}', function ($user, $userI
 Broadcast::channel('private-roles-test.{userId}', function ($user, $userId = null) {
     return (int) $user->id === (int) $userId;
 });
+
+// Module: flower-shop
+Broadcast::channel('private-flower-shop.{userId}', function ($user, $userId = null) {
+    return (int) $user->id === (int) $userId;
+});

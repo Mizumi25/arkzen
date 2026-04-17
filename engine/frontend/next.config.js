@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  allowedDevOrigins: ['192.168.137.77'], // Add your IP here
   experimental: {
     forceSwcTransforms: false,
   },
