@@ -1,8 +1,8 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — NOTIFICATION BUILDER v3.1
-// v3.1: Added broadcastOn() method for proper private channel routing.
+// ARKZEN ENGINE — NOTIFICATION BUILDER v3.2
+// v3.2: Defensive conversion for channels string (YAML parse fallback).
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -31,6 +31,12 @@ class NotificationBuilder
     {
         $className  = self::toClassName($name);
         $channels   = $config['channels'] ?? ['database'];
+
+        // 🔧 FIX: If YAML parsing failed and left a string, convert to array
+        if (is_string($channels)) {
+            $channels = array_map('trim', explode(',', $channels));
+        }
+
         $message    = $config['message']  ?? 'You have a new notification.';
         $subject    = $config['subject']  ?? $className;
         $filePath   = app_path("Notifications/Arkzen/{$slugNs}/{$className}.php");
