@@ -5,7 +5,7 @@
 // Tatemono: notification-test
 // Channels: broadcast, database
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-18T13:01:16.722004Z
+// Generated: 2026-04-18T23:24:29.367320Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;
