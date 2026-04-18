@@ -3,9 +3,9 @@
 // ============================================================
 // ARKZEN GENERATED NOTIFICATION — AllChannelsNotification
 // Tatemono: notification-test
-// Channels: [database, mail, broadcast]
+// Channels: database, mail, broadcast
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-17T15:05:55.885980Z
+// Generated: 2026-04-18T07:38:49.900173Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;
@@ -25,7 +25,7 @@ class AllChannelsNotification extends Notification implements ShouldQueue
 
     public function via(object $notifiable): array
     {
-        return ['[database', 'mail', 'broadcast]'];
+        return ['database', 'mail', 'broadcast'];
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -35,6 +35,19 @@ class AllChannelsNotification extends Notification implements ShouldQueue
             ->line('This notification was sent to all three channels simultaneously')
             ->action('View', url('/'))
             ->line('Thank you for using our application.');
+    }
+
+    public function toBroadcast(object $notifiable): array
+    {
+        return [
+            'message' => 'This notification was sent to all three channels simultaneously',
+            'data'    => $this->data,
+        ];
+    }
+
+    public function broadcastOn(object $notifiable): array
+    {
+        return [new \Illuminate\Broadcasting\PrivateChannel('private-notification-test.' . $notifiable->id)];
     }
 
     public function toArray(object $notifiable): array

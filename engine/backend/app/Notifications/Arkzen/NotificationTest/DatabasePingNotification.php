@@ -3,9 +3,9 @@
 // ============================================================
 // ARKZEN GENERATED NOTIFICATION — DatabasePingNotification
 // Tatemono: notification-test
-// Channels: [database]
+// Channels: database
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-17T15:05:55.883809Z
+// Generated: 2026-04-18T07:38:49.896358Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;
@@ -25,7 +25,7 @@ class DatabasePingNotification extends Notification implements ShouldQueue
 
     public function via(object $notifiable): array
     {
-        return ['[database]'];
+        return ['database'];
     }
 
 

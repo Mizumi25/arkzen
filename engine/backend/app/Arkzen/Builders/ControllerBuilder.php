@@ -733,7 +733,7 @@ class {$controllerName} extends Controller
           \$notificationKey = \$validated['notification'];
   
           // Dynamically resolve the notification class
-          $className = \Illuminate\Support\Str::studly(str_replace('-', '_', $notificationKey)) . 'Notification';
+          \$className = \Illuminate\Support\Str::studly(str_replace('-', '_', \$notificationKey)) . 'Notification';
           \$fullClass = \"\\\\App\\\\Notifications\\\\Arkzen\\\\{$slugNs}\\\\\" . \$className;
   
           if (!class_exists(\$fullClass)) {

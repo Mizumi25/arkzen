@@ -1,9 +1,11 @@
 // ============================================================
-// ARKZEN ENGINE — PARSER v5.1
+// ARKZEN ENGINE — PARSER v6.1
+// v6.1: Added parseAllNotifications() and parseAllMails() —
+//       dedicated parsers for the new :name:end DSL pattern.
+//       These markers have YAML config inside the opening comment
+//       and no PHP body (unlike console/jobs which have handle() bodies).
+//
 // v5.1: Added parseAllCustomRoutes() for @arkzen:routes blocks.
-//       Supports lightweight one-off endpoints with no model/database.
-//       customRoutes wired into parseTatemono(), hasBackend check,
-//       hasSections() detection, and ParsedTatemono output.
 //
 // Key changes v5 (kept):
 //   - meta.layout removed — layout is now per-page
@@ -474,6 +476,107 @@ function parseAllLayouts(content: string): ArkzenLayout[] {
 // extractAllSections() for any remaining Shape A blocks.
 // ─────────────────────────────────────────────
 
+// ─────────────────────────────────────────────
+// PARSE ALL NOTIFICATIONS — v6.1
+// @arkzen:notifications:name blocks use the new named marker pattern:
+// YAML config lives inside the opening comment, no PHP body.
+//
+// Format:
+//   /* @arkzen:notifications:database-ping
+//   channels: [database]
+//   message: "You have a new notification"
+//   subject: "Database Ping"
+//   */
+//   /* @arkzen:notifications:database-ping:end */
+// ─────────────────────────────────────────────
+
+function parseAllNotifications(content: string): ArkzenSection[] {
+  const results: ArkzenSection[] = []
+  const openPattern = `/* @arkzen:notifications:`
+  let searchFrom = 0
+
+  while (true) {
+    const openIdx = content.indexOf(openPattern, searchFrom)
+    if (openIdx === -1) break
+
+    const afterOpen = content.slice(openIdx + openPattern.length)
+    const identMatch = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
+    if (!identMatch) { searchFrom = openIdx + openPattern.length; continue }
+
+    const identifier = identMatch[1]
+    if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
+
+    // Find closing */ of opening comment
+    const openCommentEnd = content.indexOf('*/', openIdx)
+    if (openCommentEnd === -1) break
+
+    // YAML config inside the opening comment
+    const yamlRaw = content
+      .slice(openIdx + openPattern.length + identifier.length, openCommentEnd)
+      .trim()
+
+    // Find the :end closer (no body for notifications)
+    const closeMarker = `/* @arkzen:notifications:${identifier}:end */`
+    const closeIdx = content.indexOf(closeMarker, openCommentEnd)
+
+    // Emit as YAML string with name as top-level key
+    const raw = `${identifier}:\n` +
+      yamlRaw.split('\n').map(l => `  ${l}`).join('\n')
+
+    results.push({ raw, start: openIdx, end: closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2 })
+
+    searchFrom = closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2
+  }
+
+  return results
+}
+
+// ─────────────────────────────────────────────
+// PARSE ALL MAILS — v6.1
+// Same pattern as notifications — YAML inside opening comment, no body.
+// ─────────────────────────────────────────────
+
+function parseAllMails(content: string): ArkzenSection[] {
+  const results: ArkzenSection[] = []
+  const openPattern = `/* @arkzen:mail:`
+  let searchFrom = 0
+
+  while (true) {
+    const openIdx = content.indexOf(openPattern, searchFrom)
+    if (openIdx === -1) break
+
+    const afterOpen = content.slice(openIdx + openPattern.length)
+    const identMatch = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
+    if (!identMatch) { searchFrom = openIdx + openPattern.length; continue }
+
+    const identifier = identMatch[1]
+    if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
+
+    const openCommentEnd = content.indexOf('*/', openIdx)
+    if (openCommentEnd === -1) break
+
+    const yamlRaw = content
+      .slice(openIdx + openPattern.length + identifier.length, openCommentEnd)
+      .trim()
+
+    const closeMarker = `/* @arkzen:mail:${identifier}:end */`
+    const closeIdx = content.indexOf(closeMarker, openCommentEnd)
+
+    const raw = `${identifier}:\n` +
+      yamlRaw.split('\n').map(l => `  ${l}`).join('\n')
+
+    results.push({ raw, start: openIdx, end: closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2 })
+
+    searchFrom = closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2
+  }
+
+  return results
+}
+
+// ─────────────────────────────────────────────
+// PARSE ALL NAMED CODE (generic fallback for sections without :name pattern)
+// ─────────────────────────────────────────────
+
 function parseAllNamedCode(content: string, marker: string): ArkzenSection[] {
   const results: ArkzenSection[] = []
   const openPattern = `/* @arkzen:${marker}:`
@@ -900,8 +1003,8 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   const realtimes     = parseAllRealtime(content)
   const events        = parseAllEvents(content)
   const jobs          = parseAllJobs(content)
-  const notifications = parseAllNamedCode(content, 'notifications')
-  const mails         = parseAllNamedCode(content, 'mail')
+  const notifications = parseAllNotifications(content)  // ← v6.1: dedicated parser
+  const mails         = parseAllMails(content)          // ← v6.1: dedicated parser
   const consoles      = parseAllConsoles(content)
 
   const animation = extractSectionWithPosition(content, 'animation') ?? undefined

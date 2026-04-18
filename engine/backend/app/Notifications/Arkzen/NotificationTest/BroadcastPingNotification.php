@@ -3,9 +3,9 @@
 // ============================================================
 // ARKZEN GENERATED NOTIFICATION — BroadcastPingNotification
 // Tatemono: notification-test
-// Channels: [broadcast, database]
+// Channels: broadcast, database
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-17T15:05:55.885310Z
+// Generated: 2026-04-18T07:38:49.899143Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;
@@ -25,10 +25,21 @@ class BroadcastPingNotification extends Notification implements ShouldQueue
 
     public function via(object $notifiable): array
     {
-        return ['[broadcast', 'database]'];
+        return ['broadcast', 'database'];
     }
 
+    public function toBroadcast(object $notifiable): array
+    {
+        return [
+            'message' => 'Real-time notification received!',
+            'data'    => $this->data,
+        ];
+    }
 
+    public function broadcastOn(object $notifiable): array
+    {
+        return [new \Illuminate\Broadcasting\PrivateChannel('private-notification-test.' . $notifiable->id)];
+    }
 
     public function toArray(object $notifiable): array
     {

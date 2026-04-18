@@ -3,9 +3,9 @@
 // ============================================================
 // ARKZEN GENERATED NOTIFICATION — MailPingNotification
 // Tatemono: notification-test
-// Channels: [mail]
+// Channels: mail
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-17T15:05:55.884621Z
+// Generated: 2026-04-18T07:38:49.897999Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;
@@ -25,10 +25,17 @@ class MailPingNotification extends Notification implements ShouldQueue
 
     public function via(object $notifiable): array
     {
-        return ['[mail]'];
+        return ['mail'];
     }
 
-
+    public function toMail(object $notifiable): MailMessage
+    {
+        return (new MailMessage)
+            ->subject('Mail Ping from Arkzen')
+            ->line('This is a test mail notification')
+            ->action('View', url('/'))
+            ->line('Thank you for using our application.');
+    }
 
     public function toArray(object $notifiable): array
     {
