@@ -85,9 +85,11 @@ subject: "All Channels Test"
 
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore, setActiveTatemono, arkzenFetch } from '@/arkzen/core/stores/authStore'
+import Echo from 'laravel-echo'
+import Pusher from 'pusher-js'
 
 if (typeof window !== 'undefined') {
   setActiveTatemono('notification-test')
@@ -253,7 +255,6 @@ const DashboardPage = () => {
   const [sending, setSending] = useState<string | null>(null)
   const [unread, setUnread] = useState(0)
   const [loading, setLoading] = useState(false)
-  const wsRef = useRef<WebSocket | null>(null)
 
   const notifTypes = [
     { key: 'database-ping',  label: 'Database',   channels: ['database'],              color: 'bg-blue-500',   icon: '🗄️' },
@@ -280,46 +281,39 @@ const DashboardPage = () => {
   useEffect(() => {
     loadInbox()
 
-    // WebSocket for broadcast notifications
-    try {
-      const ws = new WebSocket('ws://localhost:8080')
-      wsRef.current = ws
-      
-      ws.onopen = () => {
-        console.log('WebSocket connected')
-        if (user?.id) {
-          ws.send(JSON.stringify({
-            event: 'pusher:subscribe',
-            data: { channel: `private-notification-test.${user.id}` }
-          }))
-        }
-      }
-      
-      ws.onmessage = (e) => {
-        try {
-          const payload = JSON.parse(e.data)
-          if (payload.event && payload.event.includes('notification')) {
-            const data = typeof payload.data === 'string' ? JSON.parse(payload.data) : payload.data
-            setPopup(data.message ?? 'New notification received!')
-            setTimeout(() => setPopup(null), 4000)
-            loadInbox()
-          }
-        } catch (err) {
-          console.error('Failed to parse WebSocket message:', err)
-        }
-      }
-      
-      ws.onerror = (err) => {
-        console.error('WebSocket error:', err)
-      }
-      
-      return () => {
-        if (wsRef.current) {
-          wsRef.current.close()
-        }
-      }
-    } catch (err) {
-      console.error('Failed to create WebSocket:', err)
+    const token = useAuthStore.getState().token
+    if (!token || !user?.id) return
+
+    const pusher = new Pusher('arkzen-key', {
+      wsHost: 'localhost',
+      wsPort: 8080,
+      forceTLS: false,
+      enabledTransports: ['ws'],
+      cluster: 'local',
+      authEndpoint: '/api/notification-test/auth/broadcasting/auth',
+      auth: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    })
+
+    const echo = new Echo({
+      broadcaster: 'pusher',
+      client: pusher,
+    })
+
+    // ✅ Subscribe to the PRIVATE channel for this user
+    echo.private(`private-notification-test.${user.id}`)
+      .listen('.notification-test.notification', (e: any) => {
+        setPopup(e.message ?? 'New notification received!')
+        setTimeout(() => setPopup(null), 4000)
+        loadInbox()
+      })
+
+    return () => {
+      echo.disconnect()
+      pusher.disconnect()
     }
   }, [user?.id])
 

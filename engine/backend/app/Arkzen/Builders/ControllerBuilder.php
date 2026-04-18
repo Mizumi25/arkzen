@@ -1,11 +1,14 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — CONTROLLER BUILDER v5.6
+// ARKZEN ENGINE — CONTROLLER BUILDER v5.7
 // FIXED v5.4: Now uses Resource class when resource: true is set
 // FIXED v5.5: Role endpoint generators rewritten for real Sanctum auth.
 // FIXED v5.6: Added 'run' endpoint support for scheduler-test commands
 //   generateCommandRun() executes Artisan commands and records results
+// FIXED v5.7: When notification_trigger endpoint exists, skip model import
+//   and route index/destroy/readAll through native Laravel notifications
+//   relation ($user->notifications) instead of a custom Eloquent model.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -29,11 +32,24 @@ class ControllerBuilder
 
         File::ensureDirectoryExists(app_path("Http/Controllers/Arkzen/{$slugNs}"));
 
-        $methods = self::generateMethods($modelName, $endpoints, $slugNs, $useResource);
+        // v5.7: If any endpoint is notification_trigger, this is a native Laravel
+        // notifications controller — no custom model exists. Skip the model import
+        // and use native $user->notifications relation for index/destroy/readAll.
+        $isNativeNotifications = collect($endpoints)->contains(
+            fn($e) => ($e['type'] ?? '') === 'notification_trigger'
+        );
+
+        $methods = $isNativeNotifications
+            ? self::generateNativeNotificationMethods($endpoints, $slugNs)
+            : self::generateMethods($modelName, $endpoints, $slugNs, $useResource);
 
         $resourceImport = $useResource 
             ? "use App\\Http\\Resources\\Arkzen\\{$slugNs}\\{$modelName}Resource;\n" 
             : '';
+
+        $modelImport = $isNativeNotifications
+            ? ''
+            : "use App\\Models\\Arkzen\\{$slugNs}\\{$modelName};\n";
 
         $content = "<?php
 
@@ -47,8 +63,7 @@ class ControllerBuilder
 namespace App\Http\Controllers\Arkzen\\{$slugNs};
 
 use Illuminate\Routing\Controller;
-use App\Models\Arkzen\\{$slugNs}\\{$modelName};
-use Illuminate\Http\Request;
+{$modelImport}use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
 {$resourceImport}
@@ -750,6 +765,70 @@ class {$controllerName} extends Controller
       }";
       }
     
+
+    // ─────────────────────────────────────────────
+    // NATIVE NOTIFICATION METHODS — v5.7
+    // Used when notification_trigger endpoint is present.
+    // No custom Eloquent model — all queries go through
+    // Laravel's native $user->notifications relation.
+    // ─────────────────────────────────────────────
+
+    private static function generateNativeNotificationMethods(array $endpoints, string $slugNs): string
+    {
+        $methods = [];
+        foreach ($endpoints as $name => $endpoint) {
+            $methods[] = match ($name) {
+                'index'   => self::generateNativeNotificationsIndex($endpoint),
+                'store'   => self::generateNotificationTrigger('', $endpoint, $slugNs),
+                'destroy' => self::generateNativeNotificationsDestroy($endpoint),
+                'readAll' => self::generateNativeNotificationsReadAll($endpoint),
+                default   => self::generateCustomMethod($name, 'Notification', $endpoint),
+            };
+        }
+        return implode("\n\n", $methods);
+    }
+
+    private static function generateNativeNotificationsIndex(array $endpoint): string
+    {
+        $description = $endpoint['description'] ?? 'Get all notifications for the authenticated user';
+        return "    /**
+     * {$description}
+     */
+    public function index(Request \$request): JsonResponse
+    {
+        \$notifications = \$request->user()->notifications()->latest()->get();
+        return response()->json(['data' => \$notifications]);
+    }";
+    }
+
+    private static function generateNativeNotificationsDestroy(array $endpoint): string
+    {
+        $description = $endpoint['description'] ?? 'Delete a notification';
+        $message     = $endpoint['response']['value'] ?? 'Notification deleted';
+        return "    /**
+     * {$description}
+     */
+    public function destroy(Request \$request, string \$id): JsonResponse
+    {
+        \$notification = \$request->user()->notifications()->where('id', \$id)->firstOrFail();
+        \$notification->delete();
+        return response()->json(['message' => '{$message}']);
+    }";
+    }
+
+    private static function generateNativeNotificationsReadAll(array $endpoint): string
+    {
+        $description = $endpoint['description'] ?? 'Mark all notifications as read';
+        $message     = $endpoint['response']['value'] ?? 'All notifications marked as read';
+        return "    /**
+     * {$description}
+     */
+    public function readAll(Request \$request): JsonResponse
+    {
+        \$request->user()->unreadNotifications()->update(['read_at' => now()]);
+        return response()->json(['message' => '{$message}']);
+    }";
+    }
 
     // ─────────────────────────────────────────────
     // HELPERS

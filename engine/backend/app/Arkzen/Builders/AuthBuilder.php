@@ -1,23 +1,9 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — AUTH BUILDER v2.2 (PER-TATEMONO)
-// Auth is now fully isolated per tatemono.
-//
-// Each tatemono with auth:true gets:
-//   - Its own users table  → database/arkzen/{slug}.sqlite
-//   - Its own personal_access_tokens table → same SQLite
-//   - Its own namespaced User + PersonalAccessToken models
-//   - Its own namespaced AuthController
-//   - Auth routes injected into routes/modules/{slug}.php
-//
-// Called by ArkzenEngineController::build() during Phase 0.5.
-// setup.js no longer touches auth at all.
-//
-// v2.2 — FIXED: AuthController methods now explicitly set the
-//        correct PersonalAccessToken model before any token
-//        operation. This ensures tokens are always written to
-//        and read from the isolated tatemono database.
+// ARKZEN ENGINE — AUTH BUILDER v2.6 (PER-TATEMONO)
+// v2.6: Broadcasting auth route moved inside the auth:sanctum prefix
+//       to match the frontend's Tatemono-scoped authEndpoint.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -28,10 +14,6 @@ use Illuminate\Support\Facades\Log;
 
 class AuthBuilder
 {
-    // ─────────────────────────────────────────────
-    // ENTRY POINT — called per tatemono during build
-    // ─────────────────────────────────────────────
-
     public static function buildForTatemono(array $module): void
     {
         $name   = $module['name'];
@@ -41,41 +23,23 @@ class AuthBuilder
 
         Log::info("[Arkzen Auth] Building isolated auth for: {$name}");
 
-        // 1. Ensure tatemono DB exists (MigrationBuilder may have already done this)
         MigrationBuilder::ensureDatabase($name, $dbConn);
-
-        // 2. Create users + personal_access_tokens directly on the tatemono connection
         self::migrateAuthTables($dbConn, $prefix);
-
-        // 3. Generate tatemono-scoped User model
         self::generateUserModel($name, $slugNs, $dbConn, $prefix);
-
-        // 4. Generate tatemono-scoped PersonalAccessToken model
         self::generateTokenModel($name, $slugNs, $dbConn, $prefix);
-
-        // 5. Generate tatemono-scoped AuthController
+        self::generateNotificationModel($name, $slugNs, $dbConn, $prefix);
         self::generateAuthController($name, $slugNs, $dbConn, $prefix);
-
-        // 6. Inject auth routes into routes/modules/{name}.php
         self::injectAuthRoutes($name, $slugNs);
 
         Log::info("[Arkzen Auth] ✓ Isolated auth complete for: {$name}");
     }
 
-    // ─────────────────────────────────────────────
-    // MIGRATE — users + personal_access_tokens
-    // Runs directly on the tatemono's own connection.
-    // No artisan migrate — we control exactly which
-    // SQLite file these tables land in.
-    // ─────────────────────────────────────────────
-
-     private static function migrateAuthTables(string $dbConn, string $prefix): void
+    private static function migrateAuthTables(string $dbConn, string $prefix): void
     {
         $usersTable  = "{$prefix}_users";
         $tokensTable = "{$prefix}_personal_access_tokens";
         $notificationsTable = "{$prefix}_notifications";
-    
-        // Users table
+
         if (!Schema::connection($dbConn)->hasTable($usersTable)) {
             Schema::connection($dbConn)->create($usersTable, function ($table) {
                 $table->id();
@@ -89,15 +53,14 @@ class AuthBuilder
             });
             Log::info("[Arkzen Auth] ✓ Created table: {$usersTable}");
         }
-    
+
         if (!Schema::connection($dbConn)->hasColumn($usersTable, 'role')) {
             Schema::connection($dbConn)->table($usersTable, function ($table) {
                 $table->string('role', 20)->default('user')->after('password');
             });
             Log::info("[Arkzen Auth] ✓ Added `role` column to existing table: {$usersTable}");
         }
-    
-        // Personal access tokens table
+
         if (!Schema::connection($dbConn)->hasTable($tokensTable)) {
             Schema::connection($dbConn)->create($tokensTable, function ($table) {
                 $table->id();
@@ -111,8 +74,7 @@ class AuthBuilder
             });
             Log::info("[Arkzen Auth] ✓ Created table: {$tokensTable}");
         }
-    
-        // Native notifications table (polymorphic)
+
         if (!Schema::connection($dbConn)->hasTable($notificationsTable)) {
             Schema::connection($dbConn)->create($notificationsTable, function ($table) {
                 $table->uuid('id')->primary();
@@ -125,10 +87,6 @@ class AuthBuilder
             Log::info("[Arkzen Auth] ✓ Created table: {$notificationsTable}");
         }
     }
-
-    // ─────────────────────────────────────────────
-    // GENERATE USER MODEL
-    // ─────────────────────────────────────────────
 
     private static function generateUserModel(string $tatSlug, string $slugNs, string $dbConn, string $prefix): void
     {
@@ -151,7 +109,12 @@ class AuthBuilder
             . "namespace App\\Models\\Arkzen\\{$slugNs};\n\n"
             . "use Illuminate\\Foundation\\Auth\\User as Authenticatable;\n"
             . "use Illuminate\\Notifications\\Notifiable;\n"
-            . "use Laravel\\Sanctum\\HasApiTokens;\n\n"
+            . "use Laravel\\Sanctum\\HasApiTokens;\n"
+            . "use Illuminate\\Database\\Eloquent\\Relations\\Relation;\n"
+            . "use App\\Models\\Arkzen\\{$slugNs}\\DatabaseNotification;\n\n"
+            . "Relation::morphMap([\n"
+            . "    'notifiable' => DatabaseNotification::class,\n"
+            . "]);\n\n"
             . "class User extends Authenticatable\n{\n"
             . "    use HasApiTokens, Notifiable;\n\n"
             . "    protected \$connection = '{$dbConn}';\n\n"
@@ -162,18 +125,21 @@ class AuthBuilder
             . "        'email_verified_at' => 'datetime',\n"
             . "        'password'          => 'hashed',\n"
             . "    ];\n\n"
-            . "    // Route Sanctum to this tatemono's own token table\n"
             . "    public function tokens()\n    {\n"
             . "        return \$this->morphMany(PersonalAccessToken::class, 'tokenable');\n"
-            . "    }\n}\n";
+            . "    }\n\n"
+            . "    public function notifications()\n    {\n"
+            . "        return \$this->morphMany(DatabaseNotification::class, 'notifiable')\n"
+            . "            ->orderBy('created_at', 'desc');\n"
+            . "    }\n\n"
+            . "    public function unreadNotifications()\n    {\n"
+            . "        return \$this->notifications()->whereNull('read_at');\n"
+            . "    }\n"
+            . "}\n";
 
         File::put($path, $content);
         Log::info("[Arkzen Auth] ✓ User model created: Models/Arkzen/{$slugNs}/User.php");
     }
-
-    // ─────────────────────────────────────────────
-    // GENERATE PERSONAL ACCESS TOKEN MODEL
-    // ─────────────────────────────────────────────
 
     private static function generateTokenModel(string $tatSlug, string $slugNs, string $dbConn, string $prefix): void
     {
@@ -202,9 +168,40 @@ class AuthBuilder
         Log::info("[Arkzen Auth] ✓ PersonalAccessToken model created for: {$tatSlug}");
     }
 
-    // ─────────────────────────────────────────────
-    // GENERATE AUTH CONTROLLER — tatemono-scoped
-    // ─────────────────────────────────────────────
+    private static function generateNotificationModel(string $tatSlug, string $slugNs, string $dbConn, string $prefix): void
+    {
+        $notificationsTable = "{$prefix}_notifications";
+        $path = app_path("Models/Arkzen/{$slugNs}/DatabaseNotification.php");
+
+        if (File::exists($path)) {
+            Log::info("[Arkzen Auth] ✓ DatabaseNotification model already exists for: {$tatSlug}");
+            return;
+        }
+
+        $content = "<?php\n\n"
+            . "// ============================================================\n"
+            . "// ARKZEN GENERATED DATABASE NOTIFICATION MODEL — {$tatSlug}\n"
+            . "// Isolated to: database/arkzen/{$tatSlug}.sqlite\n"
+            . "// DO NOT EDIT DIRECTLY.\n"
+            . "// ============================================================\n\n"
+            . "namespace App\\Models\\Arkzen\\{$slugNs};\n\n"
+            . "use Illuminate\\Notifications\\DatabaseNotification as BaseDatabaseNotification;\n\n"
+            . "class DatabaseNotification extends BaseDatabaseNotification\n{\n"
+            . "    protected \$connection = '{$dbConn}';\n"
+            . "    protected \$table      = '{$notificationsTable}';\n\n"
+            . "    protected static function boot()\n    {\n"
+            . "        parent::boot();\n\n"
+            . "        static::creating(function (\$model) {\n"
+            . "            if (empty(\$model->type)) {\n"
+            . "                \$model->type = 'notifiable';\n"
+            . "            }\n"
+            . "        });\n"
+            . "    }\n"
+            . "}\n";
+
+        File::put($path, $content);
+        Log::info("[Arkzen Auth] ✓ DatabaseNotification model created: Models/Arkzen/{$slugNs}/DatabaseNotification.php");
+    }
 
     private static function generateAuthController(string $tatSlug, string $slugNs, string $dbConn, string $prefix): void
     {
@@ -217,9 +214,6 @@ class AuthBuilder
         }
 
         File::ensureDirectoryExists(app_path("Http/Controllers/Arkzen/{$slugNs}"));
-
-        // The explicit model setter line to inject into each method
-        $setModelLine = "        \\\\Laravel\\\\Sanctum\\\\Sanctum::usePersonalAccessTokenModel(\\\\App\\\\Models\\\\Arkzen\\\\{$slugNs}\\\\PersonalAccessToken::class);";
 
         $content = "<?php\n\n"
             . "// ============================================================\n"
@@ -238,15 +232,12 @@ class AuthBuilder
             . "use App\\Models\\Arkzen\\{$slugNs}\\PersonalAccessToken;\n\n"
             . "class AuthController extends Controller\n{\n"
             . "    public function __construct()\n    {\n"
-            . "        // Point Sanctum at this tatemono's own token model for this request\n"
             . "        Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);\n"
             . "    }\n\n"
-            . "    // ── Register ──────────────────────────────────\n\n"
             . "    public function register(Request \$request): JsonResponse\n    {\n"
-            . "{$setModelLine}\n\n"
             . "        \$validated = \$request->validate([\n"
             . "            'name'     => 'required|string|max:255',\n"
-            . "            'email'    => 'required|email|unique:{$dbConn}.{$usersTable},email',\n"
+            . "            'email'    => 'required|email|unique:App\\\\Models\\\\Arkzen\\\\{$slugNs}\\\\User,email',\n"
             . "            'password' => 'required|string|min:8|confirmed',\n"
             . "        ]);\n\n"
             . "        \$user = User::create([\n"
@@ -257,9 +248,7 @@ class AuthBuilder
             . "        \$token = \$user->createToken('arkzen-token')->plainTextToken;\n\n"
             . "        return response()->json(['user' => \$user, 'token' => \$token], 201);\n"
             . "    }\n\n"
-            . "    // ── Login ─────────────────────────────────────\n\n"
             . "    public function login(Request \$request): JsonResponse\n    {\n"
-            . "{$setModelLine}\n\n"
             . "        \$validated = \$request->validate([\n"
             . "            'email'    => 'required|email',\n"
             . "            'password' => 'required|string',\n"
@@ -274,32 +263,26 @@ class AuthBuilder
             . "        \$token = \$user->createToken('arkzen-token')->plainTextToken;\n\n"
             . "        return response()->json(['user' => \$user, 'token' => \$token]);\n"
             . "    }\n\n"
-            . "    // ── Logout ────────────────────────────────────\n\n"
             . "    public function logout(Request \$request): JsonResponse\n    {\n"
-            . "{$setModelLine}\n\n"
             . "        \$request->user()->currentAccessToken()->delete();\n"
             . "        return response()->json(['message' => 'Logged out successfully']);\n"
             . "    }\n\n"
-            . "    // ── Me ────────────────────────────────────────\n\n"
             . "    public function me(Request \$request): JsonResponse\n    {\n"
-            . "{$setModelLine}\n\n"
             . "        return response()->json(\$request->user());\n"
-            . "    }\n}\n";
+            . "    }\n"
+            . "}\n";
 
         File::put($path, $content);
         Log::info("[Arkzen Auth] ✓ AuthController created: Http/Controllers/Arkzen/{$slugNs}/AuthController.php");
     }
-
-    // ─────────────────────────────────────────────
-    // INJECT AUTH ROUTES into routes/modules/{name}.php
-    // Prepends to existing file, or creates fresh for auth-only tatemonos
-    // ─────────────────────────────────────────────
 
     private static function injectAuthRoutes(string $tatSlug, string $slugNs): void
     {
         $routeFile = base_path("routes/modules/{$tatSlug}.php");
         $authAlias = "{$slugNs}Auth";
 
+        // The broadcasting auth route is now INSIDE the auth:sanctum group,
+        // so it inherits the /api/{tatSlug}/auth prefix.
         $authBlock = "\n"
             . "// ── Auth routes — {$tatSlug} ──────────────────────────────────\n"
             . "use App\\Http\\Controllers\\Arkzen\\{$slugNs}\\AuthController as {$authAlias}Controller;\n\n"
@@ -310,6 +293,10 @@ class AuthBuilder
             . "Route::middleware(['api', 'auth:sanctum'])->prefix('/api/{$tatSlug}/auth')->group(function () {\n"
             . "    Route::post('/logout', [{$authAlias}Controller::class, 'logout']);\n"
             . "    Route::get('/me',      [{$authAlias}Controller::class, 'me']);\n"
+            . "    // Broadcasting authentication for private channels\n"
+            . "    Route::post('/broadcasting/auth', function (\\Illuminate\\Http\\Request \$request) {\n"
+            . "        return \\Illuminate\\Support\\Facades\\Broadcast::auth(\$request);\n"
+            . "    });\n"
             . "});\n"
             . "// ── End auth — {$tatSlug} ─────────────────────────────────────\n";
 
@@ -322,7 +309,6 @@ class AuthBuilder
             );
             File::put($routeFile, $existing);
         } else {
-            // Auth-only tatemono — no other routes exist yet
             $content = "<?php\n\n"
                 . "// ============================================================\n"
                 . "// ARKZEN GENERATED ROUTES — {$tatSlug}\n"
@@ -338,10 +324,6 @@ class AuthBuilder
         Log::info("[Arkzen Auth] ✓ Auth routes injected into routes/modules/{$tatSlug}.php");
     }
 
-    // ─────────────────────────────────────────────
-    // REMOVE — called by ArkzenEngineController::remove()
-    // ─────────────────────────────────────────────
-
     public static function removeForTatemono(string $tatSlug): void
     {
         $slugNs = EventBuilder::toNamespace($tatSlug);
@@ -350,6 +332,7 @@ class AuthBuilder
             app_path("Http/Controllers/Arkzen/{$slugNs}/AuthController.php"),
             app_path("Models/Arkzen/{$slugNs}/User.php"),
             app_path("Models/Arkzen/{$slugNs}/PersonalAccessToken.php"),
+            app_path("Models/Arkzen/{$slugNs}/DatabaseNotification.php"),
         ];
 
         foreach ($filesToRemove as $file) {

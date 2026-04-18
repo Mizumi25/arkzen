@@ -5,7 +5,7 @@
 // Tatemono: notification-test
 // Channels: database, mail, broadcast
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-18T07:38:49.900173Z
+// Generated: 2026-04-18T13:01:16.722828Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;
@@ -45,9 +45,14 @@ class AllChannelsNotification extends Notification implements ShouldQueue
         ];
     }
 
-    public function broadcastOn(object $notifiable): array
+    public function broadcastOn(): array
     {
-        return [new \Illuminate\Broadcasting\PrivateChannel('private-notification-test.' . $notifiable->id)];
+        return [new \Illuminate\Broadcasting\PrivateChannel('private-notification-test.' . $this->notifiable->id)];
+    }
+
+    public function broadcastAs(): string
+    {
+        return 'notification-test.notification';
     }
 
     public function toArray(object $notifiable): array

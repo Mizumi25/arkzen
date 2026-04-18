@@ -1,8 +1,9 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — NOTIFICATION BUILDER v3.2
-// v3.2: Defensive conversion for channels string (YAML parse fallback).
+// ARKZEN ENGINE — NOTIFICATION BUILDER v3.5
+// v3.5: Fixed broadcastOn signature (no parameters) and uses
+//       private channel for secure user-specific notifications.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -137,9 +138,14 @@ class {$className} extends Notification implements ShouldQueue
     private static function generateBroadcastOnMethod(string $slug): string
     {
         return "
-    public function broadcastOn(object \$notifiable): array
+    public function broadcastOn(): array
     {
-        return [new \\Illuminate\\Broadcasting\\PrivateChannel('private-{$slug}.' . \$notifiable->id)];
+        return [new \\Illuminate\\Broadcasting\\PrivateChannel('private-{$slug}.' . \$this->notifiable->id)];
+    }
+
+    public function broadcastAs(): string
+    {
+        return '{$slug}.notification';
     }
 ";
     }
