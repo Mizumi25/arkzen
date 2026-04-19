@@ -730,40 +730,40 @@ class {$controllerName} extends Controller
     // ─────────────────────────────────────────────
     // NOTIFICATION TRIGGER — dispatches a notification to the authenticated user
     // ─────────────────────────────────────────────
-          private static function generateNotificationTrigger(string $model, array $endpoint, string $slugNs): string
-      {
-          $description = $endpoint['description'] ?? 'Trigger a notification';
-          $validation  = self::generateValidation($endpoint['validation'] ?? []);
-  
-          return "    /**
-       * {$description}
-       */
-      public function store(Request \$request): JsonResponse
-      {
-          \$validated = \$request->validate([
-  {$validation}
-          ]);
-  
-          \$user = \$request->user();
-          \$notificationKey = \$validated['notification'];
-  
-          // Dynamically resolve the notification class
-          \$className = \Illuminate\Support\Str::studly(str_replace('-', '_', \$notificationKey)) . 'Notification';
-          \$fullClass = \"\\\\App\\\\Notifications\\\\Arkzen\\\\{$slugNs}\\\\\" . \$className;
-  
-          if (!class_exists(\$fullClass)) {
-              throw new \\InvalidArgumentException('Unknown notification type: ' . \$notificationKey);
-          }
-  
-          // Dispatch the notification (Laravel handles database storage via the Notifiable trait)
-          \$user->notify(new \$fullClass());
-  
-          return response()->json([
-              'message' => 'Notification triggered successfully',
-              'type'    => \$notificationKey,
-          ], 201);
-      }";
-      }
+         private static function generateNotificationTrigger(string $model, array $endpoint, string $slugNs): string
+    {
+        $description = $endpoint['description'] ?? 'Trigger a notification';
+        $validation  = self::generateValidation($endpoint['validation'] ?? []);
+    
+        return "    /**
+         * {$description}
+         */
+        public function store(Request \$request): JsonResponse
+        {
+            \$validated = \$request->validate([
+    {$validation}
+            ]);
+    
+            \$user = \$request->user();
+            \$notificationKey = \$validated['notification'];
+    
+            // Dynamically resolve the notification class
+            \$className = \\Illuminate\\Support\\Str::studly(str_replace('-', '_', \$notificationKey)) . 'Notification';
+            \$fullClass = \"\\\\App\\\\Notifications\\\\Arkzen\\\\{$slugNs}\\\\\" . \$className;
+    
+            if (!class_exists(\$fullClass)) {
+                throw new \\InvalidArgumentException('Unknown notification type: ' . \$notificationKey);
+            }
+    
+            // Dispatch the notification with the user as the notifiable
+            \$user->notify(new \$fullClass(\$user));
+    
+            return response()->json([
+                'message' => 'Notification triggered successfully',
+                'type'    => \$notificationKey,
+            ], 201);
+        }";
+    }
     
 
     // ─────────────────────────────────────────────

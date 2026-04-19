@@ -1,7 +1,9 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — NOTIFICATION BUILDER v3.6
+// ARKZEN ENGINE — NOTIFICATION BUILDER v3.7
+// v3.7: Fixed constructor to accept and store $notifiable.
+//       This resolves broadcast failures caused by null $this->notifiable.
 // v3.6: Added explicit $notifiable property to generated
 //       notification class (PHP 8.2+ dynamic property fix).
 // v3.5: Fixed broadcastOn signature (no parameters) and uses
@@ -78,9 +80,21 @@ class {$className} extends Notification implements ShouldQueue
      */
     public \$notifiable;
 
-    public function __construct(
-        public readonly array \$data = []
-    ) {}
+    /**
+     * Additional data for the notification.
+     *
+     * @var array
+     */
+    public array \$data;
+
+    /**
+     * Create a new notification instance.
+     */
+    public function __construct(object \$notifiable, array \$data = [])
+    {
+        \$this->notifiable = \$notifiable;
+        \$this->data       = \$data;
+    }
 
     public function via(object \$notifiable): array
     {

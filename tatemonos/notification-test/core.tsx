@@ -350,7 +350,7 @@ const DashboardPage = () => {
         }
 
         // Step 5: incoming broadcast notification
-        if (msg.event === '.notification-test.notification') {
+        if (msg.event === 'notification-test.notification') {
           const payload = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data
           setPopup((payload as any).message ?? 'New notification received!')
           setTimeout(() => setPopup(null), 4000)

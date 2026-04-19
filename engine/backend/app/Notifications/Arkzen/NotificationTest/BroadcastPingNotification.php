@@ -5,7 +5,7 @@
 // Tatemono: notification-test
 // Channels: broadcast, database
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-19T07:18:56.459771Z
+// Generated: 2026-04-19T08:58:29.251493Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;
@@ -26,9 +26,21 @@ class BroadcastPingNotification extends Notification implements ShouldQueue
      */
     public $notifiable;
 
-    public function __construct(
-        public readonly array $data = []
-    ) {}
+    /**
+     * Additional data for the notification.
+     *
+     * @var array
+     */
+    public array $data;
+
+    /**
+     * Create a new notification instance.
+     */
+    public function __construct(object $notifiable, array $data = [])
+    {
+        $this->notifiable = $notifiable;
+        $this->data       = $data;
+    }
 
     public function via(object $notifiable): array
     {
