@@ -5,7 +5,7 @@
 // Tatemono: notification-test
 // Channels: mail
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-19T08:58:29.250702Z
+// Generated: 2026-04-19T13:33:42.877805Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;

@@ -163,7 +163,7 @@ class {$className} extends Notification implements ShouldQueue
         return "
     public function broadcastOn(): array
     {
-        return [new \\Illuminate\\Broadcasting\\PrivateChannel('private-{$slug}.' . \$this->notifiable->id)];
+        return [new \\Illuminate\\Broadcasting\\PrivateChannel('{$slug}.' . \$this->notifiable->id)];
     }
 
     public function broadcastAs(): string

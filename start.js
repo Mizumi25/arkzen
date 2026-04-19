@@ -67,38 +67,47 @@ function startBackend() {
 }
 
 function startQueueWorker() {
-  log('queue', 'Starting queue worker (php artisan queue:work --queue=default,heavy)')
+  log('queue', 'Starting queue worker (php artisan queue:work --queue=default,heavy --sleep=3 --tries=3)')
 
-  const proc = spawn('php', ['artisan', 'queue:work', '--queue=default,heavy'], {
-    cwd: BACKEND_DIR,
-    stdio: 'pipe',
-  })
-
-  proc.stdout.on('data', (data) => {
-    String(data).trim().split('\n').forEach(line => {
-      if (line.trim()) log('queue', line.trim())
+  const spawnWorker = () => {
+    const proc = spawn('php', ['artisan', 'queue:work', '--queue=default,heavy', '--sleep=3', '--tries=3'], {
+      cwd: BACKEND_DIR,
+      stdio: 'pipe',
+      env: process.env,   // Pass environment so worker sees .env variables
     })
-  })
 
-  proc.stderr.on('data', (data) => {
-    String(data).trim().split('\n').forEach(line => {
-      if (line.trim()) log('queue', line.trim())
+    proc.stdout.on('data', (data) => {
+      String(data).trim().split('\n').forEach(line => {
+        if (line.trim()) log('queue', line.trim())
+      })
     })
-  })
 
-  proc.on('exit', (code) => {
-    if (code !== 0) log('queue', `Exited with code ${code}`)
-  })
+    proc.stderr.on('data', (data) => {
+      String(data).trim().split('\n').forEach(line => {
+        if (line.trim()) log('queue', line.trim())
+      })
+    })
 
-  return proc
+    proc.on('exit', (code) => {
+      if (code !== 0) {
+        log('queue', `Exited with code ${code}, restarting in 3 seconds...`)
+        setTimeout(spawnWorker, 3000)
+      }
+    })
+
+    return proc
+  }
+
+  return spawnWorker()
 }
 
 function startReverb() {
   log('reverb', 'Starting Laravel Reverb WebSocket server on port 8080')
 
-  const proc = spawn('php', ['artisan', 'reverb:start', '--host=0.0.0.0', '--port=8080'], {
+  const proc = spawn('php', ['artisan', 'reverb:start', '--host=0.0.0.0', '--port=8080', '--debug'], {
     cwd: BACKEND_DIR,
     stdio: 'pipe',
+    env: process.env,   // Pass environment so Reverb sees .env variables
   })
 
   proc.stdout.on('data', (data) => {
