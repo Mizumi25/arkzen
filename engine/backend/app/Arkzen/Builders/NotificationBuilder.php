@@ -1,7 +1,9 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — NOTIFICATION BUILDER v3.5
+// ARKZEN ENGINE — NOTIFICATION BUILDER v3.6
+// v3.6: Added explicit $notifiable property to generated
+//       notification class (PHP 8.2+ dynamic property fix).
 // v3.5: Fixed broadcastOn signature (no parameters) and uses
 //       private channel for secure user-specific notifications.
 // ============================================================
@@ -68,6 +70,13 @@ use Illuminate\\Notifications\\Messages\\MailMessage;
 class {$className} extends Notification implements ShouldQueue
 {
     use Queueable;
+
+    /**
+     * The notifiable entity (user).
+     *
+     * @var object
+     */
+    public \$notifiable;
 
     public function __construct(
         public readonly array \$data = []

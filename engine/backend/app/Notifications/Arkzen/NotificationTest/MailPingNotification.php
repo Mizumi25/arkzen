@@ -5,7 +5,7 @@
 // Tatemono: notification-test
 // Channels: mail
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-19T01:25:35.992005Z
+// Generated: 2026-04-19T07:18:56.459397Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;
@@ -18,6 +18,13 @@ use Illuminate\Notifications\Messages\MailMessage;
 class MailPingNotification extends Notification implements ShouldQueue
 {
     use Queueable;
+
+    /**
+     * The notifiable entity (user).
+     *
+     * @var object
+     */
+    public $notifiable;
 
     public function __construct(
         public readonly array $data = []

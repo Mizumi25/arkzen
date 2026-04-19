@@ -304,7 +304,7 @@ const DashboardPage = () => {
 
     setWsStatus('connecting')
     const channelName = `private-notification-test.${userId}`
-    const url = `${REVERB_SCHEME}://${REVERB_HOST}:${REVERB_PORT}/app/${APP_KEY}?protocol=7&client=js&version=7.0`
+    const url = `${REVERB_SCHEME}://${REVERB_HOST}:${REVERB_PORT}/app/${APP_KEY}`
     const ws = new WebSocket(url)
     wsRef.current = ws
 
@@ -362,7 +362,7 @@ const DashboardPage = () => {
     }
 
     ws.onerror = () => {
-      console.error('[Arkzen WS] WebSocket error')
+      // Connection will be closed and automatically reconnected via onclose
       ws.close()
     }
 
@@ -382,7 +382,11 @@ const DashboardPage = () => {
 
     const token = useAuthStore.getState().token
     if (token && user?.id) {
-      connectReverb(user.id, token)
+      // Delay connection to avoid Strict Mode double-mount race condition
+      const timeoutId = setTimeout(() => {
+        if (mountedRef.current) connectReverb(user.id, token)
+      }, 50)
+      return () => clearTimeout(timeoutId)
     }
 
     return () => {

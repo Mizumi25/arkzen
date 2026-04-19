@@ -1,7 +1,26 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — AUTH BUILDER v2.7 (PER-TATEMONO)
+// ARKZEN ENGINE — AUTH BUILDER v2.10 (PER-TATEMONO)
+// v2.10: Replace fragile regex user‑ID extraction with safe
+//        str_starts_with + substr approach. The closure now
+//        receives the tatemono slug directly, eliminating
+//        any chance of capture‑group bugs. Also adds self‑healing
+//        for the old '' → '\1' regex mistake.
+//
+// v2.9: Strip stray Broadcast::auth() route groups injected
+//       outside the auth block by a prior bad RouteRegistrar
+//       patch. These orphaned routes match before the correct
+//       HMAC closure and cause 403 on broadcasting auth.
+//       injectAuthRoutes() now runs a pre-pass that removes any
+//       Route::middleware(...)->post(...broadcasting/auth...,
+//       Broadcast::auth...) block that sits outside the
+//       managed auth markers before doing the normal heal.
+//
+// v2.8: Stronger self-heal — replaces the entire auth block
+//       (not just the closure) when the HMAC route is missing
+//       or Broadcast::auth() is still present inside the block.
+//
 // v2.7: Broadcasting auth uses direct HMAC signing instead of
 //       Broadcast::auth() — which re-resolves the user via the
 //       default guard (App\Models\User) and ignores the already-
@@ -282,20 +301,17 @@ class AuthBuilder
     }
 
     // ============================================================
-    // BROADCASTING AUTH CLOSURE
+    // BROADCASTING AUTH CLOSURE (v2.10)
     //
     // Reverb speaks the Pusher wire protocol. Authenticating a private
     // channel requires signing "{socket_id}:{channel_name}" with
     // REVERB_APP_SECRET (HMAC-SHA256) and returning:
     //   {"auth": "{app_key}:{signature}"}
     //
-    // We implement this directly instead of using Broadcast::auth()
-    // because Broadcast::auth() resolves the user via Auth::guard()
-    // using config/auth.php's default provider (App\Models\User),
-    // completely ignoring $request->user() which ArkzenSanctumTokenResolver
-    // + auth:sanctum have already correctly resolved to the tatemono user.
+    // The user ID is safely extracted using str_starts_with + substr,
+    // completely eliminating the fragile regex capture bug.
     // ============================================================
-    private static function broadcastingAuthClosure(): string
+    private static function broadcastingAuthClosure(string $tatSlug): string
     {
         return "    Route::post('/broadcasting/auth', function (\\Illuminate\\Http\\Request \$request) {\n"
             . "        \$user = \$request->user();\n"
@@ -311,8 +327,13 @@ class AuthBuilder
             . "        }\n"
             . "\n"
             . "        // Verify the user owns this private channel.\n"
-            . "        // Channel name format sent by Reverb: private-{slug}.{userId}\n"
-            . "        \$channelUserId = (int) preg_replace('/.*\\.([0-9]+)\$/', '\$1', \$channelName);\n"
+            . "        // Expected format: private-{$tatSlug}.{userId}\n"
+            . "        \$expectedPrefix = 'private-{$tatSlug}.';\n"
+            . "        if (!str_starts_with(\$channelName, \$expectedPrefix)) {\n"
+            . "            return response()->json(['message' => 'Invalid channel prefix.'], 403);\n"
+            . "        }\n"
+            . "\n"
+            . "        \$channelUserId = (int) substr(\$channelName, strlen(\$expectedPrefix));\n"
             . "        if (\$channelUserId !== (int) \$user->id) {\n"
             . "            return response()->json(['message' => 'Forbidden.'], 403);\n"
             . "        }\n"
@@ -326,12 +347,12 @@ class AuthBuilder
             . "    });\n";
     }
 
-        private static function injectAuthRoutes(string $tatSlug, string $slugNs): void
+    private static function buildAuthBlock(string $tatSlug, string $slugNs): string
     {
-        $routeFile        = base_path("routes/modules/{$tatSlug}.php");
         $authAlias        = "{$slugNs}Auth";
-        $broadcastClosure = self::broadcastingAuthClosure();
-        $authBlock = "\n"
+        $broadcastClosure = self::broadcastingAuthClosure($tatSlug);
+
+        return "\n"
             . "// ── Auth routes — {$tatSlug} ──────────────────────────────────\n"
             . "use App\\Http\\Controllers\\Arkzen\\{$slugNs}\\AuthController as {$authAlias}Controller;\n\n"
             . "Route::middleware(['api'])->prefix('/api/{$tatSlug}/auth')->group(function () {\n"
@@ -344,9 +365,16 @@ class AuthBuilder
             . $broadcastClosure
             . "});\n"
             . "// ── End auth — {$tatSlug} ─────────────────────────────────────\n";
-    
+    }
+
+    private static function injectAuthRoutes(string $tatSlug, string $slugNs): void
+    {
+        $routeFile   = base_path("routes/modules/{$tatSlug}.php");
+        $authBlock   = self::buildAuthBlock($tatSlug, $slugNs);
+        $authMarker  = "// ── Auth routes — {$tatSlug} ──";
+        $authEndMarker = "// ── End auth — {$tatSlug} ─────";
+
         if (!File::exists($routeFile)) {
-            // Fresh file – write full content with auth block
             $content = "<?php\n\n"
                 . "// ============================================================\n"
                 . "// ARKZEN GENERATED ROUTES — {$tatSlug}\n"
@@ -359,30 +387,62 @@ class AuthBuilder
             Log::info("[Arkzen Auth] ✓ Auth routes injected into new route file: {$tatSlug}.php");
             return;
         }
-    
-        // File exists – check if auth routes are already present
+
         $existing = File::get($routeFile);
-        $authMarker = "// ── Auth routes — {$tatSlug} ──";
-    
+
+        // ── v2.9: PRE-PASS — strip stray Broadcast::auth() route groups ──
+        if (str_contains($existing, 'Broadcast::auth(')) {
+            $existing = preg_replace(
+                '/\/\/ ── Broadcasting auth \(tatemono-scoped\).*?Route::middleware\([^\)]+\)\s*->post\([^;]+Broadcast::auth[^;]+;\s*/s',
+                '',
+                $existing
+            );
+            $existing = preg_replace(
+                '/Route::middleware\(\[\'api\',\s*\'auth:sanctum\'\]\)\s*->post\(\s*[\'"]api\/' . preg_quote($tatSlug, '/') . '\/auth\/broadcasting\/auth[\'"]\s*,\s*function[^}]+Broadcast::auth[^}]+\}\s*\)\s*;\s*/s',
+                '',
+                $existing
+            );
+            Log::info("[Arkzen Auth] ✓ Stripped stray Broadcast::auth() route from {$tatSlug}.php");
+        }
+
+        // ── v2.10: HEAL THE OLD REGEX CAPTURE BUG ──────────────────────
+        // If the legacy '' → '\1' mistake is still present, fix it inline.
+        if (str_contains($existing, "preg_replace('/.*\\.([0-9]+)\$/', ''")) {
+            $existing = str_replace(
+                "preg_replace('/.*\\.([0-9]+)\$/', ''",
+                "preg_replace('/.*\\.([0-9]+)\$/', '\\1'",
+                $existing
+            );
+            Log::info("[Arkzen Auth] ✓ Healed regex capture bug in {$tatSlug}.php");
+        }
+
         if (str_contains($existing, $authMarker)) {
-            // Auth block exists – only need to self‑heal broadcasting auth if outdated
-            if (str_contains($existing, 'Broadcast::auth($request)')) {
+            // Auth block exists — heal if HMAC closure is missing or Broadcast::auth() is inside
+            $needsHeal = str_contains($existing, 'Broadcast::auth(')
+                || !str_contains($existing, "Route::post('/broadcasting/auth'");
+
+            if ($needsHeal) {
+                // Replace the entire auth block from marker to end marker
                 $existing = preg_replace(
-                    "/    Route::post\('\/broadcasting\/auth'.*?\}\);\n/s",
-                    $broadcastClosure,
+                    '/\/\/ ── Auth routes — ' . preg_quote($tatSlug, '/') . ' ──.*?\/\/ ── End auth — ' . preg_quote($tatSlug, '/') . ' ─+\n/s',
+                    ltrim($authBlock),
                     $existing
                 );
                 File::put($routeFile, $existing);
-                Log::info("[Arkzen Auth] ✓ Healed broadcasting auth in {$tatSlug}.php");
+                Log::info("[Arkzen Auth] ✓ Healed auth block in {$tatSlug}.php");
+            } else {
+                // Block is canonical — just save in case pre-pass stripped something
+                File::put($routeFile, $existing);
+                Log::info("[Arkzen Auth] ✓ Auth block already canonical in {$tatSlug}.php");
             }
             return;
         }
-    
-        // Auth block missing – inject it right after the opening PHP tag
+
+        // Auth block missing — inject right after the opening PHP tag
         if (str_starts_with(trim($existing), '<?php')) {
-            $existing = preg_replace('/^<\?php/', "<?php\n\n{$authBlock}", $existing);
+            $existing = preg_replace('/^<\?php/', "<?php\n\n" . ltrim($authBlock), $existing);
         } else {
-            $existing = "<?php\n\n{$authBlock}\n{$existing}";
+            $existing = "<?php\n\n" . ltrim($authBlock) . "\n" . $existing;
         }
         File::put($routeFile, $existing);
         Log::info("[Arkzen Auth] ✓ Auth routes added to existing route file: {$tatSlug}.php");
