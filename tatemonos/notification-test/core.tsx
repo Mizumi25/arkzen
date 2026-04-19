@@ -1,6 +1,6 @@
 /* @arkzen:meta
 name: notification-test
-version: 2.0.0
+version: 2.1.0
 description: Tests Laravel Notifications across all three channels — database (bell), mail, and broadcast (real-time popup). Uses Laravel's native notifications table.
 auth: true
 */
@@ -85,15 +85,21 @@ subject: "All Channels Test"
 
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore, setActiveTatemono, arkzenFetch } from '@/arkzen/core/stores/authStore'
-import Echo from 'laravel-echo'
-import Pusher from 'pusher-js'
 
 if (typeof window !== 'undefined') {
   setActiveTatemono('notification-test')
 }
+
+// ─────────────────────────────────────────────
+// REVERB CONFIG — read from env, same as useWebSocket.ts
+// ─────────────────────────────────────────────
+const REVERB_HOST   = process.env.NEXT_PUBLIC_REVERB_HOST    ?? 'localhost'
+const REVERB_PORT   = process.env.NEXT_PUBLIC_REVERB_PORT    ?? '8080'
+const REVERB_SCHEME = process.env.NEXT_PUBLIC_REVERB_SCHEME  ?? 'ws'
+const APP_KEY       = process.env.NEXT_PUBLIC_REVERB_APP_KEY ?? 'arkzen-key'
 
 /* @arkzen:components:shared:end */
 
@@ -255,12 +261,16 @@ const DashboardPage = () => {
   const [sending, setSending] = useState<string | null>(null)
   const [unread, setUnread] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'error'>('connecting')
+  const wsRef = useRef<WebSocket | null>(null)
+  const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mountedRef = useRef(true)
 
   const notifTypes = [
-    { key: 'database-ping',  label: 'Database',   channels: ['database'],              color: 'bg-blue-500',   icon: '🗄️' },
-    { key: 'mail-ping',      label: 'Mail',        channels: ['mail'],                  color: 'bg-green-500',  icon: '✉️' },
-    { key: 'broadcast-ping', label: 'Broadcast',   channels: ['broadcast', 'database'], color: 'bg-purple-500', icon: '📡' },
-    { key: 'all-channels',   label: 'All Channels', channels: ['database', 'mail', 'broadcast'], color: 'bg-orange-500', icon: '🔔' },
+    { key: 'database-ping',  label: 'Database',    channels: ['database'],                       color: 'bg-blue-500',   icon: '🗄️' },
+    { key: 'mail-ping',      label: 'Mail',         channels: ['mail'],                           color: 'bg-green-500',  icon: '✉️' },
+    { key: 'broadcast-ping', label: 'Broadcast',    channels: ['broadcast', 'database'],          color: 'bg-purple-500', icon: '📡' },
+    { key: 'all-channels',   label: 'All Channels', channels: ['database', 'mail', 'broadcast'],  color: 'bg-orange-500', icon: '🔔' },
   ]
 
   const loadInbox = async () => {
@@ -278,42 +288,107 @@ const DashboardPage = () => {
     }
   }
 
+  // ─────────────────────────────────────────────
+  // RAW WEBSOCKET — Reverb private channel, no pusher-js
+  //
+  // Flow (Pusher protocol over raw WS):
+  //   1. Open WS to Reverb
+  //   2. Receive pusher:connection_established → get socket_id
+  //   3. POST /broadcasting/auth with socket_id + channel name
+  //      (using the tatemono-scoped token via arkzenFetch)
+  //   4. Send pusher:subscribe with the auth signature from step 3
+  //   5. Listen for .notification-test.notification events
+  // ─────────────────────────────────────────────
+  const connectReverb = (userId: number, token: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return
+
+    setWsStatus('connecting')
+    const channelName = `private-notification-test.${userId}`
+    const url = `${REVERB_SCHEME}://${REVERB_HOST}:${REVERB_PORT}/app/${APP_KEY}?protocol=7&client=js&version=7.0`
+    const ws = new WebSocket(url)
+    wsRef.current = ws
+
+    ws.onopen = () => {
+      if (!mountedRef.current) return
+      // Reverb will respond with pusher:connection_established containing the socket_id
+    }
+
+    ws.onmessage = async (event) => {
+      if (!mountedRef.current) return
+      try {
+        const msg = JSON.parse(event.data) as { event: string; data: unknown }
+
+        if (msg.event === 'pusher:connection_established') {
+          // Step 2: got socket_id — now authenticate the private channel
+          setWsStatus('connected')
+          const connData = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data
+          const socketId = (connData as any).socket_id as string
+
+          // Step 3: POST to Laravel's broadcasting auth endpoint
+          // arkzenFetch already attaches the Bearer token + correct headers
+          const authRes = await arkzenFetch('/api/notification-test/auth/broadcasting/auth', {
+            method: 'POST',
+            body: JSON.stringify({ socket_id: socketId, channel_name: channelName }),
+          })
+
+          if (!authRes.ok) {
+            console.error('[Arkzen WS] Channel auth failed:', authRes.status)
+            setWsStatus('error')
+            return
+          }
+
+          const authData = await authRes.json()
+
+          // Step 4: subscribe with the signed auth token from Laravel
+          ws.send(JSON.stringify({
+            event: 'pusher:subscribe',
+            data: {
+              channel: channelName,
+              auth: authData.auth,
+            },
+          }))
+        }
+
+        // Step 5: incoming broadcast notification
+        if (msg.event === '.notification-test.notification') {
+          const payload = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data
+          setPopup((payload as any).message ?? 'New notification received!')
+          setTimeout(() => setPopup(null), 4000)
+          loadInbox()
+        }
+      } catch (err) {
+        console.error('[Arkzen WS] Failed to parse message:', err)
+      }
+    }
+
+    ws.onerror = () => {
+      console.error('[Arkzen WS] WebSocket error')
+      ws.close()
+    }
+
+    ws.onclose = () => {
+      if (!mountedRef.current) return
+      setWsStatus('error')
+      // Auto-reconnect after 3 s — same pattern as useWebSocket.ts
+      reconnectTimeout.current = setTimeout(() => {
+        if (mountedRef.current) connectReverb(userId, token)
+      }, 3000)
+    }
+  }
+
   useEffect(() => {
+    mountedRef.current = true
     loadInbox()
 
     const token = useAuthStore.getState().token
-    if (!token || !user?.id) return
-
-    const pusher = new Pusher('arkzen-key', {
-      wsHost: 'localhost',
-      wsPort: 8080,
-      forceTLS: false,
-      enabledTransports: ['ws'],
-      cluster: 'local',
-      authEndpoint: '/api/notification-test/auth/broadcasting/auth',
-      auth: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    })
-
-    const echo = new Echo({
-      broadcaster: 'pusher',
-      client: pusher,
-    })
-
-    // ✅ Subscribe to the PRIVATE channel for this user
-    echo.private(`private-notification-test.${user.id}`)
-      .listen('.notification-test.notification', (e: any) => {
-        setPopup(e.message ?? 'New notification received!')
-        setTimeout(() => setPopup(null), 4000)
-        loadInbox()
-      })
+    if (token && user?.id) {
+      connectReverb(user.id, token)
+    }
 
     return () => {
-      echo.disconnect()
-      pusher.disconnect()
+      mountedRef.current = false
+      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current)
+      wsRef.current?.close()
     }
   }, [user?.id])
 
@@ -351,9 +426,16 @@ const DashboardPage = () => {
   }
 
   const handleLogout = async () => {
+    wsRef.current?.close()
     await logout()
     router.refresh()
     router.replace('/notification-test/login')
+  }
+
+  const statusColor = {
+    connecting: 'bg-yellow-400',
+    connected:  'bg-green-400',
+    error:      'bg-red-400',
   }
 
   return (
@@ -372,12 +454,18 @@ const DashboardPage = () => {
               Signed in as <span className="font-medium">{user?.email}</span>
             </p>
           </div>
-          <button
-            className="text-xs text-neutral-400 hover:text-neutral-700"
-            onClick={handleLogout}
-          >
-            Sign out
-          </button>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-sm">
+              <div className={`w-2 h-2 rounded-full ${statusColor[wsStatus]}`} />
+              <span className="text-neutral-500 capitalize">{wsStatus}</span>
+            </div>
+            <button
+              className="text-xs text-neutral-400 hover:text-neutral-700"
+              onClick={handleLogout}
+            >
+              Sign out
+            </button>
+          </div>
         </div>
 
         <div className="bg-white rounded-2xl p-5 border border-neutral-100">
@@ -462,11 +550,18 @@ const DashboardPage = () => {
           )}
         </div>
 
+        {wsStatus === 'error' && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-sm text-amber-800">
+            <strong>WebSocket not connected.</strong> Make sure Laravel Reverb is running:{' '}
+            <code className="bg-amber-100 px-1 rounded">php artisan reverb:start</code>
+          </div>
+        )}
+
         <div className="text-xs text-neutral-400 bg-neutral-50 rounded-xl p-4">
           <strong>Channels tested:</strong><br/>
           🗄️ <strong>database</strong> — stored in native notifications table, shown in inbox above<br/>
           ✉️ <strong>mail</strong> — sent to {user?.email} (check Mailtrap)<br/>
-          📡 <strong>broadcast</strong> — fires WebSocket event, shows popup top-right<br/>
+          📡 <strong>broadcast</strong> — fires WebSocket event via Reverb, shows popup top-right<br/>
           Run <code>php artisan reverb:start</code> for broadcast + <code>php artisan queue:work</code> for mail.
         </div>
       </div>

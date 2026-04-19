@@ -1,7 +1,9 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — CHANNEL BUILDER v3.1
+// ARKZEN ENGINE — CHANNEL BUILDER v3.2
+// v3.2: Fixed channel pattern — Laravel strips the private- prefix before matching,
+//       so the registered pattern must NOT include private-. See registerChannel().
 // v3.1: Auto-register private-{tatemono}.{userId} channel for auth tatemonos.
 // ============================================================
 
@@ -20,7 +22,8 @@ class ChannelBuilder
         // If this is an auth tatemono, ensure its private notification channel is authorized
         if ($hasAuth) {
             $slug = $module['name'];
-            $channels["private-{$slug}.{userId}"] = [
+            // FIXED: no private- prefix — Laravel strips it before pattern matching
+            $channels["{$slug}.{id}"] = [
                 'type' => 'private',
                 'auth' => 'owner',
             ];
@@ -67,7 +70,7 @@ use Illuminate\Support\Facades\Broadcast;
         }
 
         $authLogic = match($auth) {
-            'owner'         => "return (int) \$user->id === (int) \$userId;",
+            'owner'         => "return (int) \$user->id === (int) \$id;",
             'admin'         => "return \$user->role === 'admin';",
             'authenticated' => "return \$user !== null;",
             default         => "return \$user !== null;",
@@ -76,14 +79,14 @@ use Illuminate\Support\Facades\Broadcast;
         $channelLine = match($type) {
             'presence' => "
 // Module: {$moduleName}
-Broadcast::channel('{$channelName}', function (\$user, \$userId = null) {
+Broadcast::channel('{$channelName}', function (\$user, \$id = null) {
     {$authLogic}
     return ['id' => \$user->id, 'name' => \$user->name];
 });
 ",
             default => "
 // Module: {$moduleName}
-Broadcast::channel('{$channelName}', function (\$user, \$userId = null) {
+Broadcast::channel('{$channelName}', function (\$user, \$id = null) {
     {$authLogic}
 });
 ",

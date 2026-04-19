@@ -8,32 +8,22 @@ use Illuminate\Support\Facades\Broadcast;
 // ============================================================
 
 
-// Module: broadcast-test
-Broadcast::channel('broadcast-test-public', function ($user) {
-    return $user !== null;
-});
-
 // Module: auth-test
-Broadcast::channel('private-auth-test.{userId}', function ($user, $userId = null) {
-    return (int) $user->id === (int) $userId;
+Broadcast::channel('auth-test.{id}', function ($user, $id = null) {
+    return (int) $user->id === (int) $id;
 });
 
 // Module: mail-test
-Broadcast::channel('private-mail-test.{userId}', function ($user, $userId = null) {
-    return (int) $user->id === (int) $userId;
+Broadcast::channel('mail-test.{id}', function ($user, $id = null) {
+    return (int) $user->id === (int) $id;
 });
 
 // Module: notification-test
-Broadcast::channel('private-notification-test.{userId}', function ($user, $userId = null) {
-    return (int) $user->id === (int) $userId;
+Broadcast::channel('notification-test.{id}', function ($user, $id = null) {
+    return (int) $user->id === (int) $id;
 });
 
 // Module: roles-test
-Broadcast::channel('private-roles-test.{userId}', function ($user, $userId = null) {
-    return (int) $user->id === (int) $userId;
-});
-
-// Module: flower-shop
-Broadcast::channel('private-flower-shop.{userId}', function ($user, $userId = null) {
-    return (int) $user->id === (int) $userId;
+Broadcast::channel('roles-test.{id}', function ($user, $id = null) {
+    return (int) $user->id === (int) $id;
 });
