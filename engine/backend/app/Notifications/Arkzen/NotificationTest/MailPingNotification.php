@@ -4,8 +4,9 @@
 // ARKZEN GENERATED NOTIFICATION — MailPingNotification
 // Tatemono: notification-test
 // Channels: mail
+// Broadcast channel type: private
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-19T13:33:42.877805Z
+// Generated: 2026-04-19T15:13:46.726066Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;

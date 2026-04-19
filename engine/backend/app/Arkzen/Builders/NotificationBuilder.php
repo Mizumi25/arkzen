@@ -1,11 +1,21 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — NOTIFICATION BUILDER v3.7
+// ARKZEN ENGINE — NOTIFICATION BUILDER v3.8
+// v3.8: Added channel_type DSL key to notification blocks.
+//       Supported values: private (default), public, presence.
+//       - private  → PrivateChannel('{slug}.{notifiable->id}')
+//       - public   → Channel('{slug}.notifications')
+//       - presence → PresenceChannel('{slug}.{notifiable->id}')
+//       broadcastOn() is generated only when 'broadcast' is in
+//       the channels list. channel_type only affects broadcast
+//       channel class — mail and database channels are unchanged.
+//       Default remains 'private' so existing tatemonos need no
+//       DSL changes.
+//
 // v3.7: Fixed constructor to accept and store $notifiable.
-//       This resolves broadcast failures caused by null $this->notifiable.
-// v3.6: Added explicit $notifiable property to generated
-//       notification class (PHP 8.2+ dynamic property fix).
+//       Resolves broadcast failures caused by null $this->notifiable.
+// v3.6: Added explicit $notifiable property (PHP 8.2+ dynamic prop fix).
 // v3.5: Fixed broadcastOn signature (no parameters) and uses
 //       private channel for secure user-specific notifications.
 // ============================================================
@@ -34,23 +44,28 @@ class NotificationBuilder
 
     private static function buildNotification(string $slug, string $slugNs, string $name, array $config): void
     {
-        $className  = self::toClassName($name);
-        $channels   = $config['channels'] ?? ['database'];
+        $className   = self::toClassName($name);
+        $channels    = $config['channels'] ?? ['database'];
+        $channelType = $config['channel_type'] ?? 'private'; // NEW v3.8
 
-        // 🔧 FIX: If YAML parsing failed and left a string, convert to array
+        // Fix: YAML parsing sometimes returns a comma-string instead of array
         if (is_string($channels)) {
             $channels = array_map('trim', explode(',', $channels));
         }
 
-        $message    = $config['message']  ?? 'You have a new notification.';
-        $subject    = $config['subject']  ?? $className;
-        $filePath   = app_path("Notifications/Arkzen/{$slugNs}/{$className}.php");
+        $message  = $config['message'] ?? 'You have a new notification.';
+        $subject  = $config['subject'] ?? $className;
+        $filePath = app_path("Notifications/Arkzen/{$slugNs}/{$className}.php");
 
         $channelList    = self::generateChannelList($channels);
         $channelMethods = self::generateChannelMethods($channels, $message, $subject);
+
         $broadcastOnMethod = in_array('broadcast', $channels)
-            ? self::generateBroadcastOnMethod($slug)
+            ? self::generateBroadcastOnMethod($slug, $channelType)
             : '';
+
+        // Build use statements — only import what the channel type needs
+        $useStatements = self::generateUseStatements($channels, $channelType);
 
         $content = "<?php
 
@@ -58,6 +73,7 @@ class NotificationBuilder
 // ARKZEN GENERATED NOTIFICATION — {$className}
 // Tatemono: {$slug}
 // Channels: " . implode(', ', $channels) . "
+// Broadcast channel type: {$channelType}
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: " . now()->toISOString() . "
 // ============================================================
@@ -68,7 +84,7 @@ use Illuminate\\Bus\\Queueable;
 use Illuminate\\Notifications\\Notification;
 use Illuminate\\Contracts\\Queue\\ShouldQueue;
 use Illuminate\\Notifications\\Messages\\MailMessage;
-
+{$useStatements}
 class {$className} extends Notification implements ShouldQueue
 {
     use Queueable;
@@ -115,7 +131,20 @@ class {$className} extends Notification implements ShouldQueue
 ";
 
         File::put($filePath, $content);
-        Log::info("[Arkzen Notification] ✓ {$slugNs}\\{$className}");
+        Log::info("[Arkzen Notification] ✓ {$slugNs}\\{$className} (broadcast channel_type: {$channelType})");
+    }
+
+    private static function generateUseStatements(array $channels, string $channelType): string
+    {
+        if (!in_array('broadcast', $channels)) return '';
+
+        $class = match($channelType) {
+            'public'   => "use Illuminate\\Broadcasting\\Channel;",
+            'presence' => "use Illuminate\\Broadcasting\\PresenceChannel;",
+            default    => "use Illuminate\\Broadcasting\\PrivateChannel;",
+        };
+
+        return $class . "\n";
     }
 
     private static function generateChannelList(array $channels): string
@@ -158,12 +187,18 @@ class {$className} extends Notification implements ShouldQueue
         return implode("\n\n", $methods);
     }
 
-    private static function generateBroadcastOnMethod(string $slug): string
+    private static function generateBroadcastOnMethod(string $slug, string $channelType): string
     {
+        $channelExpr = match($channelType) {
+            'public'   => "new Channel('{$slug}.notifications')",
+            'presence' => "new PresenceChannel('{$slug}.' . \$this->notifiable->id)",
+            default    => "new PrivateChannel('{$slug}.' . \$this->notifiable->id)",
+        };
+
         return "
     public function broadcastOn(): array
     {
-        return [new \\Illuminate\\Broadcasting\\PrivateChannel('{$slug}.' . \$this->notifiable->id)];
+        return [{$channelExpr}];
     }
 
     public function broadcastAs(): string

@@ -1,7 +1,15 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — ENGINE CONTROLLER v5.4
+// ARKZEN ENGINE — ENGINE CONTROLLER v5.5
+// v5.5: Phase 6.5 now also calls AuthBuilder::buildAuthChannel()
+//       so the private notification channel (private-{slug}.{id})
+//       is always registered in channels.php for auth+notification
+//       tatemonos — even when no @arkzen:realtime blocks exist.
+//       Previously the channel only registered if Phase 9 ran
+//       (guarded by !empty($module['realtimes'])), causing 403s
+//       on WebSocket auth for notification-only tatemonos.
+//
 // v5.4: Added Phase 4.5 — CustomRouteBuilder for @arkzen:routes.
 //       Fixed $isStatic check to include customRoutes so tatemonos
 //       with only @arkzen:routes blocks are not treated as static.
@@ -50,7 +58,7 @@ class ArkzenEngineController extends Controller
         return response()->json([
             'status'  => 'ok',
             'engine'  => 'Arkzen Backend Engine',
-            'version' => '5.4.0',
+            'version' => '5.5.0',
         ]);
     }
 
@@ -168,9 +176,14 @@ class ArkzenEngineController extends Controller
         $this->run("Routes: {$name}", $steps, $errors, fn() => RouteRegistrar::buildAll($module));
 
         // ── PHASE 6.5: Isolated Auth ──────────────
+        // Also registers the private notification channel (private-{slug}.{id})
+        // here so it exists even when the tatemono has no @arkzen:realtime blocks.
+        // Phase 9 (Broadcast + Channels) is guarded by !empty($module['realtimes']),
+        // so without this call a notification-only tatemono would get 403s on WS auth.
         if ($hasAuth) {
             Log::info("[Arkzen] Phase 6.5: Isolated auth for {$name}");
             $this->run("Auth: {$name}", $steps, $errors, fn() => AuthBuilder::buildForTatemono($module));
+            $this->run("Auth channel: {$name}", $steps, $errors, fn() => AuthBuilder::buildAuthChannel($module));
         }
 
         // ── PHASE 7: Seeders ──────────────────────
@@ -206,6 +219,7 @@ class ArkzenEngineController extends Controller
         if (!empty($module['notifications'])) {
             Log::info("[Arkzen] Phase 11: Notifications");
             $this->run("Notifications", $steps, $errors, fn() => NotificationBuilder::build($module));
+            $this->run("Notification Channels", $steps, $errors, fn() => ChannelBuilder::buildNotificationChannels($module));
         }
         if (!empty($module['mails'])) {
             Log::info("[Arkzen] Phase 11b: Mail");

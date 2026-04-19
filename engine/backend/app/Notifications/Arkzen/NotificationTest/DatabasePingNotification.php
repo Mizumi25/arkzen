@@ -4,8 +4,9 @@
 // ARKZEN GENERATED NOTIFICATION — DatabasePingNotification
 // Tatemono: notification-test
 // Channels: database
+// Broadcast channel type: private
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-19T13:33:42.877261Z
+// Generated: 2026-04-19T15:13:46.722214Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;

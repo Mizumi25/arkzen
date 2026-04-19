@@ -27,3 +27,8 @@ Broadcast::channel('notification-test.{id}', function ($user, $id = null) {
 Broadcast::channel('roles-test.{id}', function ($user, $id = null) {
     return (int) $user->id === (int) $id;
 });
+
+// Module: notification-test
+Broadcast::channel('notification-test.notifications', function () {
+    return true;
+});

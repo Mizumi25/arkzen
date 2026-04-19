@@ -11,7 +11,7 @@
         "index"
       ],
       "registered": "2026-03-29T05:18:40.255Z",
-      "lastUpdated": "2026-04-19T13:33:42.229Z",
+      "lastUpdated": "2026-04-19T15:13:45.896Z",
       "auth": false
     },
     {
@@ -25,20 +25,22 @@
         "dashboard"
       ],
       "registered": "2026-04-04T03:21:43.921Z",
-      "lastUpdated": "2026-04-19T13:33:40.433Z",
+      "lastUpdated": "2026-04-19T15:13:44.569Z",
       "auth": true
     },
     {
       "name": "broadcast-test",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "status": "active",
       "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/broadcast-test/core.tsx",
       "pages": [
-        "index"
+        "login",
+        "register",
+        "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.456Z",
-      "lastUpdated": "2026-04-19T13:33:40.665Z",
-      "auth": false
+      "lastUpdated": "2026-04-19T15:13:44.821Z",
+      "auth": true
     },
     {
       "name": "crud-test",
@@ -49,7 +51,7 @@
         "index"
       ],
       "registered": "2026-04-04T06:17:46.866Z",
-      "lastUpdated": "2026-04-19T13:33:41.526Z",
+      "lastUpdated": "2026-04-19T15:13:45.231Z",
       "auth": false
     },
     {
@@ -61,7 +63,7 @@
         "index"
       ],
       "registered": "2026-04-04T06:17:46.875Z",
-      "lastUpdated": "2026-04-19T13:33:41.999Z",
+      "lastUpdated": "2026-04-19T15:13:45.652Z",
       "auth": false
     },
     {
@@ -73,7 +75,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.972Z",
-      "lastUpdated": "2026-04-19T13:33:42.444Z",
+      "lastUpdated": "2026-04-19T15:13:46.161Z",
       "auth": false
     },
     {
@@ -87,7 +89,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.988Z",
-      "lastUpdated": "2026-04-19T13:33:42.884Z",
+      "lastUpdated": "2026-04-19T15:13:46.746Z",
       "auth": true
     },
     {
@@ -101,7 +103,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.998Z",
-      "lastUpdated": "2026-04-19T13:33:43.121Z",
+      "lastUpdated": "2026-04-19T15:13:46.972Z",
       "auth": true
     },
     {
@@ -113,7 +115,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:47.014Z",
-      "lastUpdated": "2026-04-19T13:33:43.663Z",
+      "lastUpdated": "2026-04-19T15:13:47.398Z",
       "auth": false
     },
     {
@@ -125,7 +127,7 @@
         "dashboard"
       ],
       "registered": "2026-04-09T08:20:28.450Z",
-      "lastUpdated": "2026-04-19T13:33:43.391Z",
+      "lastUpdated": "2026-04-19T15:13:47.193Z",
       "auth": false
     },
     {
@@ -137,7 +139,7 @@
         "index"
       ],
       "registered": "2026-04-11T13:03:20.834Z",
-      "lastUpdated": "2026-04-19T13:33:41.788Z",
+      "lastUpdated": "2026-04-19T15:13:45.435Z",
       "auth": false
     },
     {
@@ -151,7 +153,7 @@
         "dashboard"
       ],
       "registered": "2026-04-14T09:31:29.424Z",
-      "lastUpdated": "2026-04-19T13:33:42.671Z",
+      "lastUpdated": "2026-04-19T15:13:46.433Z",
       "auth": true
     }
   ]

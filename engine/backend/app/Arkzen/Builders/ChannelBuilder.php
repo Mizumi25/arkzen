@@ -1,10 +1,21 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — CHANNEL BUILDER v3.2
-// v3.2: Fixed channel pattern — Laravel strips the private- prefix before matching,
-//       so the registered pattern must NOT include private-. See registerChannel().
-// v3.1: Auto-register private-{tatemono}.{userId} channel for auth tatemonos.
+// ARKZEN ENGINE — CHANNEL BUILDER v3.3
+// v3.3: Added buildAuthChannel() as a public standalone method.
+//       ArkzenEngineController calls this from Phase 6.5 when a
+//       tatemono has auth + notifications but no @arkzen:realtime
+//       blocks — ensuring private-{slug}.{id} is always registered
+//       in channels.php regardless of whether realtimes exist.
+//       build() continues to handle DSL-declared @arkzen:realtime
+//       channels + the implicit auth channel injection (for tatemonos
+//       that have BOTH realtime blocks and auth+notifications).
+//
+// v3.2: Fixed channel pattern — Laravel strips the private- prefix
+//       before matching, so the registered pattern must NOT include
+//       private-. See registerChannel().
+// v3.1: Auto-register private-{tatemono}.{userId} channel for auth
+//       tatemonos with notifications.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -14,15 +25,20 @@ use Illuminate\Support\Facades\Log;
 
 class ChannelBuilder
 {
+    // ─────────────────────────────────────────────
+    // Called from Phase 9 (realtime block present).
+    // Handles DSL-declared channels + implicit auth
+    // notification channel when auth+notifications exist.
+    // ─────────────────────────────────────────────
     public static function build(array $module): void
     {
         $channels = $module['realtimes']['channels'] ?? [];
         $hasAuth  = $module['auth'] ?? false;
+        $hasNotifications = !empty($module['notifications']);
 
-        // If this is an auth tatemono, ensure its private notification channel is authorized
-        if ($hasAuth) {
+        // Implicit private notification channel — only when auth AND notifications are declared
+        if ($hasAuth && $hasNotifications) {
             $slug = $module['name'];
-            // FIXED: no private- prefix — Laravel strips it before pattern matching
             $channels["{$slug}.{id}"] = [
                 'type' => 'private',
                 'auth' => 'owner',
@@ -36,6 +52,28 @@ class ChannelBuilder
         foreach ($channels as $channelName => $config) {
             self::registerChannel($channelName, is_array($config) ? $config : [], $module['name']);
         }
+    }
+
+    // ─────────────────────────────────────────────
+    // Called from Phase 6.5 via AuthBuilder::buildAuthChannel().
+    // Registers the private notification channel for tatemonos
+    // that have auth + notifications but NO @arkzen:realtime blocks
+    // (so build() above never runs for them).
+    // ─────────────────────────────────────────────
+    public static function buildAuthChannel(array $module): void
+    {
+        if (empty($module['notifications'])) return;
+
+        $slug = $module['name'];
+
+        self::ensureChannelsFile();
+
+        self::registerChannel("{$slug}.{id}", [
+            'type' => 'private',
+            'auth' => 'owner',
+        ], $slug);
+
+        Log::info("[Arkzen Channel] ✓ Auth notification channel registered for: {$slug}");
     }
 
     private static function ensureChannelsFile(): void
@@ -84,6 +122,12 @@ Broadcast::channel('{$channelName}', function (\$user, \$id = null) {
     return ['id' => \$user->id, 'name' => \$user->name];
 });
 ",
+            'public' => "
+// Module: {$moduleName}
+Broadcast::channel('{$channelName}', function () {
+    return true;
+});
+",
             default => "
 // Module: {$moduleName}
 Broadcast::channel('{$channelName}', function (\$user, \$id = null) {
@@ -94,5 +138,32 @@ Broadcast::channel('{$channelName}', function (\$user, \$id = null) {
 
         File::append($channelsPath, $channelLine);
         Log::info("[Arkzen Channel] ✓ Channel registered: {$channelName} ({$type}, auth: {$auth}) for module: {$moduleName}");
+    }
+    
+        // ChannelBuilder.php — add this new public static method
+    public static function buildNotificationChannels(array $module): void
+    {
+        $notifications = $module['notifications'] ?? [];
+        if (empty($notifications)) return;
+    
+        $slug = $module['name'];
+        $hasPublic = false;
+    
+        foreach ($notifications as $config) {
+            $channelType = $config['channel_type'] ?? 'private';
+            if ($channelType === 'public') {
+                $hasPublic = true;
+                break;
+            }
+        }
+    
+        if ($hasPublic) {
+            self::ensureChannelsFile();
+            self::registerChannel(
+                "{$slug}.notifications",
+                ['type' => 'public'],
+                $slug
+            );
+        }
     }
 }

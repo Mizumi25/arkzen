@@ -4,8 +4,9 @@
 // ARKZEN GENERATED NOTIFICATION — BroadcastPingNotification
 // Tatemono: notification-test
 // Channels: broadcast, database
+// Broadcast channel type: private
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-19T13:33:42.878308Z
+// Generated: 2026-04-19T15:13:46.727638Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;
@@ -14,6 +15,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Broadcasting\PrivateChannel;
 
 class BroadcastPingNotification extends Notification implements ShouldQueue
 {
@@ -50,14 +52,14 @@ class BroadcastPingNotification extends Notification implements ShouldQueue
     public function toBroadcast(object $notifiable): array
     {
         return [
-            'message' => 'Real-time notification received!',
+            'message' => 'Real-time notification received on your private channel!',
             'data'    => $this->data,
         ];
     }
 
     public function broadcastOn(): array
     {
-        return [new \Illuminate\Broadcasting\PrivateChannel('notification-test.' . $this->notifiable->id)];
+        return [new PrivateChannel('notification-test.' . $this->notifiable->id)];
     }
 
     public function broadcastAs(): string
@@ -69,7 +71,7 @@ class BroadcastPingNotification extends Notification implements ShouldQueue
     {
         return array_merge([
             'type'     => 'NotificationTest\\BroadcastPingNotification',
-            'message'  => 'Real-time notification received!',
+            'message'  => 'Real-time notification received on your private channel!',
             'tatemono' => 'notification-test',
         ], $this->data);
     }

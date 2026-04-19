@@ -1,12 +1,12 @@
 <?php
 
 // ============================================================
-// ARKZEN GENERATED NOTIFICATION — AllChannelsNotification
+// ARKZEN GENERATED NOTIFICATION — BroadcastPingPublicNotification
 // Tatemono: notification-test
-// Channels: database, mail, broadcast
-// Broadcast channel type: private
+// Channels: broadcast, database
+// Broadcast channel type: public
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-19T15:13:46.730433Z
+// Generated: 2026-04-19T15:13:46.729074Z
 // ============================================================
 
 namespace App\Notifications\Arkzen\NotificationTest;
@@ -15,9 +15,9 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
-use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Broadcasting\Channel;
 
-class AllChannelsNotification extends Notification implements ShouldQueue
+class BroadcastPingPublicNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
@@ -46,29 +46,20 @@ class AllChannelsNotification extends Notification implements ShouldQueue
 
     public function via(object $notifiable): array
     {
-        return ['database', 'mail', 'broadcast'];
-    }
-
-    public function toMail(object $notifiable): MailMessage
-    {
-        return (new MailMessage)
-            ->subject('All Channels Test')
-            ->line('This notification was sent to all three channels simultaneously')
-            ->action('View', url('/'))
-            ->line('Thank you for using our application.');
+        return ['broadcast', 'database'];
     }
 
     public function toBroadcast(object $notifiable): array
     {
         return [
-            'message' => 'This notification was sent to all three channels simultaneously',
+            'message' => 'This broadcast went to the public notification channel!',
             'data'    => $this->data,
         ];
     }
 
     public function broadcastOn(): array
     {
-        return [new PrivateChannel('notification-test.' . $this->notifiable->id)];
+        return [new Channel('notification-test.notifications')];
     }
 
     public function broadcastAs(): string
@@ -79,8 +70,8 @@ class AllChannelsNotification extends Notification implements ShouldQueue
     public function toArray(object $notifiable): array
     {
         return array_merge([
-            'type'     => 'NotificationTest\\AllChannelsNotification',
-            'message'  => 'This notification was sent to all three channels simultaneously',
+            'type'     => 'NotificationTest\\BroadcastPingPublicNotification',
+            'message'  => 'This broadcast went to the public notification channel!',
             'tatemono' => 'notification-test',
         ], $this->data);
     }

@@ -69,13 +69,23 @@ subject: "Mail Ping from Arkzen"
 
 /* @arkzen:notifications:broadcast-ping
 channels: [broadcast, database]
-message: "Real-time notification received!"
-subject: "Broadcast Ping"
+channel_type: private
+message: "Real-time notification received on your private channel!"
+subject: "Broadcast Ping (Private)"
 */
 /* @arkzen:notifications:broadcast-ping:end */
 
+/* @arkzen:notifications:broadcast-ping-public
+channels: [broadcast, database]
+channel_type: public
+message: "This broadcast went to the public notification channel!"
+subject: "Broadcast Ping (Public)"
+*/
+/* @arkzen:notifications:broadcast-ping-public:end */
+
 /* @arkzen:notifications:all-channels
 channels: [database, mail, broadcast]
+channel_type: private
 message: "This notification was sent to all three channels simultaneously"
 subject: "All Channels Test"
 */
@@ -267,10 +277,11 @@ const DashboardPage = () => {
   const mountedRef = useRef(true)
 
   const notifTypes = [
-    { key: 'database-ping',  label: 'Database',    channels: ['database'],                       color: 'bg-blue-500',   icon: '🗄️' },
-    { key: 'mail-ping',      label: 'Mail',         channels: ['mail'],                           color: 'bg-green-500',  icon: '✉️' },
-    { key: 'broadcast-ping', label: 'Broadcast',    channels: ['broadcast', 'database'],          color: 'bg-purple-500', icon: '📡' },
-    { key: 'all-channels',   label: 'All Channels', channels: ['database', 'mail', 'broadcast'],  color: 'bg-orange-500', icon: '🔔' },
+    { key: 'database-ping',        label: 'Database',              channels: ['database'],                       color: 'bg-blue-500',   icon: '🗄️' },
+    { key: 'mail-ping',            label: 'Mail',                  channels: ['mail'],                           color: 'bg-green-500',  icon: '✉️' },
+    { key: 'broadcast-ping',       label: 'Broadcast (private)',   channels: ['broadcast', 'database'],          color: 'bg-purple-500', icon: '📡' },
+    { key: 'broadcast-ping-public',label: 'Broadcast (public)',    channels: ['broadcast', 'database'],          color: 'bg-sky-500',    icon: '🌐' },
+    { key: 'all-channels',         label: 'All Channels',          channels: ['database', 'mail', 'broadcast'],  color: 'bg-orange-500', icon: '🔔' },
   ]
 
   const loadInbox = async () => {
@@ -346,7 +357,13 @@ const DashboardPage = () => {
               channel: channelName,
               auth: authData.auth,
             },
-          }))
+          }));
+          
+          // Subscribe to public notification channel (no auth required)
+          ws.send(JSON.stringify({
+            event: 'pusher:subscribe',
+            data: { channel: 'notification-test.notifications' }
+          }));
         }
 
         // Step 5: incoming broadcast notification
@@ -485,7 +502,7 @@ const DashboardPage = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           {notifTypes.map(n => (
             <div key={n.key} className="bg-white rounded-2xl border border-neutral-100 p-4">
               <div className="flex items-center gap-2 mb-2">
@@ -565,7 +582,8 @@ const DashboardPage = () => {
           <strong>Channels tested:</strong><br/>
           🗄️ <strong>database</strong> — stored in native notifications table, shown in inbox above<br/>
           ✉️ <strong>mail</strong> — sent to {user?.email} (check Mailtrap)<br/>
-          📡 <strong>broadcast</strong> — fires WebSocket event via Reverb, shows popup top-right<br/>
+          📡 <strong>broadcast (private)</strong> — fires on <code>private-notification-test.{'{'}userId{'}'}</code> — only you receive it<br/>
+          🌐 <strong>broadcast (public)</strong> — fires on <code>notification-test.notifications</code> — anyone subscribed receives it<br/>
           Run <code>php artisan reverb:start</code> for broadcast + <code>php artisan queue:work</code> for mail.
         </div>
       </div>

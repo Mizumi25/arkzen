@@ -1,33 +1,25 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — AUTH BUILDER v2.10 (PER-TATEMONO)
-// v2.10: Replace fragile regex user‑ID extraction with safe
-//        str_starts_with + substr approach. The closure now
-//        receives the tatemono slug directly, eliminating
-//        any chance of capture‑group bugs. Also adds self‑healing
-//        for the old '' → '\1' regex mistake.
+// ARKZEN ENGINE — AUTH BUILDER v2.11 (PER-TATEMONO)
+// v2.11: Notification infrastructure (notifications table,
+//        Notifiable trait, DatabaseNotification model, and the
+//        notifications()/unreadNotifications() relations on User)
+//        is now CONDITIONAL on the tatemono declaring
+//        @arkzen:notifications blocks. Tatemonos with auth: true
+//        but no notification DSL get a lean User model with no
+//        Notifiable trait, no notification relations, and no
+//        _notifications table. Rebuilding toggles correctly.
+//        Also adds buildAuthChannel() so ArkzenEngineController
+//        Phase 6.5 can register the private notification channel
+//        independently of @arkzen:realtime blocks.
 //
-// v2.9: Strip stray Broadcast::auth() route groups injected
-//       outside the auth block by a prior bad RouteRegistrar
-//       patch. These orphaned routes match before the correct
-//       HMAC closure and cause 403 on broadcasting auth.
-//       injectAuthRoutes() now runs a pre-pass that removes any
-//       Route::middleware(...)->post(...broadcasting/auth...,
-//       Broadcast::auth...) block that sits outside the
-//       managed auth markers before doing the normal heal.
-//
-// v2.8: Stronger self-heal — replaces the entire auth block
-//       (not just the closure) when the HMAC route is missing
-//       or Broadcast::auth() is still present inside the block.
-//
-// v2.7: Broadcasting auth uses direct HMAC signing instead of
-//       Broadcast::auth() — which re-resolves the user via the
-//       default guard (App\Models\User) and ignores the already-
-//       authenticated tatemono-isolated $request->user().
-//       Also self-heals existing route files that still have the
-//       old Broadcast::auth() closure.
-// v2.6: Broadcasting auth route moved inside the auth:sanctum prefix.
+// v2.10: Replace fragile regex user-ID extraction with safe
+//        str_starts_with + substr approach.
+// v2.9:  Strip stray Broadcast::auth() route groups.
+// v2.8:  Stronger self-heal for auth block.
+// v2.7:  Broadcasting auth uses direct HMAC signing.
+// v2.6:  Broadcasting auth route moved inside auth:sanctum prefix.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -40,29 +32,46 @@ class AuthBuilder
 {
     public static function buildForTatemono(array $module): void
     {
-        $name   = $module['name'];
-        $dbConn = ModelBuilder::slugToConnection($name);
-        $slugNs = EventBuilder::toNamespace($name);
-        $prefix = str_replace('-', '_', $name);
+        $name             = $module['name'];
+        $dbConn           = ModelBuilder::slugToConnection($name);
+        $slugNs           = EventBuilder::toNamespace($name);
+        $prefix           = str_replace('-', '_', $name);
+        $hasNotifications = !empty($module['notifications']);
 
-        Log::info("[Arkzen Auth] Building isolated auth for: {$name}");
+        Log::info("[Arkzen Auth] Building isolated auth for: {$name} (notifications: " . ($hasNotifications ? 'yes' : 'no') . ")");
 
         MigrationBuilder::ensureDatabase($name, $dbConn);
-        self::migrateAuthTables($dbConn, $prefix);
-        self::generateUserModel($name, $slugNs, $dbConn, $prefix);
+        self::migrateAuthTables($dbConn, $prefix, $hasNotifications);
+        self::generateUserModel($name, $slugNs, $dbConn, $prefix, $hasNotifications);
         self::generateTokenModel($name, $slugNs, $dbConn, $prefix);
-        self::generateNotificationModel($name, $slugNs, $dbConn, $prefix);
+
+        if ($hasNotifications) {
+            self::generateNotificationModel($name, $slugNs, $dbConn, $prefix);
+        }
+
         self::generateAuthController($name, $slugNs, $dbConn, $prefix);
         self::injectAuthRoutes($name, $slugNs);
 
         Log::info("[Arkzen Auth] ✓ Isolated auth complete for: {$name}");
     }
 
-    private static function migrateAuthTables(string $dbConn, string $prefix): void
+    // ─────────────────────────────────────────────
+    // Called from ArkzenEngineController Phase 6.5
+    // when a tatemono has auth + notifications but
+    // no @arkzen:realtime blocks — ensures the private
+    // notification channel is always registered in
+    // channels.php regardless of realtime presence.
+    // ─────────────────────────────────────────────
+    public static function buildAuthChannel(array $module): void
     {
-        $usersTable         = "{$prefix}_users";
-        $tokensTable        = "{$prefix}_personal_access_tokens";
-        $notificationsTable = "{$prefix}_notifications";
+        if (empty($module['notifications'])) return;
+        ChannelBuilder::buildAuthChannel($module);
+    }
+
+    private static function migrateAuthTables(string $dbConn, string $prefix, bool $hasNotifications): void
+    {
+        $usersTable  = "{$prefix}_users";
+        $tokensTable = "{$prefix}_personal_access_tokens";
 
         if (!Schema::connection($dbConn)->hasTable($usersTable)) {
             Schema::connection($dbConn)->create($usersTable, function ($table) {
@@ -82,7 +91,7 @@ class AuthBuilder
             Schema::connection($dbConn)->table($usersTable, function ($table) {
                 $table->string('role', 20)->default('user')->after('password');
             });
-            Log::info("[Arkzen Auth] ✓ Added `role` column to existing table: {$usersTable}");
+            Log::info("[Arkzen Auth] ✓ Added `role` column to: {$usersTable}");
         }
 
         if (!Schema::connection($dbConn)->hasTable($tokensTable)) {
@@ -99,70 +108,99 @@ class AuthBuilder
             Log::info("[Arkzen Auth] ✓ Created table: {$tokensTable}");
         }
 
-        if (!Schema::connection($dbConn)->hasTable($notificationsTable)) {
-            Schema::connection($dbConn)->create($notificationsTable, function ($table) {
-                $table->uuid('id')->primary();
-                $table->string('type');
-                $table->morphs('notifiable');
-                $table->text('data');
-                $table->timestamp('read_at')->nullable();
-                $table->timestamps();
-            });
-            Log::info("[Arkzen Auth] ✓ Created table: {$notificationsTable}");
+        // Notifications table — only when @arkzen:notifications is declared
+        if ($hasNotifications) {
+            $notificationsTable = "{$prefix}_notifications";
+            if (!Schema::connection($dbConn)->hasTable($notificationsTable)) {
+                Schema::connection($dbConn)->create($notificationsTable, function ($table) {
+                    $table->uuid('id')->primary();
+                    $table->string('type');
+                    $table->morphs('notifiable');
+                    $table->text('data');
+                    $table->timestamp('read_at')->nullable();
+                    $table->timestamps();
+                });
+                Log::info("[Arkzen Auth] ✓ Created table: {$notificationsTable}");
+            }
         }
     }
 
-    private static function generateUserModel(string $tatSlug, string $slugNs, string $dbConn, string $prefix): void
+    private static function generateUserModel(string $tatSlug, string $slugNs, string $dbConn, string $prefix, bool $hasNotifications): void
     {
         $usersTable = "{$prefix}_users";
         $path       = app_path("Models/Arkzen/{$slugNs}/User.php");
 
-        if (File::exists($path)) {
-            Log::info("[Arkzen Auth] ✓ User model already exists for: {$tatSlug}");
-            return;
-        }
-
+        // Always regenerate — DSL may have toggled notifications on/off
         File::ensureDirectoryExists(app_path("Models/Arkzen/{$slugNs}"));
 
-        $content = "<?php\n\n"
-            . "// ============================================================\n"
-            . "// ARKZEN GENERATED USER MODEL — {$tatSlug}\n"
-            . "// Isolated to: database/arkzen/{$tatSlug}.sqlite\n"
-            . "// DO NOT EDIT DIRECTLY.\n"
-            . "// ============================================================\n\n"
-            . "namespace App\\Models\\Arkzen\\{$slugNs};\n\n"
-            . "use Illuminate\\Foundation\\Auth\\User as Authenticatable;\n"
-            . "use Illuminate\\Notifications\\Notifiable;\n"
-            . "use Laravel\\Sanctum\\HasApiTokens;\n"
-            . "use Illuminate\\Database\\Eloquent\\Relations\\Relation;\n"
-            . "use App\\Models\\Arkzen\\{$slugNs}\\DatabaseNotification;\n\n"
-            . "Relation::morphMap([\n"
-            . "    'notifiable' => DatabaseNotification::class,\n"
-            . "]);\n\n"
-            . "class User extends Authenticatable\n{\n"
-            . "    use HasApiTokens, Notifiable;\n\n"
-            . "    protected \$connection = '{$dbConn}';\n\n"
-            . "    protected \$table = '{$usersTable}';\n\n"
-            . "    protected \$fillable = ['name', 'email', 'password', 'role'];\n\n"
-            . "    protected \$hidden = ['password', 'remember_token'];\n\n"
-            . "    protected \$casts = [\n"
-            . "        'email_verified_at' => 'datetime',\n"
-            . "        'password'          => 'hashed',\n"
-            . "    ];\n\n"
-            . "    public function tokens()\n    {\n"
-            . "        return \$this->morphMany(PersonalAccessToken::class, 'tokenable');\n"
-            . "    }\n\n"
-            . "    public function notifications()\n    {\n"
-            . "        return \$this->morphMany(DatabaseNotification::class, 'notifiable')\n"
-            . "            ->orderBy('created_at', 'desc');\n"
-            . "    }\n\n"
-            . "    public function unreadNotifications()\n    {\n"
-            . "        return \$this->notifications()->whereNull('read_at');\n"
-            . "    }\n"
-            . "}\n";
+        if ($hasNotifications) {
+            $content = "<?php\n\n"
+                . "// ============================================================\n"
+                . "// ARKZEN GENERATED USER MODEL — {$tatSlug}\n"
+                . "// Isolated to: database/arkzen/{$tatSlug}.sqlite\n"
+                . "// Notifications: ENABLED (Notifiable trait + relations)\n"
+                . "// DO NOT EDIT DIRECTLY.\n"
+                . "// ============================================================\n\n"
+                . "namespace App\\Models\\Arkzen\\{$slugNs};\n\n"
+                . "use Illuminate\\Foundation\\Auth\\User as Authenticatable;\n"
+                . "use Illuminate\\Notifications\\Notifiable;\n"
+                . "use Laravel\\Sanctum\\HasApiTokens;\n"
+                . "use Illuminate\\Database\\Eloquent\\Relations\\Relation;\n"
+                . "use App\\Models\\Arkzen\\{$slugNs}\\DatabaseNotification;\n\n"
+                . "Relation::morphMap([\n"
+                . "    'notifiable' => DatabaseNotification::class,\n"
+                . "]);\n\n"
+                . "class User extends Authenticatable\n{\n"
+                . "    use HasApiTokens, Notifiable;\n\n"
+                . "    protected \$connection = '{$dbConn}';\n\n"
+                . "    protected \$table = '{$usersTable}';\n\n"
+                . "    protected \$fillable = ['name', 'email', 'password', 'role'];\n\n"
+                . "    protected \$hidden = ['password', 'remember_token'];\n\n"
+                . "    protected \$casts = [\n"
+                . "        'email_verified_at' => 'datetime',\n"
+                . "        'password'          => 'hashed',\n"
+                . "    ];\n\n"
+                . "    public function tokens()\n    {\n"
+                . "        return \$this->morphMany(PersonalAccessToken::class, 'tokenable');\n"
+                . "    }\n\n"
+                . "    public function notifications()\n    {\n"
+                . "        return \$this->morphMany(DatabaseNotification::class, 'notifiable')\n"
+                . "            ->orderBy('created_at', 'desc');\n"
+                . "    }\n\n"
+                . "    public function unreadNotifications()\n    {\n"
+                . "        return \$this->notifications()->whereNull('read_at');\n"
+                . "    }\n"
+                . "}\n";
+        } else {
+            // Lean model — no Notifiable, no notification relations, no unused imports
+            $content = "<?php\n\n"
+                . "// ============================================================\n"
+                . "// ARKZEN GENERATED USER MODEL — {$tatSlug}\n"
+                . "// Isolated to: database/arkzen/{$tatSlug}.sqlite\n"
+                . "// Notifications: DISABLED (no @arkzen:notifications declared)\n"
+                . "// DO NOT EDIT DIRECTLY.\n"
+                . "// ============================================================\n\n"
+                . "namespace App\\Models\\Arkzen\\{$slugNs};\n\n"
+                . "use Illuminate\\Foundation\\Auth\\User as Authenticatable;\n"
+                . "use Laravel\\Sanctum\\HasApiTokens;\n\n"
+                . "class User extends Authenticatable\n{\n"
+                . "    use HasApiTokens;\n\n"
+                . "    protected \$connection = '{$dbConn}';\n\n"
+                . "    protected \$table = '{$usersTable}';\n\n"
+                . "    protected \$fillable = ['name', 'email', 'password', 'role'];\n\n"
+                . "    protected \$hidden = ['password', 'remember_token'];\n\n"
+                . "    protected \$casts = [\n"
+                . "        'email_verified_at' => 'datetime',\n"
+                . "        'password'          => 'hashed',\n"
+                . "    ];\n\n"
+                . "    public function tokens()\n    {\n"
+                . "        return \$this->morphMany(PersonalAccessToken::class, 'tokenable');\n"
+                . "    }\n"
+                . "}\n";
+        }
 
         File::put($path, $content);
-        Log::info("[Arkzen Auth] ✓ User model created: Models/Arkzen/{$slugNs}/User.php");
+        Log::info("[Arkzen Auth] ✓ User model written: Models/Arkzen/{$slugNs}/User.php (notifications: " . ($hasNotifications ? 'yes' : 'no') . ")");
     }
 
     private static function generateTokenModel(string $tatSlug, string $slugNs, string $dbConn, string $prefix): void
@@ -229,8 +267,7 @@ class AuthBuilder
 
     private static function generateAuthController(string $tatSlug, string $slugNs, string $dbConn, string $prefix): void
     {
-        $usersTable = "{$prefix}_users";
-        $path       = app_path("Http/Controllers/Arkzen/{$slugNs}/AuthController.php");
+        $path = app_path("Http/Controllers/Arkzen/{$slugNs}/AuthController.php");
 
         if (File::exists($path)) {
             Log::info("[Arkzen Auth] ✓ AuthController already exists for: {$tatSlug}");
@@ -302,14 +339,8 @@ class AuthBuilder
 
     // ============================================================
     // BROADCASTING AUTH CLOSURE (v2.10)
-    //
-    // Reverb speaks the Pusher wire protocol. Authenticating a private
-    // channel requires signing "{socket_id}:{channel_name}" with
-    // REVERB_APP_SECRET (HMAC-SHA256) and returning:
-    //   {"auth": "{app_key}:{signature}"}
-    //
-    // The user ID is safely extracted using str_starts_with + substr,
-    // completely eliminating the fragile regex capture bug.
+    // Signs "{socket_id}:{channel_name}" with REVERB_APP_SECRET
+    // (HMAC-SHA256). User ID extracted via str_starts_with + substr.
     // ============================================================
     private static function broadcastingAuthClosure(string $tatSlug): string
     {
@@ -372,7 +403,6 @@ class AuthBuilder
         $routeFile   = base_path("routes/modules/{$tatSlug}.php");
         $authBlock   = self::buildAuthBlock($tatSlug, $slugNs);
         $authMarker  = "// ── Auth routes — {$tatSlug} ──";
-        $authEndMarker = "// ── End auth — {$tatSlug} ─────";
 
         if (!File::exists($routeFile)) {
             $content = "<?php\n\n"
@@ -390,7 +420,7 @@ class AuthBuilder
 
         $existing = File::get($routeFile);
 
-        // ── v2.9: PRE-PASS — strip stray Broadcast::auth() route groups ──
+        // v2.9 PRE-PASS — strip stray Broadcast::auth() route groups
         if (str_contains($existing, 'Broadcast::auth(')) {
             $existing = preg_replace(
                 '/\/\/ ── Broadcasting auth \(tatemono-scoped\).*?Route::middleware\([^\)]+\)\s*->post\([^;]+Broadcast::auth[^;]+;\s*/s',
@@ -405,8 +435,7 @@ class AuthBuilder
             Log::info("[Arkzen Auth] ✓ Stripped stray Broadcast::auth() route from {$tatSlug}.php");
         }
 
-        // ── v2.10: HEAL THE OLD REGEX CAPTURE BUG ──────────────────────
-        // If the legacy '' → '\1' mistake is still present, fix it inline.
+        // v2.10 HEAL old regex capture bug
         if (str_contains($existing, "preg_replace('/.*\\.([0-9]+)\$/', ''")) {
             $existing = str_replace(
                 "preg_replace('/.*\\.([0-9]+)\$/', ''",
@@ -417,12 +446,10 @@ class AuthBuilder
         }
 
         if (str_contains($existing, $authMarker)) {
-            // Auth block exists — heal if HMAC closure is missing or Broadcast::auth() is inside
             $needsHeal = str_contains($existing, 'Broadcast::auth(')
                 || !str_contains($existing, "Route::post('/broadcasting/auth'");
 
             if ($needsHeal) {
-                // Replace the entire auth block from marker to end marker
                 $existing = preg_replace(
                     '/\/\/ ── Auth routes — ' . preg_quote($tatSlug, '/') . ' ──.*?\/\/ ── End auth — ' . preg_quote($tatSlug, '/') . ' ─+\n/s',
                     ltrim($authBlock),
@@ -431,14 +458,12 @@ class AuthBuilder
                 File::put($routeFile, $existing);
                 Log::info("[Arkzen Auth] ✓ Healed auth block in {$tatSlug}.php");
             } else {
-                // Block is canonical — just save in case pre-pass stripped something
                 File::put($routeFile, $existing);
                 Log::info("[Arkzen Auth] ✓ Auth block already canonical in {$tatSlug}.php");
             }
             return;
         }
 
-        // Auth block missing — inject right after the opening PHP tag
         if (str_starts_with(trim($existing), '<?php')) {
             $existing = preg_replace('/^<\?php/', "<?php\n\n" . ltrim($authBlock), $existing);
         } else {
