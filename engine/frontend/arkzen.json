@@ -11,7 +11,7 @@
         "index"
       ],
       "registered": "2026-03-29T05:18:40.255Z",
-      "lastUpdated": "2026-04-20T11:18:09.268Z",
+      "lastUpdated": "2026-04-20T11:26:43.972Z",
       "auth": false
     },
     {
@@ -25,7 +25,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T03:21:43.921Z",
-      "lastUpdated": "2026-04-20T11:18:07.746Z",
+      "lastUpdated": "2026-04-20T11:26:42.540Z",
       "auth": true
     },
     {
@@ -39,7 +39,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.456Z",
-      "lastUpdated": "2026-04-20T11:18:08.073Z",
+      "lastUpdated": "2026-04-20T11:26:42.856Z",
       "auth": true
     },
     {
@@ -51,7 +51,7 @@
         "index"
       ],
       "registered": "2026-04-04T06:17:46.866Z",
-      "lastUpdated": "2026-04-20T11:18:08.545Z",
+      "lastUpdated": "2026-04-20T11:26:43.313Z",
       "auth": false
     },
     {
@@ -63,7 +63,7 @@
         "index"
       ],
       "registered": "2026-04-04T06:17:46.875Z",
-      "lastUpdated": "2026-04-20T11:18:08.991Z",
+      "lastUpdated": "2026-04-20T11:26:43.734Z",
       "auth": false
     },
     {
@@ -75,7 +75,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.972Z",
-      "lastUpdated": "2026-04-20T11:18:09.522Z",
+      "lastUpdated": "2026-04-20T11:26:44.219Z",
       "auth": false
     },
     {
@@ -89,7 +89,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.988Z",
-      "lastUpdated": "2026-04-20T11:18:10.064Z",
+      "lastUpdated": "2026-04-20T11:26:45.077Z",
       "auth": true
     },
     {
@@ -103,7 +103,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:46.998Z",
-      "lastUpdated": "2026-04-20T11:18:11.226Z",
+      "lastUpdated": "2026-04-20T11:26:46.255Z",
       "auth": true
     },
     {
@@ -115,7 +115,7 @@
         "dashboard"
       ],
       "registered": "2026-04-04T06:17:47.014Z",
-      "lastUpdated": "2026-04-20T11:18:11.642Z",
+      "lastUpdated": "2026-04-20T11:26:46.720Z",
       "auth": false
     },
     {
@@ -127,7 +127,7 @@
         "dashboard"
       ],
       "registered": "2026-04-09T08:20:28.450Z",
-      "lastUpdated": "2026-04-20T11:18:11.438Z",
+      "lastUpdated": "2026-04-20T11:26:46.498Z",
       "auth": false
     },
     {
@@ -139,7 +139,7 @@
         "index"
       ],
       "registered": "2026-04-11T13:03:20.834Z",
-      "lastUpdated": "2026-04-20T11:18:08.747Z",
+      "lastUpdated": "2026-04-20T11:26:43.517Z",
       "auth": false
     },
     {
@@ -153,8 +153,20 @@
         "dashboard"
       ],
       "registered": "2026-04-14T09:31:29.424Z",
-      "lastUpdated": "2026-04-20T11:18:09.795Z",
+      "lastUpdated": "2026-04-20T11:26:44.497Z",
       "auth": true
+    },
+    {
+      "name": "middleware-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/middleware-test/core.tsx",
+      "pages": [
+        "index"
+      ],
+      "registered": "2026-04-20T11:26:44.812Z",
+      "lastUpdated": "2026-04-20T11:26:44.812Z",
+      "auth": false
     }
   ]
 }
