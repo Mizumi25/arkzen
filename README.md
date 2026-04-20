@@ -1,4 +1,4 @@
-# ARKZEN Engine v4.0
+# ARKZEN Engine v6.0
 
 Arkzen is a **full-stack scaffolding engine** that turns a single Tatemono blueprint into a complete Laravel + Next.js system.
 
