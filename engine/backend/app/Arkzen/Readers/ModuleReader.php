@@ -263,11 +263,43 @@ class ModuleReader
             }
             if (!is_array($parsed)) continue;
 
-            if (!empty($parsed['channels']) && is_array($parsed['channels'])) {
-                $channels = array_merge($channels, $parsed['channels']);
+            // ── Legacy grouped format: { channels: {...}, events: {...} } ──
+            // Kept for backwards compatibility if any tatemono uses this shape.
+            if (array_key_exists('channels', $parsed) || array_key_exists('events', $parsed)) {
+                if (!empty($parsed['channels']) && is_array($parsed['channels'])) {
+                    $channels = array_merge($channels, $parsed['channels']);
+                }
+                if (!empty($parsed['events']) && is_array($parsed['events'])) {
+                    $events = array_merge($events, $parsed['events']);
+                }
+                continue;
             }
-            if (!empty($parsed['events']) && is_array($parsed['events'])) {
-                $events = array_merge($events, $parsed['events']);
+
+            // ── Flat per-block format (what parser.ts actually emits) ──
+            // Each @arkzen:realtime block becomes one top-level entry:
+            //   some-channel-name:
+            //     type: public|private|presence
+            //     body: ''          ← always present, injected by parser.ts
+            //
+            //   some-event-name:
+            //     channel: some-channel-name   ← presence of "channel" key = it's an event
+            //     type: public|private|presence
+            //     body: ''
+            //
+            // Classifier: if a config has a "channel" key it's an event,
+            // otherwise it's a channel declaration.
+            foreach ($parsed as $name => $config) {
+                if (!is_array($config)) continue;
+                // Strip the injected body key — builders don't need it
+                unset($config['body']);
+
+                if (isset($config['channel'])) {
+                    // Has a parent channel reference → broadcast event
+                    $events[$name] = $config;
+                } else {
+                    // No parent reference → channel declaration
+                    $channels[$name] = $config;
+                }
             }
         }
 

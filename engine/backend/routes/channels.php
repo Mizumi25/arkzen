@@ -8,23 +8,19 @@ use Illuminate\Support\Facades\Broadcast;
 // ============================================================
 
 
-// Module: auth-test
-Broadcast::channel('auth-test.{id}', function ($user, $id = null) {
-    return (int) $user->id === (int) $id;
+// Module: broadcast-test
+Broadcast::channel('broadcast-test-public', function () {
+    return true;
 });
 
-// Module: mail-test
-Broadcast::channel('mail-test.{id}', function ($user, $id = null) {
-    return (int) $user->id === (int) $id;
+// Module: broadcast-test
+Broadcast::channel('broadcast-test-presence', function ($user, $id = null) {
+    if (!$user) return false;
+    return ['id' => $user->id, 'name' => $user->name];
 });
 
 // Module: notification-test
 Broadcast::channel('notification-test.{id}', function ($user, $id = null) {
-    return (int) $user->id === (int) $id;
-});
-
-// Module: roles-test
-Broadcast::channel('roles-test.{id}', function ($user, $id = null) {
     return (int) $user->id === (int) $id;
 });
 

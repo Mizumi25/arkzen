@@ -344,6 +344,15 @@ class AuthBuilder
     // ============================================================
     private static function broadcastingAuthClosure(string $tatSlug): string
     {
+        // Builds the /broadcasting/auth route closure.
+        //
+        // Handles two channel types:
+        //   private-{slug}.{userId}   → HMAC of "socketId:channelName"
+        //   presence-{slug}-*         → HMAC of "socketId:channelName:channelData"
+        //                               response also includes channel_data so Reverb
+        //                               can track the member roster.
+        //
+        // Any other prefix is rejected with 403.
         return "    Route::post('/broadcasting/auth', function (\\Illuminate\\Http\\Request \$request) {\n"
             . "        \$user = \$request->user();\n"
             . "        if (!\$user) {\n"
@@ -357,8 +366,28 @@ class AuthBuilder
             . "            return response()->json(['message' => 'Missing socket_id or channel_name.'], 422);\n"
             . "        }\n"
             . "\n"
-            . "        // Verify the user owns this private channel.\n"
-            . "        // Expected format: private-{$tatSlug}.{userId}\n"
+            . "        \$secret = config('reverb.apps.apps.0.secret', env('REVERB_APP_SECRET'));\n"
+            . "        \$appKey = config('reverb.apps.apps.0.key',    env('REVERB_APP_KEY'));\n"
+            . "\n"
+            . "        // ── Presence channel ──────────────────────────────────────────\n"
+            . "        // Channel name: presence-{$tatSlug}-*\n"
+            . "        // Reverb requires the HMAC to cover socketId:channelName:channelData\n"
+            . "        // and the response must include channel_data for the member roster.\n"
+            . "        if (str_starts_with(\$channelName, 'presence-{$tatSlug}')) {\n"
+            . "            \$channelData = json_encode([\n"
+            . "                'user_id'   => \$user->id,\n"
+            . "                'user_info' => ['name' => \$user->name ?? \$user->email],\n"
+            . "            ]);\n"
+            . "            \$signature = hash_hmac('sha256', \"\$socketId:\$channelName:\$channelData\", \$secret);\n"
+            . "            return response()->json([\n"
+            . "                'auth'         => \"\$appKey:\$signature\",\n"
+            . "                'channel_data' => \$channelData,\n"
+            . "            ]);\n"
+            . "        }\n"
+            . "\n"
+            . "        // ── Private channel ───────────────────────────────────────────\n"
+            . "        // Channel name: private-{$tatSlug}.{userId}\n"
+            . "        // Verify user owns the channel, then sign socketId:channelName.\n"
             . "        \$expectedPrefix = 'private-{$tatSlug}.';\n"
             . "        if (!str_starts_with(\$channelName, \$expectedPrefix)) {\n"
             . "            return response()->json(['message' => 'Invalid channel prefix.'], 403);\n"
@@ -369,15 +398,10 @@ class AuthBuilder
             . "            return response()->json(['message' => 'Forbidden.'], 403);\n"
             . "        }\n"
             . "\n"
-            . "        // Sign the handshake — Reverb/Pusher wire protocol.\n"
-            . "        \$secret    = config('reverb.apps.apps.0.secret', env('REVERB_APP_SECRET'));\n"
-            . "        \$appKey    = config('reverb.apps.apps.0.key',    env('REVERB_APP_KEY'));\n"
             . "        \$signature = hash_hmac('sha256', \"\$socketId:\$channelName\", \$secret);\n"
-            . "\n"
             . "        return response()->json(['auth' => \"\$appKey:\$signature\"]);\n"
             . "    });\n";
     }
-
     private static function buildAuthBlock(string $tatSlug, string $slugNs): string
     {
         $authAlias        = "{$slugNs}Auth";

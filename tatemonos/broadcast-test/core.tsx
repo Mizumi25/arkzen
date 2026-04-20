@@ -103,7 +103,7 @@ type: presence
 
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore, setActiveTatemono, arkzenFetch } from '@/arkzen/core/stores/authStore'
 
@@ -116,6 +116,12 @@ const REVERB_PORT   = process.env.NEXT_PUBLIC_REVERB_PORT    ?? '8080'
 const REVERB_SCHEME = process.env.NEXT_PUBLIC_REVERB_SCHEME  ?? 'ws'
 const APP_KEY       = process.env.NEXT_PUBLIC_REVERB_APP_KEY ?? 'arkzen-key'
 
+// ── ChannelPanel — top-level memo so it never remounts on parent re-render.
+// Defined outside DashboardPage to preserve input focus on mobile (Android keyboard
+// dismisses when a component is unmounted/remounted, which happens if Panel is an
+// inline const inside a parent that re-renders on every keystroke).
+type WsStatus = 'connecting' | 'connected' | 'error'
+
 interface Message {
   id:           number
   content:      string
@@ -123,10 +129,81 @@ interface Message {
   created_at:   string
 }
 
-type WsStatus = 'connecting' | 'connected' | 'error'
+const dot = (s: WsStatus) => ({
+  connecting: 'bg-yellow-400',
+  connected:  'bg-green-400',
+  error:      'bg-red-400',
+}[s])
+
+const ChannelPanel = memo(({
+  title, badge, badgeColor, description, status, count, msgs, onSend, footer,
+}: {
+  title: string; badge: string; badgeColor: string; description: string
+  status: WsStatus; count: number; msgs: Message[]
+  onSend: (value: string) => void
+  footer?: React.ReactNode
+}) => {
+  // Uncontrolled input with ref — keystrokes never bubble up to parent state,
+  // so the parent doesn't re-render and the mobile keyboard stays open.
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleSend = () => {
+    const val = inputRef.current?.value?.trim()
+    if (!val) return
+    onSend(val)
+    if (inputRef.current) inputRef.current.value = ''
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-100 overflow-hidden">
+      <div className="px-5 py-4 border-b border-neutral-100">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full text-white ${badgeColor}`}>{badge}</span>
+            <h2 className="font-semibold text-sm">{title}</h2>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-neutral-400">
+            <div className={`w-1.5 h-1.5 rounded-full ${dot(status)}`} />
+            <span>{status}</span>
+            <span className="text-neutral-300">·</span>
+            <span>{count} received</span>
+          </div>
+        </div>
+        <p className="text-xs text-neutral-400 mt-1">{description}</p>
+      </div>
+
+      <div className="px-5 py-3 border-b border-neutral-50 flex gap-2">
+        <input
+          ref={inputRef}
+          className="arkzen-input flex-1 text-sm"
+          onKeyDown={e => e.key === 'Enter' && handleSend()}
+          placeholder="Type and press Enter..."
+        />
+        <button className="arkzen-btn text-sm" onClick={handleSend}>Send</button>
+      </div>
+
+      {footer && <div className="px-5 py-2 border-b border-neutral-50">{footer}</div>}
+
+      <div className="max-h-48 overflow-y-auto">
+        {msgs.length === 0 ? (
+          <div className="p-6 text-center text-xs text-neutral-300">No messages yet</div>
+        ) : (
+          <div className="divide-y divide-neutral-50">
+            {msgs.map((m, i) => (
+              <div key={i} className="px-5 py-2.5 flex items-start gap-2">
+                <p className="text-sm text-neutral-700 flex-1">{m.content}</p>
+                <span className="text-xs text-neutral-300 shrink-0">{m.created_at?.slice(11, 19)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+})
+ChannelPanel.displayName = 'ChannelPanel'
 
 /* @arkzen:components:shared:end */
-
 /* @arkzen:page:login */
 /* @arkzen:page:layout:guest */
 const LoginPage = () => {
@@ -230,9 +307,8 @@ const DashboardPage = () => {
   const [privateStatus,  setPrivateStatus]  = useState<WsStatus>('connecting')
   const [presenceStatus, setPresenceStatus] = useState<WsStatus>('connecting')
 
-  const [publicInput,   setPublicInput]   = useState('')
-  const [privateInput,  setPrivateInput]  = useState('')
-  const [presenceInput, setPresenceInput] = useState('')
+  // Input state removed — ChannelPanel uses uncontrolled refs to prevent
+  // keyboard dismiss on Android when parent re-renders on keystroke.
 
   const [publicCount,   setPublicCount]   = useState(0)
   const [privateCount,  setPrivateCount]  = useState(0)
@@ -306,24 +382,26 @@ const DashboardPage = () => {
           }
         } catch { setPrivateStatus('error') }
 
-        // 3. presence — also needs HMAC auth (same endpoint, different channel name)
+        // 3. presence — needs HMAC auth (same endpoint, different channel name)
+        // The backend signs socketId:channelName:channelData and returns both
+        // auth + channel_data. We must use the server's channel_data in the
+        // subscribe message so Reverb can verify the signature matches.
         try {
           const presenceAuth = await arkzenFetch('/api/broadcast-test/auth/broadcasting/auth', {
             method: 'POST',
             body:   JSON.stringify({
               socket_id:    socketId,
               channel_name: 'presence-broadcast-test-presence',
-              user_info:    JSON.stringify({ name: user?.name ?? 'Anonymous' }),
             }),
           })
           if (presenceAuth.ok) {
-            const { auth } = await presenceAuth.json()
+            const { auth, channel_data } = await presenceAuth.json()
             ws.send(JSON.stringify({
               event: 'pusher:subscribe',
               data:  {
-                channel:   'presence-broadcast-test-presence',
+                channel:      'presence-broadcast-test-presence',
                 auth,
-                channel_data: JSON.stringify({ user_id: userId, user_info: { name: user?.name ?? 'Anonymous' } }),
+                channel_data, // use server-issued channel_data — must match what was signed
               },
             }))
             setPresenceStatus('connected')
@@ -332,6 +410,9 @@ const DashboardPage = () => {
           }
         } catch { setPresenceStatus('error') }
       }
+
+      // ── debug — log every message ─────────────────────────
+      console.log('[Reverb RX]', msg.event, msg.channel, msg.data)
 
       // ── public message ──────────────────────────────────────
       if (msg.event === 'broadcast-test.message-sent-public' || msg.channel === 'broadcast-test-public') {
@@ -407,68 +488,10 @@ const DashboardPage = () => {
     router.replace('/broadcast-test/login')
   }
 
-  // ── status dot ────────────────────────────────────────────
-  const dot = (s: WsStatus) => ({
-    connecting: 'bg-yellow-400',
-    connected:  'bg-green-400',
-    error:      'bg-red-400',
-  }[s])
-
-  // ── channel panel component ───────────────────────────────
-  const Panel = ({
-    title, badge, badgeColor, description, status, count, msgs, input, setInput, onSend, footer,
-  }: {
-    title: string; badge: string; badgeColor: string; description: string
-    status: WsStatus; count: number; msgs: Message[]
-    input: string; setInput: (v: string) => void; onSend: () => void
-    footer?: React.ReactNode
-  }) => (
-    <div className="bg-white rounded-2xl border border-neutral-100 overflow-hidden">
-      <div className="px-5 py-4 border-b border-neutral-100">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full text-white ${badgeColor}`}>{badge}</span>
-            <h2 className="font-semibold text-sm">{title}</h2>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-neutral-400">
-            <div className={`w-1.5 h-1.5 rounded-full ${dot(status)}`} />
-            <span>{status}</span>
-            <span className="text-neutral-300">·</span>
-            <span>{count} received</span>
-          </div>
-        </div>
-        <p className="text-xs text-neutral-400 mt-1">{description}</p>
-      </div>
-
-      <div className="px-5 py-3 border-b border-neutral-50 flex gap-2">
-        <input
-          className="arkzen-input flex-1 text-sm"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && onSend()}
-          placeholder="Type and press Enter..."
-        />
-        <button className="arkzen-btn text-sm" onClick={onSend}>Send</button>
-      </div>
-
-      {footer && <div className="px-5 py-2 border-b border-neutral-50">{footer}</div>}
-
-      <div className="max-h-48 overflow-y-auto">
-        {msgs.length === 0 ? (
-          <div className="p-6 text-center text-xs text-neutral-300">No messages yet</div>
-        ) : (
-          <div className="divide-y divide-neutral-50">
-            {msgs.map((m, i) => (
-              <div key={i} className="px-5 py-2.5 flex items-start gap-2">
-                <p className="text-sm text-neutral-700 flex-1">{m.content}</p>
-                <span className="text-xs text-neutral-300 shrink-0">{m.created_at?.slice(11, 19)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
+  // ── useCallback send handlers — stable references, won't cause ChannelPanel to re-render
+  const sendPublic   = useCallback((val: string) => send('public',   val, () => {}), [user?.id])
+  const sendPrivate  = useCallback((val: string) => send('private',  val, () => {}), [user?.id])
+  const sendPresence = useCallback((val: string) => send('presence', val, () => {}), [user?.id])
 
   return (
     <div className="min-h-screen p-8">
@@ -487,7 +510,7 @@ const DashboardPage = () => {
         </div>
 
         {/* ── Public channel ───────────────────────────────── */}
-        <Panel
+        <ChannelPanel
           title="Public channel"
           badge="public"
           badgeColor="bg-blue-500"
@@ -495,13 +518,11 @@ const DashboardPage = () => {
           status={publicStatus}
           count={publicCount}
           msgs={publicMsgs}
-          input={publicInput}
-          setInput={setPublicInput}
-          onSend={() => send('public', publicInput, () => setPublicInput(''))}
+          onSend={sendPublic}
         />
 
         {/* ── Private channel ──────────────────────────────── */}
-        <Panel
+        <ChannelPanel
           title="Private channel"
           badge="private"
           badgeColor="bg-purple-500"
@@ -509,13 +530,11 @@ const DashboardPage = () => {
           status={privateStatus}
           count={privateCount}
           msgs={privateMsgs}
-          input={privateInput}
-          setInput={setPrivateInput}
-          onSend={() => send('private', privateInput, () => setPrivateInput(''))}
+          onSend={sendPrivate}
         />
 
         {/* ── Presence channel ─────────────────────────────── */}
-        <Panel
+        <ChannelPanel
           title="Presence channel"
           badge="presence"
           badgeColor="bg-green-500"
@@ -523,9 +542,7 @@ const DashboardPage = () => {
           status={presenceStatus}
           count={presenceCount}
           msgs={presenceMsgs}
-          input={presenceInput}
-          setInput={setPresenceInput}
-          onSend={() => send('presence', presenceInput, () => setPresenceInput(''))}
+          onSend={sendPresence}
           footer={
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-neutral-400">Online:</span>

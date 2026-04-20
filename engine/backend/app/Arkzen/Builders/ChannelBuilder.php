@@ -118,7 +118,7 @@ use Illuminate\Support\Facades\Broadcast;
             'presence' => "
 // Module: {$moduleName}
 Broadcast::channel('{$channelName}', function (\$user, \$id = null) {
-    {$authLogic}
+    if (!\$user) return false;
     return ['id' => \$user->id, 'name' => \$user->name];
 });
 ",

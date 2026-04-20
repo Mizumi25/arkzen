@@ -1,11 +1,11 @@
 <?php
 
 // ============================================================
-// ARKZEN GENERATED BROADCAST EVENT — MessageSent
+// ARKZEN GENERATED BROADCAST EVENT — MessageSentPublic
 // Tatemono: broadcast-test
 // Channel: broadcast-test-public (public)
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-09T15:14:20.517415Z
+// Generated: 2026-04-20T04:17:29.681356Z
 // ============================================================
 
 namespace App\Events\Arkzen\BroadcastTest\Broadcast;
@@ -16,7 +16,7 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Broadcasting\Channel;
 
-class MessageSent implements ShouldBroadcast
+class MessageSentPublic implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
@@ -31,8 +31,7 @@ class MessageSent implements ShouldBroadcast
 
     public function broadcastAs(): string
     {
-        // Scoped event name: tatemono.event-name
-        return 'broadcast-test.message-sent';
+        return 'broadcast-test.message-sent-public';
     }
 
     public function broadcastWith(): array
