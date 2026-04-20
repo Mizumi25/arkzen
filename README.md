@@ -1,387 +1,266 @@
-Here's your UPDATED README for Arkzen v4.0:
+# ARKZEN Engine v4.0
 
-```markdown
-# ARKZEN ENGINE v4.0
+Arkzen is a **full-stack scaffolding engine** that turns a single Tatemono blueprint into a complete Laravel + Next.js system.
 
-## Full Stack Business System Generator
-
-**One Tatemono file = One complete client system.**
+> **Core value proposition:** **One Tatemono file = one complete production-ready system.**
 
 ---
 
-## WHAT IS ARKZEN
+## 1) Modern Introduction
 
-Arkzen is a full stack scaffolding engine that generates complete Laravel + Next.js applications from a single file format called a **Tatemono**.
+ARKZEN Engine v4.0 watches Tatemono files and generates:
 
-Drop a `.tsx` file into the watcher, and Arkzen automatically builds:
+- Laravel backend code (migrations, models, controllers, requests, resources, policies, jobs, events, listeners, notifications, mailables, console commands, routes)
+- Next.js frontend code (pages, components, stores, realtime hooks, animations)
+- Registry and exportable project structure for standalone delivery
 
-- ✅ Database migrations (multiple tables with relationships)
-- ✅ Eloquent models with fillable, casts, relations
-- ✅ API controllers with validation, search, filter, pagination
-- ✅ API routes with middleware
-- ✅ Form Requests, Policies, Resources
-- ✅ Seeders + Factories
-- ✅ Next.js pages with Tailwind CSS
-- ✅ GSAP animations
-- ✅ Authentication (Laravel Sanctum)
-- ✅ Real-time WebSockets (Laravel Reverb + CRDTs)
-- ✅ Background Jobs, Events, Listeners
-- ✅ Email Notifications + Mailables
-- ✅ Artisan commands
-
-**One file. Full stack. Production ready.**
+A Tatemono is the source of truth. Arkzen distributes instructions to frontend + backend builders and keeps the generated system isolated per module.
 
 ---
 
-## THE TATEMONO FORMAT
+## 2) Stack Information
 
-A Tatemono is a single `.tsx` file with marked sections:
+### Frontend
 
-```tsx
-/* @arkzen:meta
-name: inventory-management
-version: 1.0.0
-description: Full inventory management
-layout: base
-auth: false
-*/
+- **Next.js 16**
+- **TypeScript**
+- **Tailwind CSS**
+- **Zustand**
 
-/* @arkzen:database
-table: inventories
-timestamps: true
-columns:
-  id: integer|primary|auto
-  name: string|length:255|nullable:false
-  sku: string|length:100|unique|nullable:false
-  quantity: integer|default:0
-  price: decimal|precision:10|scale:2
-  category: string|length:100|nullable
-  description: text|nullable
-*/
+### Backend
 
-/* @arkzen:api
-model: Inventory
-controller: InventoryController
-prefix: /api/inventories
-endpoints:
-  index: GET|/|paginated
-  show: GET|/{id}|single
-  store: POST|/|Create item
-  update: PUT|/{id}|Update item
-  destroy: DELETE|/{id}|Delete item
-*/
-
-/* @arkzen:components */
-'use client'
-import { useState } from 'react'
-import { Modal, Dialog, Badge, useToast } from '@/arkzen/core/components'
-// Your React components here
-
-/* @arkzen:page */
-const InventoryManagementPage = () => {
-  // Your page logic here
-}
-
-/* @arkzen:animation */
-import { gsap } from 'gsap'
-// Your GSAP animations here
-```
-
-One Tatemono = multiple tables, multiple API resources, full frontend, animations, real-time, jobs, notifications — everything.
+- **Laravel 13**
+- **SQLite per tatemono (isolated data boundary)**
+- **Laravel Sanctum** for auth
+- Laravel Reverb for realtime channels
 
 ---
 
-PROJECT STRUCTURE
+## 3) Architecture Diagram
 
-```
-arkzen/
+```text
+/home/runner/work/arkzen/arkzen
 ├── engine/
-│   ├── frontend/              → Next.js + Watcher
-│   │   ├── app/               → Generated pages
-│   │   ├── arkzen/
-│   │   │   ├── core/
-│   │   │   │   ├── layouts/   → BaseLayout, AuthLayout, BlankLayout
-│   │   │   │   ├── components/→ Modal, Dialog, Table, Toast, etc.
-│   │   │   │   ├── hooks/     → useQuery, useMutation, useWebSocket, useCRDT
-│   │   │   │   └── stores/    → useAuthStore (Zustand)
-│   │   │   └── generated/     → Animation files
-│   │   └── tatemono/          → Watcher folder (drop tatemonos here)
-│   └── backend/               → Laravel + Builders
-│       ├── app/Arkzen/
-│       │   ├── Builders/      → 20+ code generators
-│       │   └── Readers/       → ModuleReader
-│       └── routes/modules/    → Generated API routes
-├── tatemonos/                 → Source tatemonos (your blueprints)
-├── projects/                  → Exported client projects (standalone)
-├── setup.js                   → One-time engine setup
-├── start.js                   → Start development server
-├── new.js                     → Create new client project
-├── export.js                  → Export tatemono as standalone project
-└── arkzen.json                → Registry of active tatemonos
+│   ├── frontend/                    # Next.js app + parser/watcher/builder bridge
+│   │   ├── app/                     # Generated routes/pages
+│   │   ├── arkzen/core/             # Core components/hooks/layouts/store
+│   │   ├── tatemono/                # Watch folder for active build input
+│   │   └── validate.js
+│   └── backend/                     # Laravel app + Arkzen builders
+│       ├── app/Arkzen/Builders/     # Backend code generation pipeline
+│       ├── app/Arkzen/Readers/
+│       ├── routes/modules/          # Generated API route files
+│       ├── database/migrations/arkzen/
+│       └── database/seeders/arkzen/
+├── tatemonos/                       # Canonical blueprint source: <name>/core.tsx
+├── projects/                        # Exported standalone projects
+├── setup.js                         # Engine bootstrap
+├── start.js                         # Run backend + queue + reverb + frontend
+└── export.js                        # Export one tatemono as project
 ```
 
 ---
 
-QUICK START
+## 4) Backend Builder Pipeline (20+)
 
-1. Install Dependencies
+Located in `engine/backend/app/Arkzen/Builders`:
+
+1. `AuthBuilder` — per-tatemono auth stack (Sanctum, auth routes, auth flow)
+2. `MigrationBuilder` — migration generation
+3. `ControllerBuilder` — API controllers
+4. `JobBuilder` — queued job classes from `@arkzen:jobs:*`
+5. `ConsoleBuilder` — Artisan commands + schedule metadata
+6. `MailBuilder` — mailable classes/views
+7. `EventBuilder` — event classes
+8. `NotificationBuilder` — notification classes/channels
+9. `BroadcastBuilder` — broadcast event generation
+10. `ChannelBuilder` — channel authorization files
+11. `RouteRegistrar` — module route registration wiring
+12. `SeederBuilder` — seeders from Tatemono data
+13. `ModelBuilder` — Eloquent models/relations/casts
+14. `ResourceBuilder` — API resources (transformers)
+15. `PolicyBuilder` — authorization policies
+16. `FactoryBuilder` — model factories
+17. `RequestBuilder` — Form Request validation classes
+18. `ListenerBuilder` — event listener classes
+19. `CustomRouteBuilder` — custom `@arkzen:routes` endpoints
+20. `MiddlewareBuilder` — middleware artifacts/registrations
+21. `ArkzenYaml` — YAML parse/normalization helper for builder inputs
+
+Readers used by the pipeline:
+
+- `ModuleReader`
+- `RegistryReader`
+
+---
+
+## 5) v6 Tatemono Syntax (Section Order)
+
+Follow this exact order (from `ARKZEN_GUIDELINES_v6.md`):
+
+1. `@arkzen:meta` — identity (`name`, `version`, `description`, `auth`)
+2. `@arkzen:config` *(optional)* — component/layout tuning
+3. `@arkzen:database:identifier` *(repeat)* — table schema definitions
+4. `@arkzen:api:identifier` *(repeat)* — REST resource endpoints
+5. `@arkzen:routes` *(optional)* — custom backend routes
+6. `@arkzen:store:identifier` *(repeat)* — Zustand stores
+7. `@arkzen:realtime:identifier` *(repeat)* — WebSocket/Reverb channels/events
+8. `@arkzen:events:identifier` *(repeat)* — events and listeners
+9. `@arkzen:jobs:identifier` *(repeat)* — queue jobs (with PHP `handle()` body)
+10. `@arkzen:notifications:identifier` *(repeat)* — mail/database/broadcast notifications
+11. `@arkzen:mail:identifier` *(repeat)* — mailables/templates
+12. `@arkzen:console:identifier` *(repeat)* — Artisan commands + cron schedule
+13. `@arkzen:layout:name` *(repeat)* — custom layout blocks
+14. `@arkzen:components:identifier` *(repeat)* — imports + reusable components
+15. `@arkzen:page:name` *(repeat)* — page definitions and layout binding
+16. `@arkzen:error:404` *(optional)* — custom 404 behavior
+17. `@arkzen:error:500` *(optional)* — custom 500 behavior
+18. `@arkzen:animation` *(optional)* — GSAP animation block
+
+---
+
+## 6) Design Standards
+
+ARKZEN v6 design policy:
+
+- **Apple-minimalist aesthetic** (clean spacing, restrained visual noise)
+- **Tailwind CSS** as the required styling system
+- **Lucide React** icons for UI iconography
+
+---
+
+## 7) 12 Active Tatemono Blueprints
+
+From `/home/runner/work/arkzen/arkzen/tatemonos`:
+
+1. `inventory-management` (**v2.0.0**) — CRUD with seeding
+2. `auth-test` (**v1.0.0**) — Sanctum authentication
+3. `broadcast-test` (**v2.0.0**) — realtime WebSocket
+4. `crud-test` (**v1.0.0**) — basic CRUD operations
+5. `events-test` (**v1.0.0**) — event handling
+6. `job-test` (**v1.0.0**) — queue jobs (`process-data`, `heavy-computation`, `always-fails`)
+7. `notification-test` (**v2.1.0**) — email/database notifications
+8. `roles-test` (**v2.0.0**) — role-based access control
+9. `upload-test` (**v1.0.0**) — file uploads
+10. `scheduler-test` (**v2.0.0**) — task scheduling with cron
+11. `errors-test` (**v1.0.0**) — error simulation and handling
+12. `mail-test` (**v2.0.0**) — email templates and mailables
+
+---
+
+## 8) Quick Start
 
 ```bash
-# Prerequisites
-node, npm, php, composer
-
-# Clone and setup
-git clone arkzen
-cd arkzen
+cd /home/runner/work/arkzen/arkzen
 node setup.js
-```
-
-2. Start the Engine
-
-```bash
 node start.js
 ```
 
-3. Generate a Tatemono
-
-Open Claude with the Arkzen Guidelines and paste your client requirements.
-
-Claude generates a complete Tatemono .tsx file.
-
-4. Drop & Build
+Optional validation (frontend parser validator):
 
 ```bash
-# Copy to watcher folder
-cp tatemono-name.tsx engine/frontend/tatemono/
-
-# Engine automatically:
-# - Parses the file
-# - Generates Laravel backend (migrations, models, controllers, routes)
-# - Generates Next.js frontend (page, components, animations)
-# - Runs migrations + seeders
-# - Hot reloads the browser
-```
-
-5. View Your System
-
-```
-Frontend: http://localhost:3000/tatemono-name
-Backend:  http://localhost:8000/api/...
+cd /home/runner/work/arkzen/arkzen/engine/frontend
+node validate.js <tatemono-name>
 ```
 
 ---
 
-COMMANDS
+## 9) Workflow (Create → Build → Export)
 
-Command Purpose
-node setup.js One-time engine installation
-node start.js Start development server (watcher + backend)
-node new.js project-name Create new empty client project
-node export.js tatemono-name Export tatemono as standalone project
-
----
-
-EXPORT TO CLIENT
-
-When a client needs their system:
+1. Create blueprint at `tatemonos/<name>/core.tsx`
+2. Ensure it follows v6 marker order and syntax
+3. Place/copy active build input into `engine/frontend/tatemono/`
+4. Run engine (`node start.js`) for generation and hot rebuild
+5. Export standalone project:
 
 ```bash
-node export.js client-system
-cd projects/client-system
-node start.js
+cd /home/runner/work/arkzen/arkzen
+node export.js <tatemono-name>
 ```
 
-Client receives:
-
-· ✅ Complete Laravel + Next.js codebase
-· ✅ No vendor lock-in
-· ✅ Can host anywhere
-· ✅ Full ownership
+6. Open exported project in `projects/<tatemono-name>/`
 
 ---
 
-TATEMONO SECTIONS (v4.0)
+## 10) Available Imports
 
-Section Purpose Repeat
-@arkzen:meta Identity, layout, auth Once
-@arkzen:config Component overrides Once (optional)
-@arkzen:database Database table definition Per table
-@arkzen:api API resource definition Per resource
-@arkzen:store Zustand global state Once (optional)
-@arkzen:realtime Reverb channels + CRDT Once (optional)
-@arkzen:events Laravel events Once (optional)
-@arkzen:jobs Background jobs Once (optional)
-@arkzen:notifications Email/database notifications Once (optional)
-@arkzen:mail Mailables Once (optional)
-@arkzen:console Artisan commands Once (optional)
-@arkzen:components React imports + components Once
-@arkzen:page Next.js page component Once
-@arkzen:animation GSAP animations Once (optional)
-
----
-
-AVAILABLE FRONTEND IMPORTS
-
-Components
+### Components (`@/arkzen/core/components`)
 
 ```tsx
-import { Modal, Drawer, Dialog, Table, Toast, Pagination, Breadcrumb } from '@/arkzen/core/components'
-import { Badge, Avatar, Tooltip, Field, Form } from '@/arkzen/core/components/utils'
-import { Chart, SortableList, FileUpload, RichTextEditor, Map } from '@/arkzen/core/components'
+import {
+  Modal, Drawer, Toast, useToast, Dialog, Tooltip, Breadcrumb,
+  Table, Form, Field, Pagination, Loading, PageTransition,
+  Badge, Avatar, EmptyState
+} from '@/arkzen/core/components'
 ```
 
-Hooks
+### Hooks (`@/arkzen/core/hooks/*`)
 
 ```tsx
-import { useQuery } from '@/arkzen/core/hooks/useQuery'           // GET + cache
-import { useMutation } from '@/arkzen/core/hooks/useMutation'     // POST/PUT/DELETE
-import { useWebSocket } from '@/arkzen/core/hooks/useWebSocket'   // Reverb
-import { useCRDT } from '@/arkzen/core/hooks/useCRDT'             // Conflict-free sync
-import { useToast } from '@/arkzen/core/components/Toast'
+import { useQuery } from '@/arkzen/core/hooks/useQuery'
+import { useMutation } from '@/arkzen/core/hooks/useMutation'
+import { useWebSocket } from '@/arkzen/core/hooks/useWebSocket'
+import { useCRDT } from '@/arkzen/core/hooks/useCRDT'
 ```
 
-Auth
+### Auth Store
 
 ```tsx
 import { useAuthStore, arkzenFetch } from '@/arkzen/core/stores/authStore'
 ```
 
----
-
-LAYOUTS (3-Tier Customization)
-
-Tier 1: Default
+### Icons
 
 ```tsx
-<BaseLayout>Your content</BaseLayout>
+import { Bell, Shield, Boxes, Mail } from 'lucide-react'
 ```
-
-Tier 2: Configured
-
-```tsx
-<BaseLayout 
-  brandName="ClientCo"
-  navItems={[{ label: 'Dashboard', href: '/', icon: <LayoutDashboard /> }]}
-  userName="Juan"
-/>
-```
-
-Tier 3: Full Custom (Slot Overrides)
-
-```tsx
-<BaseLayout 
-  sidebar={<MyCustomSidebar />}
-  topbar={<MyCustomTopbar />}
->
-  {children}
-</BaseLayout>
-```
-
-Available layouts: BaseLayout, AuthLayout, BlankLayout
 
 ---
 
-BUILT-IN FEATURES
+## 11) Environment Variables
 
-Feature Status Description
-Authentication ✅ Laravel Sanctum + Zustand store
-Real-time ✅ Laravel Reverb + WebSocket hook
-Conflict-free sync ✅ CRDT with LWW
-Background jobs ✅ Laravel queues
-Events + Listeners ✅ Event-driven architecture
-Notifications ✅ Database + Mail
-Email ✅ Mailables + Blade views
-API Resources ✅ Transform responses
-Policies ✅ Authorization
-Form Requests ✅ Validation
-Seeders + Factories ✅ Test data
-Dark mode ✅ Tailwind dark:
-GSAP Animations ✅ ScrollTrigger + page transitions
-
----
-
-ENVIRONMENT VARIABLES
-
-Create .env.local in engine/frontend/:
+### Frontend (`engine/frontend/.env.local`)
 
 ```env
 ARKZEN_BACKEND_URL=http://localhost:8000
 ARKZEN_ENGINE_SECRET=arkzen-secret-123
-FRONTEND_PORT=3000
 NEXT_PUBLIC_REVERB_HOST=localhost
 NEXT_PUBLIC_REVERB_PORT=8080
+NEXT_PUBLIC_REVERB_SCHEME=ws
+NEXT_PUBLIC_REVERB_APP_KEY=arkzen-key
+```
+
+### Backend (`engine/backend/.env`)
+
+```env
+APP_URL=http://localhost:8000
+DB_CONNECTION=sqlite
+DB_DATABASE=/absolute/path/to/engine/backend/database/database.sqlite
+ARKZEN_ENGINE_SECRET=arkzen-secret-123
+
+REVERB_APP_ID=arkzen
+REVERB_APP_KEY=arkzen-key
+REVERB_APP_SECRET=arkzen-secret
+REVERB_HOST=localhost
+REVERB_PORT=8080
+REVERB_SCHEME=http
 ```
 
 ---
 
-REGISTRY
+## 12) Engine Commands
 
-arkzen.json at project root tracks all active tatemonos:
-
-```json
-{
-  "engine": "4.0.0",
-  "project": "arkzen-engine",
-  "modules": [
-    {
-      "name": "inventory-management",
-      "version": "1.0.0",
-      "status": "active",
-      "registered": "2026-04-02T06:37:24.977Z"
-    }
-  ]
-}
-```
-
-Never edit manually — the engine manages it automatically.
-
----
-
-COMPLETE WORKFLOW
-
-```
-1. Client: "I need a project management system"
-   ↓
-2. Claude + Guidelines generates Tatemono (5 minutes)
-   ↓
-3. Drop into engine/frontend/tatemono/
-   ↓
-4. Arkzen builds:
-   - Laravel: migrations, models, controllers, routes, seeders
-   - Next.js: page, components, animations
-   ↓
-5. System live at localhost:3000/project-management
-   ↓
-6. Export to client: node export.js project-management
-   ↓
-7. Client runs: cd projects/project-management && node start.js
-   ↓
-8. Client owns the code. You get paid.
+```bash
+node setup.js                 # one-time setup
+node start.js                 # start frontend + backend + queue + reverb
+node new.js <project-name>    # scaffold a fresh project
+node export.js <tatemono>     # export one tatemono as standalone project
 ```
 
 ---
 
-VERSION HISTORY
+## 13) Notes
 
-Version Features
-v1.0 Single-table CRUD generator
-v2.0 Multi-table support + API resources
-v3.0 Builders for policies, requests, factories
-v4.0 Real-time (Reverb + CRDT), jobs, events, notifications, mail, console commands, 3-tier layouts
-
----
-
-LICENSE
-
-Proprietary — Arkzen Engine is a private tool. Not for redistribution.
-
----
-
-BUILT WITH
-
-· Frontend: Next.js 16, TypeScript, Tailwind CSS, Zustand, GSAP, Framer Motion
-· Backend: Laravel 13, SQLite, Sanctum, Reverb
-· Builders: 20+ Laravel code generators
-· Watcher: Chokidar
-
-```
+- `arkzen.json` is engine-managed registry metadata.
+- Keep Tatemono names lowercase-hyphen format.
+- Prefer one isolated domain system per Tatemono.
