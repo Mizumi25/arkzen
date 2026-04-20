@@ -1,16 +1,29 @@
 #!/usr/bin/env node
 
 // ============================================================
-// ARKZEN ENGINE — EXPORT SCRIPT v5
-// Exports a single tatemono as a standalone project
-// Supports v5 multi-page, multi-component, multi-api format
-// Usage: node export.js <tatemono-name>
-// Example: node export.js notes
-//          node export.js portfolio
-//          node export.js inventory-management
+// ARKZEN ENGINE — EXPORT SCRIPT v6
+//
+// Architecture: Build-first, copy-everything
+//
+//   1. Trigger the engine builder for the tatemono (same as
+//      the watcher does on file change) so all output is fresh
+//   2. Copy generated frontend files from engine/frontend/app/{name}/
+//   3. Copy generated backend files from every Arkzen subfolder
+//      scoped to this tatemono — automatically picks up ANY new
+//      builder output without ever touching this file again
+//   4. Copy the full base infrastructure (config, vendor, etc.)
+//   5. Write three tiny glue files:
+//        middleware.ts       — standalone, no engine import
+//        auth-tatemonos.ts   — single tatemono scope
+//        start.js            — spawns backend + frontend (+ queue/reverb if needed)
+//   6. Rewrite namespaces, strip engine internals, wire env + routes
+//   7. Run migrations + seed
+//
+// Usage:  node export.js <tatemono-name>
+// Output: projects/<tatemono-name>/
 // ============================================================
 
-const { execSync } = require('child_process')
+const { execSync, spawnSync } = require('child_process')
 const fs   = require('fs')
 const path = require('path')
 
@@ -21,10 +34,13 @@ const BACKEND_DIR   = path.join(ENGINE_DIR, 'backend')
 const TATEMONOS_DIR = path.join(ROOT_DIR, 'tatemonos')
 const PROJECTS_DIR  = path.join(ROOT_DIR, 'projects')
 
+// ─────────────────────────────────────────────
+// LOGGING
+// ─────────────────────────────────────────────
+
 function log(msg)     { console.log(`\n  ✦ ${msg}`) }
 function success(msg) { console.log(`  ✓ ${msg}`) }
 function warn(msg)    { console.log(`  ⚠ ${msg}`) }
-function fail(msg)    { console.log(`  ✗ ${msg}`) }
 function divider()    { console.log('\n' + '─'.repeat(50)) }
 
 // ─────────────────────────────────────────────
@@ -34,13 +50,12 @@ function divider()    { console.log('\n' + '─'.repeat(50)) }
 const tatName = process.argv[2]
 if (!tatName) {
   console.log('\n  Usage: node export.js <tatemono-name>')
-  console.log('  Example: node export.js notes')
-  console.log('  Example: node export.js portfolio')
-  console.log('\n  Available tatemonos:')
+  console.log('  Example: node export.js inventory-management\n')
+  console.log('  Available tatemonos:')
   if (fs.existsSync(TATEMONOS_DIR)) {
     fs.readdirSync(TATEMONOS_DIR).forEach(f => {
-      const corePath = path.join(TATEMONOS_DIR, f, 'core.tsx')
-      if (fs.existsSync(corePath)) console.log(`    - ${f}`)
+      if (fs.existsSync(path.join(TATEMONOS_DIR, f, 'core.tsx')))
+        console.log(`    - ${f}`)
     })
   }
   console.log('')
@@ -57,364 +72,58 @@ const PROJECT_DIR = path.join(PROJECTS_DIR, tatName)
 const PROJ_FRONT  = path.join(PROJECT_DIR, 'frontend')
 const PROJ_BACK   = path.join(PROJECT_DIR, 'backend')
 
-divider()
-console.log(`\n  ARKZEN — Exporting tatemono: ${tatName}\n`)
-divider()
-
 // ─────────────────────────────────────────────
-// PARSER HELPERS
+// QUICK META READER
+// Only reads auth + name from YAML comment.
+// Everything else comes from what the engine generated.
 // ─────────────────────────────────────────────
 
-// Detects whether the tatemono uses v5 format (identifiers on sections)
-// v5: /* @arkzen:components:shared */ or /* @arkzen:page:index */
-// v4: /* @arkzen:components ... */ (no identifier, inline content comment)
-function detectVersion(content) {
-  // v5 uses end markers like /* @arkzen:components:shared:end */
-  if (/\/\* @arkzen:\w+:\w+:end \*\//.test(content)) return 5
-  // v5 also uses /* @arkzen:page:name */ on its own line
-  if (/\/\* @arkzen:page:\w[\w-]* \*\//.test(content)) return 5
-  return 4
-}
-
-// ── v4 extractor (original logic, untouched) ──────────────────────────────
-function extractSectionV4(content, marker) {
-  const start = content.indexOf(`/* @arkzen:${marker}`)
-  if (start === -1) return null
-  const openEnd = content.indexOf('*/', start)
-  if (openEnd === -1) return null
-  const endMarker = `/* @arkzen:${marker}:end */`
-  const end = content.indexOf(endMarker)
-  if (end === -1) return content.slice(start + `/* @arkzen:${marker}`.length, openEnd).trim()
-  return content.slice(openEnd + 2, end).trim()
-}
-
-// ── v5 extractor ─────────────────────────────────────────────────────────
-// Handles two block styles used in v5:
-//
-//   COMMENT BLOCK (meta, config, database:*, api:*):
-//     /* @arkzen:api:inventories
-//     model: Inventory
-//     ...
-//     */
-//
-//   CODE BLOCK (components:*, page:*, animation):
-//     /* @arkzen:components:shared */
-//     <tsx code>
-//     /* @arkzen:components:shared:end */
-//
-// Returns all blocks for a given base marker as [{ id, content }]
-function extractAllV5(content, marker) {
-  const results = []
-
-  // Regex matches BOTH styles:
-  //   comment-block open: /* @arkzen:marker:id\n   (no closing */ on same token)
-  //   code-block open:    /* @arkzen:marker:id */  (self-closing on same line)
-  const openRe = new RegExp(`\\/\\* @arkzen:${marker}:(([\\w][\\w-]*))([^*]|\\*(?!\\/))*\\*\\/`, 'g')
-
-  // Simpler approach: scan manually to handle both styles reliably
-  let pos = 0
-  while (pos < content.length) {
-    // Find next occurrence of the marker prefix
-    const searchStr = `/* @arkzen:${marker}:`
-    const start = content.indexOf(searchStr, pos)
-    if (start === -1) break
-
-    // Extract the identifier — everything after the last colon until whitespace or */
-    const afterPrefix = content.slice(start + searchStr.length)
-    const idMatch = afterPrefix.match(/^([\w][\w-]*)/)
-    if (!idMatch) { pos = start + 1; continue }
-    const id = idMatch[1]
-
-    // Skip layout pseudo-markers inside page blocks: /* @arkzen:page:layout:auth */
-    if (marker === 'page' && id === 'layout') { pos = start + 1; continue }
-
-    // Find the closing */ of the opening tag
-    const openCloseIdx = content.indexOf('*/', start)
-    if (openCloseIdx === -1) { pos = start + 1; continue }
-    const afterOpenTag = openCloseIdx + 2 // position right after */
-
-    // Determine block style:
-    //   CODE BLOCK: the opening tag ends on the same line as /* and has nothing
-    //               between the id and */  e.g. /* @arkzen:components:shared */
-    //   COMMENT BLOCK: there's content between /* ... */ (the whole block IS the comment)
-    const openTagText = content.slice(start, afterOpenTag)
-    const isCodeBlock = /\/\* @arkzen:[\w:/-]+ \*\//.test(openTagText)
-
-    let blockContent
-    if (isCodeBlock) {
-      // Content is AFTER the opening tag, ends at /* @arkzen:marker:id:end */
-      const endMarker = `/* @arkzen:${marker}:${id}:end */`
-      const endIdx    = content.indexOf(endMarker, afterOpenTag)
-      const blockEnd  = endIdx === -1 ? content.length : endIdx
-      blockContent    = content.slice(afterOpenTag, blockEnd).trim()
-      pos = endIdx === -1 ? content.length : endIdx + endMarker.length
-    } else {
-      // Content IS the comment body — between /* and */
-      // Strip the opening marker line itself, keep the rest
-      const commentBody = content.slice(start + searchStr.length + id.length, openCloseIdx).trim()
-      blockContent = commentBody
-      pos = afterOpenTag
-    }
-
-    results.push({ id, content: blockContent })
-  }
-
-  return results
-}
-
-// Extract a single section (meta, animation, config) — same in v4 and v5
-// v5 uses /* @arkzen:animation */ ... /* @arkzen:animation:end */
-function extractSingle(content, marker) {
-  const openTag  = `/* @arkzen:${marker}`
-  const start    = content.indexOf(openTag)
-  if (start === -1) return null
-  const openEnd  = content.indexOf('*/', start)
-  if (openEnd === -1) return null
-  const endMarker = `/* @arkzen:${marker}:end */`
-  const end       = content.indexOf(endMarker)
-  if (end === -1) return content.slice(openEnd + 2).trim() // no end tag → rest of file (v4 compat)
-  return content.slice(openEnd + 2, end).trim()
-}
-
-function parseMeta(raw) {
+function readMeta(content) {
+  const match = content.match(/\/\* @arkzen:meta([\s\S]*?)\*\//)
+  if (!match) return {}
   const result = {}
-  if (!raw) return result
-  raw.split('\n').forEach(line => {
+  match[1].split('\n').forEach(line => {
     const idx = line.indexOf(':')
-    if (idx > -1) {
-      result[line.slice(0, idx).trim()] = line.slice(idx + 1).trim()
-    }
+    if (idx > -1) result[line.slice(0, idx).trim()] = line.slice(idx + 1).trim()
   })
   return result
-}
-
-// v5: parse model/controller from ALL @arkzen:api:* blocks, return array
-function parseAllApis(content, version) {
-  if (version === 4) {
-    // v4 has one @arkzen:api block
-    const raw = extractSectionV4(content, 'api')
-    if (!raw) return []
-    const result = {}
-    raw.split('\n').forEach(line => {
-      const idx = line.indexOf(':')
-      if (idx > -1) {
-        const k = line.slice(0, idx).trim()
-        if (['model', 'controller', 'prefix'].includes(k)) {
-          result[k] = line.slice(idx + 1).trim()
-        }
-      }
-    })
-    return result.model ? [result] : []
-  }
-
-  // v5: extract all @arkzen:api:identifier blocks
-  const blocks = extractAllV5(content, 'api')
-  return blocks.map(({ id, content: raw }) => {
-    const result = { _id: id }
-    raw.split('\n').forEach(line => {
-      const idx = line.indexOf(':')
-      if (idx > -1) {
-        const k = line.slice(0, idx).trim()
-        if (['model', 'controller', 'prefix', 'middleware'].includes(k)) {
-          result[k] = line.slice(idx + 1).trim()
-        }
-      }
-    })
-    return result
-  }).filter(r => r.model && r.controller)
 }
 
 function toPascal(str) {
   return str.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join('')
 }
 
-function toCamel(str) {
-  const p = toPascal(str)
-  return p[0].toLowerCase() + p.slice(1)
-}
-
-// Detect the layout declared inside a page block
-// /* @arkzen:page:layout:auth */ or /* @arkzen:page:layout:guest */
-function extractPageLayout(pageContent) {
-  const m = pageContent.match(/\/\* @arkzen:page:layout:([\w-]+) \*\//)
-  return m ? m[1] : 'auth' // default to auth if not declared
-}
-
-// Strip the layout pseudo-marker from page content so it doesn't end up in .tsx
-function stripLayoutMarker(pageContent) {
-  return pageContent.replace(/\/\* @arkzen:page:layout:[\w-]+ \*\/\s*/g, '').trim()
-}
-
-// ─────────────────────────────────────────────
-// MIGRATION GENERATOR
-// Mirrors engine/backend/app/Arkzen/Builders/MigrationBuilder.php
-// Used as fallback when no engine migration file exists
-// ─────────────────────────────────────────────
-
-function parseDatabase(raw) {
-  const result = { table: '', timestamps: true, softDeletes: false, columns: {}, indexes: [] }
-  if (!raw) return result
-
-  const lines = raw.split('\n')
-  let mode     = 'root'
-  let lastCol  = null
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith('#')) continue
-
-    const indent = line.search(/\S/)
-
-    if (indent === 0) {
-      if (trimmed.startsWith('table:'))       { result.table       = trimmed.slice(6).trim(); continue }
-      if (trimmed.startsWith('timestamps:'))  { result.timestamps  = trimmed.slice(11).trim() !== 'false'; continue }
-      if (trimmed.startsWith('softDeletes:')) { result.softDeletes = trimmed.slice(12).trim() === 'true'; continue }
-      if (trimmed === 'columns:')             { mode = 'columns'; continue }
-      if (trimmed === 'indexes:')             { mode = 'indexes'; continue }
-      if (trimmed === 'seeder:')              { mode = 'seeder';  continue }
-    }
-
-    if (mode === 'columns') {
-      if (indent === 2 && !trimmed.startsWith('-')) {
-        lastCol = trimmed.replace(':', '').trim()
-        result.columns[lastCol] = {}
-        continue
-      }
-      if (indent === 4 && lastCol) {
-        const idx = trimmed.indexOf(':')
-        if (idx > -1) {
-          const k = trimmed.slice(0, idx).trim()
-          const v = trimmed.slice(idx + 1).trim()
-          result.columns[lastCol][k] = v === 'true' ? true : v === 'false' ? false : isNaN(v) ? v : Number(v)
-        }
-      }
-    }
-
-    if (mode === 'indexes') {
-      if (trimmed.startsWith('- columns:')) {
-        const cols = trimmed.replace('- columns:', '').trim().replace(/[\[\]]/g, '').split(',').map(s => s.trim())
-        result.indexes.push({ columns: cols, unique: false })
-      }
-      if (trimmed.startsWith('unique:') && result.indexes.length > 0) {
-        result.indexes[result.indexes.length - 1].unique = trimmed.slice(7).trim() === 'true'
-      }
-    }
-  }
-
-  return result
-}
-
-function generateMigrationFromDatabase(dbRaw, tatSnake) {
-  const db        = parseDatabase(dbRaw)
-  const tableName = db.table || tatSnake
-  const className = tableName.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join('')
-
-  const typeMap = {
-    integer: 'integer', bigInteger: 'bigInteger', string: 'string',
-    text: 'text', longText: 'longText', decimal: 'decimal', float: 'float',
-    boolean: 'boolean', date: 'date', datetime: 'dateTime',
-    timestamp: 'timestamp', json: 'json', uuid: 'uuid',
-  }
-
-  const colLines = []
-  for (const [name, cfg] of Object.entries(db.columns)) {
-    const type   = cfg.type || 'string'
-    const method = typeMap[type] || 'string'
-
-    if (cfg.primary && cfg.autoIncrement) { colLines.push(`            $table->id();`); continue }
-    if (type === 'uuid' && cfg.primary)   { colLines.push(`            $table->uuid('${name}')->primary();`); continue }
-
-    if (cfg.foreign) {
-      const [refTable] = cfg.foreign.split('.')
-      const onDelete   = cfg.onDelete || 'cascade'
-      const nullable   = cfg.nullable ? '->nullable()' : ''
-      colLines.push(`            $table->foreignId('${name}')${nullable}->constrained('${refTable}')->onDelete('${onDelete}');`)
-      continue
-    }
-
-    let call = `$table->${method}('${name}'`
-    if (method === 'string' && cfg.length)    call += `, ${cfg.length}`
-    if (method === 'decimal') {
-      const p = cfg.precision || 8
-      const s = cfg.scale     || 2
-      call = `$table->decimal('${name}', ${p}, ${s}`
-    }
-    call += ')'
-    if (cfg.nullable) call += '->nullable()'
-    if (cfg.unique)   call += '->unique()'
-    if (cfg.default !== undefined) {
-      const def = typeof cfg.default === 'string' ? `'${cfg.default}'` : cfg.default
-      call += `->default(${def})`
-    }
-    if (cfg.unsigned) call += '->unsigned()'
-    colLines.push(`            ${call};`)
-  }
-
-  const indexLines = db.indexes.map(idx => {
-    const cols   = `['${idx.columns.join("', '")}']`
-    const method = idx.unique ? 'unique' : 'index'
-    return `            $table->${method}(${cols});`
-  })
-
-  const timestamps  = db.timestamps  ? `\n            $table->timestamps();`  : ''
-  const softDeletes = db.softDeletes ? `\n            $table->softDeletes();` : ''
-  const allCols     = [...colLines, ...(indexLines.length ? [''] : []), ...indexLines].join('\n')
-
-  return `<?php
-
-// ============================================================
-// ARKZEN GENERATED MIGRATION — ${tableName}
-// Generated by export.js from @arkzen:database section
-// ============================================================
-
-use Illuminate\\Database\\Migrations\\Migration;
-use Illuminate\\Database\\Schema\\Blueprint;
-use Illuminate\\Support\\Facades\\Schema;
-
-return new class extends Migration
-{
-    public function up(): void
-    {
-        Schema::create('${tableName}', function (Blueprint $table) {
-${allCols}${timestamps}${softDeletes}
-        });
-    }
-
-    public function down(): void
-    {
-        Schema::dropIfExists('${tableName}');
-    }
-};
-`
-}
-
 // ─────────────────────────────────────────────
 // READ TATEMONO
 // ─────────────────────────────────────────────
 
-const content = fs.readFileSync(tatPath, 'utf-8')
-const version = detectVersion(content)
+const content   = fs.readFileSync(tatPath, 'utf-8')
+const meta      = readMeta(content)
+const tatPascal = toPascal(tatName)
+const tatSnake  = tatName.replace(/-/g, '_')
+const hasAuth   = meta.auth === 'true'
 
-console.log(`  Format:   v${version}`)
+const hasBackend = [
+  '@arkzen:database', '@arkzen:api', '@arkzen:routes',
+  '@arkzen:jobs', '@arkzen:events', '@arkzen:realtime',
+  '@arkzen:notifications', '@arkzen:mail', '@arkzen:console',
+].some(m => content.includes(m)) || hasAuth
 
-const meta     = parseMeta(extractSingle(content, 'meta'))
-const apis     = parseAllApis(content, version)
-const pascal   = toPascal(tatName)
-const camel    = toCamel(tatName)
-const isStatic = apis.length === 0
+const hasRealtime = content.includes('@arkzen:realtime') || content.includes('@arkzen:notifications')
+const hasJobs     = content.includes('@arkzen:jobs')     || content.includes('@arkzen:console')
 
-// Layout is global in v4 (from meta), per-page in v5
-const globalLayout = version === 4 ? (meta.layout || 'base') : null
-
-// Animation — same in both versions
-const animation  = extractSingle(content, 'animation')
-const animFnName = camel + 'Animations'
-
+divider()
+console.log(`\n  ARKZEN — Exporting tatemono: ${tatName}\n`)
+divider()
+console.log(`  Format:   v6`)
 console.log(`  Tatemono: ${tatName}`)
-console.log(`  Type:     ${isStatic ? 'Static (frontend only)' : `Full stack — ${apis.map(a => `${a.model}/${a.controller}`).join(', ')}`}`)
+console.log(`  Auth:     ${hasAuth}`)
+console.log(`  Backend:  ${hasBackend}`)
+console.log(`  Realtime: ${hasRealtime}`)
+console.log(`  Jobs:     ${hasJobs}`)
 
 // ─────────────────────────────────────────────
-// SETUP PROJECT DIRECTORY
+// SETUP OUTPUT DIRECTORY
 // ─────────────────────────────────────────────
 
 if (fs.existsSync(PROJECT_DIR)) {
@@ -424,432 +133,517 @@ if (fs.existsSync(PROJECT_DIR)) {
 fs.mkdirSync(PROJECT_DIR, { recursive: true })
 
 // ─────────────────────────────────────────────
-// COPY FRONTEND BASE
+// STEP 1 — ENGINE BUILD
+// Calls builder.ts via tsx so all engine output is
+// fresh before we copy anything. Same code path as
+// the watcher — so export always matches dev exactly.
+// ─────────────────────────────────────────────
+
+log(`Triggering engine build for ${tatName}...`)
+
+const buildScript = `
+import { buildTatemono } from './arkzen/core/builder'
+buildTatemono(${JSON.stringify(tatPath)})
+  .then(result => {
+    if (result.success) { console.log('[export-build] OK'); process.exit(0) }
+    else { console.error('[export-build] FAIL:', result.errors.join(', ')); process.exit(1) }
+  })
+  .catch(err => { console.error('[export-build] FATAL:', err.message); process.exit(1) })
+`
+
+const tmpScript = path.join(FRONTEND_DIR, '__export_build_tmp.ts')
+fs.writeFileSync(tmpScript, buildScript)
+
+const tsxBin = path.join(FRONTEND_DIR, 'node_modules', '.bin', 'tsx')
+const buildResult = spawnSync(tsxBin, [tmpScript], {
+  cwd:     FRONTEND_DIR,
+  stdio:   'pipe',
+  env:     { ...process.env, ARKZEN_BACKEND_URL: 'http://localhost:8000', ARKZEN_ENGINE_SECRET: 'arkzen-engine-secret' },
+  timeout: 60000,
+})
+
+if (fs.existsSync(tmpScript)) fs.unlinkSync(tmpScript)
+
+const buildOut = (buildResult.stdout || '').toString()
+const buildErr = (buildResult.stderr || '').toString()
+
+if (buildResult.status === 0 && buildOut.includes('[export-build] OK')) {
+  success('Engine build complete')
+} else {
+  warn('Engine build had issues — proceeding with existing output')
+  if (buildErr) warn(buildErr.split('\n').filter(l => l.trim()).slice(0, 6).join(' | '))
+}
+
+// ─────────────────────────────────────────────
+// NAMESPACE REWRITER
+// All engine PHP files live under App\...\Arkzen\{TatPascal}\
+// or flat App\...\Arkzen\ — rewrite to clean App\...\ for export
+// ─────────────────────────────────────────────
+
+function rewriteNamespaces(src) {
+  return src
+    // ── Namespace declarations ──────────────────────────────────────
+    .replace(new RegExp(`namespace App\\\\Models\\\\Arkzen\\\\${tatPascal};`,                   'g'), 'namespace App\\Models;')
+    .replace(/namespace App\\Models\\Arkzen;/g,                                                       'namespace App\\Models;')
+    .replace(/namespace App\\Http\\Controllers\\Arkzen;/g,                                            'namespace App\\Http\\Controllers;')
+    .replace(/namespace App\\Http\\Requests\\Arkzen;/g,                                               'namespace App\\Http\\Requests;')
+    .replace(new RegExp(`namespace App\\\\Http\\\\Resources\\\\Arkzen\\\\${tatPascal};`,        'g'), 'namespace App\\Http\\Resources;')
+    .replace(/namespace App\\Http\\Resources\\Arkzen;/g,                                              'namespace App\\Http\\Resources;')
+    .replace(new RegExp(`namespace App\\\\Policies\\\\Arkzen\\\\${tatPascal};`,                 'g'), 'namespace App\\Policies;')
+    .replace(/namespace App\\Policies\\Arkzen;/g,                                                     'namespace App\\Policies;')
+    .replace(new RegExp(`namespace App\\\\Jobs\\\\Arkzen\\\\${tatPascal};`,                     'g'), 'namespace App\\Jobs;')
+    .replace(/namespace App\\Jobs\\Arkzen;/g,                                                         'namespace App\\Jobs;')
+    .replace(new RegExp(`namespace App\\\\Events\\\\Arkzen\\\\${tatPascal};`,                   'g'), 'namespace App\\Events;')
+    .replace(/namespace App\\Events\\Arkzen;/g,                                                       'namespace App\\Events;')
+    .replace(new RegExp(`namespace App\\\\Listeners\\\\Arkzen\\\\${tatPascal};`,                'g'), 'namespace App\\Listeners;')
+    .replace(/namespace App\\Listeners\\Arkzen;/g,                                                    'namespace App\\Listeners;')
+    .replace(new RegExp(`namespace App\\\\Mail\\\\Arkzen\\\\${tatPascal};`,                     'g'), 'namespace App\\Mail;')
+    .replace(/namespace App\\Mail\\Arkzen;/g,                                                         'namespace App\\Mail;')
+    .replace(new RegExp(`namespace App\\\\Notifications\\\\Arkzen\\\\${tatPascal};`,            'g'), 'namespace App\\Notifications;')
+    .replace(/namespace App\\Notifications\\Arkzen;/g,                                               'namespace App\\Notifications;')
+    .replace(new RegExp(`namespace App\\\\Console\\\\Commands\\\\Arkzen\\\\${tatPascal};`,      'g'), 'namespace App\\Console\\Commands;')
+    .replace(/namespace App\\Console\\Commands\\Arkzen;/g,                                            'namespace App\\Console\\Commands;')
+    .replace(/namespace Database\\Seeders\\Arkzen;/g,                                                 'namespace Database\\Seeders;')
+    .replace(new RegExp(`namespace Database\\\\Factories\\\\Arkzen\\\\${tatPascal};`,           'g'), 'namespace Database\\Factories;')
+    .replace(/namespace Database\\Factories\\Arkzen;/g,                                               'namespace Database\\Factories;')
+
+    // ── use statements ──────────────────────────────────────────────
+    .replace(new RegExp(`use App\\\\Models\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,     'g'), 'use App\\Models\\$1;')
+    .replace(/use App\\Models\\Arkzen\\([A-Za-z0-9_]+);/g,                                           'use App\\Models\\$1;')
+    .replace(/use App\\Http\\Controllers\\Arkzen\\([A-Za-z0-9_]+);/g,                                'use App\\Http\\Controllers\\$1;')
+    .replace(/use App\\Http\\Requests\\Arkzen\\([A-Za-z0-9_]+);/g,                                   'use App\\Http\\Requests\\$1;')
+    .replace(new RegExp(`use App\\\\Http\\\\Resources\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`, 'g'), 'use App\\Http\\Resources\\$1;')
+    .replace(new RegExp(`use App\\\\Policies\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,   'g'), 'use App\\Policies\\$1;')
+    .replace(new RegExp(`use App\\\\Jobs\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,       'g'), 'use App\\Jobs\\$1;')
+    .replace(new RegExp(`use App\\\\Events\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,     'g'), 'use App\\Events\\$1;')
+    .replace(new RegExp(`use App\\\\Listeners\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,  'g'), 'use App\\Listeners\\$1;')
+    .replace(new RegExp(`use App\\\\Mail\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,       'g'), 'use App\\Mail\\$1;')
+    .replace(new RegExp(`use App\\\\Notifications\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`, 'g'), 'use App\\Notifications\\$1;')
+    .replace(new RegExp(`use App\\\\Console\\\\Commands\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`, 'g'), 'use App\\Console\\Commands\\$1;')
+    .replace(new RegExp(`use Database\\\\Factories\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`, 'g'), 'use Database\\Factories\\$1;')
+
+    // ── Database connection stripping ───────────────────────────────
+    .replace(new RegExp(`DB::connection\\('${tatSnake}'\\)->`, 'g'),  'DB::')
+    .replace(new RegExp(`->on\\('${tatSnake}'\\)`,             'g'),  '')
+    .replace(/protected \$connection = '[^']+';/,                      '')
+    .replace(/Schema::connection\('[^']+'\)->create\(/g,               'Schema::create(')
+    .replace(/Schema::connection\('[^']+'\)->table\(/g,                'Schema::table(')
+    .replace(/Schema::connection\('[^']+'\)->dropIfExists\(/g,         'Schema::dropIfExists(')
+
+    // ── Table prefix stripping ──────────────────────────────────────
+    .replace(new RegExp(`'${tatSnake}_([a-z_]+)'`, 'g'),              "'$1'")
+}
+
+// ─────────────────────────────────────────────
+// COPY HELPERS
+// ─────────────────────────────────────────────
+
+function copyPhp(srcFile, destFile) {
+  fs.mkdirSync(path.dirname(destFile), { recursive: true })
+  fs.writeFileSync(destFile, rewriteNamespaces(fs.readFileSync(srcFile, 'utf-8')))
+}
+
+// Copy an entire directory of PHP files, flat into destDir
+function copyPhpDir(srcDir, destDir) {
+  if (!fs.existsSync(srcDir)) return
+  fs.mkdirSync(destDir, { recursive: true })
+  function walk(dir) {
+    fs.readdirSync(dir).forEach(entry => {
+      const full = path.join(dir, entry)
+      if (fs.statSync(full).isDirectory()) { walk(full); return }
+      if (!entry.endsWith('.php')) return
+      const dest = path.join(destDir, entry)
+      copyPhp(full, dest)
+      success(path.relative(PROJECT_DIR, dest))
+    })
+  }
+  walk(srcDir)
+}
+
+// ─────────────────────────────────────────────
+// STEP 2 — COPY FRONTEND BASE
+// Engine internals excluded — we never ship the
+// builder/watcher/parser/registry to the client
 // ─────────────────────────────────────────────
 
 log('Copying frontend base...')
+
+const SKIP_ENGINE_FILES = new Set([
+  'arkzen/core/builder.ts', 'arkzen/core/watcher.ts',
+  'arkzen/core/parser.ts',  'arkzen/core/registry.ts',
+  'arkzen/core/router.ts',  'arkzen/core/validator.ts',
+  'arkzen/core/backend-bridge.ts',
+  'arkzen.ts', 'arkzen.json', 'arkzen.config.ts', 'validate.js',
+])
+
 fs.cpSync(FRONTEND_DIR, PROJ_FRONT, {
   recursive: true,
   filter: (src) => {
-    if (src.includes('node_modules')) return false
-    if (src.includes('.next')) return false
-    if (src.includes('/tatemono/')) return false
-    if (src.includes('/arkzen/generated/')) return false
-    if (src.includes('arkzen.json')) return false
-    if (path.basename(src) === 'arkzen.ts') return false
-    if (src.includes('/arkzen/core/watcher')) return false
-    if (src.includes('/arkzen/core/builder')) return false
-    if (src.includes('/arkzen/core/parser')) return false
-    if (src.includes('/arkzen/core/registry')) return false
-    if (src.includes('/arkzen/core/backend-bridge')) return false
-    const rel = path.relative(FRONTEND_DIR, src)
-    if (rel.startsWith('app') && !['app', 'app/layout.tsx', 'app/page.tsx'].includes(rel) && !rel.startsWith('app/api')) return false
+    const rel = path.relative(FRONTEND_DIR, src).replace(/\\/g, '/')
+    if (rel.includes('node_modules'))          return false
+    if (rel.includes('.next'))                 return false
+    if (rel.startsWith('tatemono'))            return false
+    if (SKIP_ENGINE_FILES.has(rel))            return false
+    // app/ — skip entirely, we write it ourselves below
+    if (rel.startsWith('app/'))                return false
+    // arkzen/generated — we write our own
+    if (rel.startsWith('arkzen/generated'))    return false
     return true
   }
 })
+
 log('Copying node_modules...')
-fs.cpSync(path.join(FRONTEND_DIR, 'node_modules'), path.join(PROJ_FRONT, 'node_modules'), { recursive: true })
+fs.cpSync(
+  path.join(FRONTEND_DIR, 'node_modules'),
+  path.join(PROJ_FRONT, 'node_modules'),
+  { recursive: true }
+)
 success('Frontend base ready')
 
 // ─────────────────────────────────────────────
-// GENERATE FRONTEND FILES
+// STEP 3 — COPY GENERATED FRONTEND PAGES
+// The router already wrote everything correctly.
+// Copy app/{tatName}/* verbatim — no modifications needed.
 // ─────────────────────────────────────────────
 
-log('Generating frontend files...')
+log('Copying generated frontend pages...')
 
-// animations/name.ts — same for v4 and v5
-if (animation) {
-  const animDir = path.join(PROJ_FRONT, 'animations')
-  fs.mkdirSync(animDir, { recursive: true })
-  const cleanAnim = animation
-    .replace(/import.*from ['"]gsap[^'"]*['"][;]?\n?/g, '')
-    .replace(/import React.*['"][;]?\n?/g, '')
-    .replace(/gsap\.registerPlugin\([^)]*\)[;]?\n?/g, '')
-    .replace(`const ${animFnName}`, `export const ${animFnName}`)
-    .trim()
-  fs.writeFileSync(path.join(animDir, `${tatName}.ts`), [
-    `import { gsap } from 'gsap'`,
-    `import { ScrollTrigger } from 'gsap/ScrollTrigger'`,
-    `import React from 'react'`,
-    `gsap.registerPlugin(ScrollTrigger)`,
-    ``,
-    cleanAnim,
-  ].join('\n'))
-  success(`animations/${tatName}.ts`)
+// Always copy app/layout.tsx (root layout)
+const rootLayout = path.join(FRONTEND_DIR, 'app', 'layout.tsx')
+if (fs.existsSync(rootLayout)) {
+  fs.mkdirSync(path.join(PROJ_FRONT, 'app'), { recursive: true })
+  fs.copyFileSync(rootLayout, path.join(PROJ_FRONT, 'app', 'layout.tsx'))
+  success('app/layout.tsx')
 }
 
-const animImport = animation
-  ? `import { ${animFnName}, pageVariants } from '@/animations/${tatName}'`
-  : ''
+// Copy the full generated tatemono folder
+const engTatDir = path.join(FRONTEND_DIR, 'app', tatName)
+const outTatDir = path.join(PROJ_FRONT,   'app', tatName)
 
-// ─────────────────────────────────────────────
-// V4 EXPORT — single components + single page
-// (original behavior, preserved exactly)
-// ─────────────────────────────────────────────
-
-if (version === 4) {
-  const components    = extractSectionV4(content, 'components')
-  const page          = extractSectionV4(content, 'page')
-  const layoutComp    = globalLayout === 'auth' ? 'AuthLayout' : globalLayout === 'blank' ? 'BlankLayout' : 'BaseLayout'
-  const componentName = pascal + 'Page'
-
-  const pageDir = path.join(PROJ_FRONT, 'app', tatName)
-  fs.mkdirSync(pageDir, { recursive: true })
-
-  // _components.tsx
-  const exportedPage = (page || '').trim().replace(`const ${componentName}`, `export const ${componentName}`)
-  fs.writeFileSync(path.join(pageDir, '_components.tsx'), [
-    `'use client'`,
-    `// ${pascal} Components — generated from tatemono: ${tatName}`,
-    ``,
-    components ? components.replace(/'use client'[;]?\n?/, '').trim() : '',
-    ``,
-    `// ─── Page ──────────────────────────────────────────────────`,
-    exportedPage,
-  ].join('\n'))
-  success(`app/${tatName}/_components.tsx`)
-
-  // page.tsx
-  fs.writeFileSync(path.join(pageDir, 'page.tsx'), [
-    `'use client'`,
-    `// ${pascal} Page wrapper — generated from tatemono: ${tatName}`,
-    `import React, { useRef, useEffect } from 'react'`,
-    `import { motion } from 'framer-motion'`,
-    `import { ${layoutComp} } from '@/arkzen/core/layouts/${layoutComp}'`,
-    animImport,
-    `import { ${componentName} } from './_components'`,
-    ``,
-    `const ArkzenPage_${pascal} = () => {`,
-    `  const pageRef = useRef<HTMLDivElement>(null)`,
-    `  useEffect(() => {`,
-    `    if (!pageRef.current) return`,
-    animation ? `    const cleanup = ${animFnName}(pageRef); return cleanup` : `    // No animations`,
-    `  }, [])`,
-    `  return (`,
-    `    <${layoutComp} auth={${meta.auth === 'true' ? 'true' : 'false'}}>`,
-    `      <motion.div ref={pageRef} variants={{}} initial="initial" animate="animate" exit="exit">`,
-    `        <${componentName} />`,
-    `      </motion.div>`,
-    `    </${layoutComp}>`,
-    `  )`,
-    `}`,
-    `export default ArkzenPage_${pascal}`,
-  ].join('\n'))
-  success(`app/${tatName}/page.tsx`)
-
-  // Root redirect
-  fs.writeFileSync(path.join(PROJ_FRONT, 'app', 'page.tsx'), [
-    `'use client'`,
-    `// Root page — delegates to tatemono: ${tatName}`,
-    `export { default } from './${tatName}/page'`,
-  ].join('\n'))
-  success(`app/page.tsx → ${tatName}`)
-}
-
-// ─────────────────────────────────────────────
-// V5 EXPORT — multi-page, multi-component
-// ─────────────────────────────────────────────
-
-if (version === 5) {
-  // Collect all component blocks — concatenate in order
-  const componentBlocks = extractAllV5(content, 'components')
-
-  // Build one combined _components.tsx for the shared tatemono folder
-  // Each block is included as-is (stripped of 'use client' duplicates)
-  const combinedComponents = componentBlocks
-    .map(({ id, content: raw }) => {
-      const stripped = raw.replace(/'use client'[;]?\n?/g, '').trim()
-      return `// ─── ${id} ──────────────────────────────────────────────────\n${stripped}`
+if (fs.existsSync(engTatDir)) {
+  fs.cpSync(engTatDir, outTatDir, { recursive: true })
+  function listCopied(dir) {
+    fs.readdirSync(dir).forEach(f => {
+      const full = path.join(dir, f)
+      if (fs.statSync(full).isDirectory()) listCopied(full)
+      else success(path.relative(path.join(PROJ_FRONT, 'app'), full))
     })
-    .join('\n\n')
-
-  // Collect all page blocks
-  const pageBlocks = extractAllV5(content, 'page')
-
-  if (pageBlocks.length === 0) {
-    fail('No @arkzen:page blocks found — at least one is required')
-    process.exit(1)
   }
+  listCopied(outTatDir)
+} else {
+  warn(`engine/frontend/app/${tatName}/ not found — engine build may have failed`)
+  fs.mkdirSync(outTatDir, { recursive: true })
+  fs.writeFileSync(path.join(outTatDir, 'page.tsx'),
+    `'use client'\nexport default function Page() {\n  return <div className="p-8 text-neutral-500">${tatName} — build pending</div>\n}\n`
+  )
+}
 
-  // First page = root redirect target
-  const firstPage = pageBlocks[0]
+// Copy animation file if generated
+const engAnim = path.join(FRONTEND_DIR, 'arkzen', 'generated', `${tatName}.animations.ts`)
+if (fs.existsSync(engAnim)) {
+  const animDestDir = path.join(PROJ_FRONT, 'arkzen', 'generated')
+  fs.mkdirSync(animDestDir, { recursive: true })
+  fs.copyFileSync(engAnim, path.join(animDestDir, `${tatName}.animations.ts`))
+  success(`arkzen/generated/${tatName}.animations.ts`)
+}
 
-  // Generate one folder per page under app/tatemono-name/page-name/
-  // Exception: if there's only ONE page, also put it at app/tatemono-name/ directly
-  // (matches engine dev routing)
-  const singlePage = pageBlocks.length === 1
-
-  for (const { id: pageId, content: pageRaw } of pageBlocks) {
-    const pageLayout    = extractPageLayout(pageRaw)
-    const pageBody      = stripLayoutMarker(pageRaw)
-    const layoutComp    = pageLayout === 'guest' ? 'GuestLayout' : pageLayout === 'blank' ? 'BlankLayout' : 'BaseLayout'
-    const componentName = toPascal(pageId) + 'Page'
-
-    // Route dir: app/tatemono-name/ for single-page OR app/tatemono-name/page-id/ for multi
-    const routeSegment = singlePage ? tatName : `${tatName}/${pageId}`
-    const pageDir      = path.join(PROJ_FRONT, 'app', routeSegment)
-    fs.mkdirSync(pageDir, { recursive: true })
-
-    // _components.tsx — all shared components + this page's component
-    const exportedBody = pageBody.trim().replace(
-      new RegExp(`(^|\\n)const ${componentName}`),
-      `$1export const ${componentName}`
-    )
-
-    fs.writeFileSync(path.join(pageDir, '_components.tsx'), [
-      `'use client'`,
-      `// ${pascal} — ${pageId} — generated from tatemono: ${tatName}`,
-      ``,
-      combinedComponents,
-      ``,
-      `// ─── Page: ${pageId} ──────────────────────────────────────────────────`,
-      exportedBody,
-    ].join('\n'))
-    success(`app/${routeSegment}/_components.tsx`)
-
-    // page.tsx — clean layout wrapper
-    fs.writeFileSync(path.join(pageDir, 'page.tsx'), [
-      `'use client'`,
-      `// ${toPascal(pageId)} Page wrapper — generated from tatemono: ${tatName}`,
-      `import React, { useRef, useEffect } from 'react'`,
-      `import { motion } from 'framer-motion'`,
-      `import { ${layoutComp} } from '@/arkzen/core/layouts/${layoutComp}'`,
-      animImport,
-      `import { ${componentName} } from './_components'`,
-      ``,
-      `const ArkzenPage_${toPascal(pageId)} = () => {`,
-      `  const pageRef = useRef<HTMLDivElement>(null)`,
-      `  useEffect(() => {`,
-      `    if (!pageRef.current) return`,
-      animation ? `    const cleanup = ${animFnName}(pageRef); return cleanup` : `    // No animations`,
-      `  }, [])`,
-      `  return (`,
-      `    <${layoutComp} auth={${meta.auth === 'true' ? 'true' : 'false'}}>`,
-      `      <motion.div ref={pageRef} variants={${animation ? 'pageVariants' : '{}'}} initial="initial" animate="animate" exit="exit">`,
-      `        <${componentName} />`,
-      `      </motion.div>`,
-      `    </${layoutComp}>`,
-      `  )`,
-      `}`,
-      `export default ArkzenPage_${toPascal(pageId)}`,
-    ].join('\n'))
-    success(`app/${routeSegment}/page.tsx`)
-  }
-
-  // Root app/page.tsx — redirect to first page
-  const firstRouteSegment = singlePage ? tatName : `${tatName}/${firstPage.id}`
-  fs.writeFileSync(path.join(PROJ_FRONT, 'app', 'page.tsx'), [
-    `'use client'`,
-    `// Root page — delegates to tatemono: ${tatName} → ${firstPage.id}`,
-    `export { default } from './${firstRouteSegment}/page'`,
-  ].join('\n'))
-  success(`app/page.tsx → ${firstRouteSegment}`)
+// Copy custom layouts
+const engCustomLayouts = path.join(FRONTEND_DIR, 'arkzen', 'core', 'layouts', 'custom')
+if (fs.existsSync(engCustomLayouts)) {
+  fs.cpSync(
+    engCustomLayouts,
+    path.join(PROJ_FRONT, 'arkzen', 'core', 'layouts', 'custom'),
+    { recursive: true }
+  )
+  success('arkzen/core/layouts/custom/')
 }
 
 // ─────────────────────────────────────────────
-// BACKEND (skip entirely if static)
+// STEP 4 — WRITE FRONTEND GLUE FILES
 // ─────────────────────────────────────────────
 
-if (!isStatic) {
+log('Writing frontend glue files...')
+
+// app/page.tsx — root redirect
+// Read redirect target from what the engine generated
+let rootRedirectTarget = `/${tatName}`
+const engRootPage = path.join(engTatDir, 'page.tsx')
+if (fs.existsSync(engRootPage)) {
+  const redirectMatch = fs.readFileSync(engRootPage, 'utf-8').match(/redirect\(['"]([^'"]+)['"]\)/)
+  if (redirectMatch) rootRedirectTarget = redirectMatch[1]
+}
+fs.writeFileSync(path.join(PROJ_FRONT, 'app', 'page.tsx'), [
+  `'use client'`,
+  `import { redirect } from 'next/navigation'`,
+  `export default function ArkzenRoot() { redirect('${rootRedirectTarget}') }`,
+].join('\n'))
+success('app/page.tsx (root redirect → ' + rootRedirectTarget + ')')
+
+// arkzen/generated/auth-tatemonos.ts
+const genDir = path.join(PROJ_FRONT, 'arkzen', 'generated')
+fs.mkdirSync(genDir, { recursive: true })
+fs.writeFileSync(path.join(genDir, 'auth-tatemonos.ts'), [
+  `// Auto-generated by export.js for: ${tatName}`,
+  `export const AUTH_TATEMONOS: string[] = ${hasAuth ? JSON.stringify([tatName]) : '[]'}`,
+].join('\n') + '\n')
+success('arkzen/generated/auth-tatemonos.ts')
+
+// middleware.ts — standalone, reads from auth-tatemonos above
+// Detect guest/auth pages by scanning what the router generated
+const guestPages = []
+const authPages  = []
+if (fs.existsSync(outTatDir)) {
+  fs.readdirSync(outTatDir).forEach(entry => {
+    const pageTsx = path.join(outTatDir, entry, 'page.tsx')
+    if (!fs.existsSync(pageTsx)) return
+    const pc = fs.readFileSync(pageTsx, 'utf-8')
+    if      (pc.includes('GuestLayout')) guestPages.push(entry)
+    else if (pc.includes('AuthLayout'))  authPages.push(entry)
+  })
+}
+const finalGuestPages = guestPages.length ? guestPages : ['login', 'register', 'forgot-password', 'reset-password']
+const finalAuthPages  = authPages.length  ? authPages  : ['dashboard', 'settings', 'profile']
+
+fs.writeFileSync(path.join(PROJ_FRONT, 'middleware.ts'), `// Auto-generated by export.js — standalone middleware for: ${tatName}
+import { NextRequest, NextResponse } from 'next/server'
+import { AUTH_TATEMONOS } from '@/arkzen/generated/auth-tatemonos'
+
+const GUEST_PAGES = ${JSON.stringify(finalGuestPages)}
+const AUTH_PAGES  = ${JSON.stringify(finalAuthPages)}
+
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+  const segments     = pathname.split('/').filter(Boolean)
+  const tatemono     = segments[0]
+  const page         = segments[1]
+
+  if (!tatemono || !page)                    return NextResponse.next()
+  if (!AUTH_TATEMONOS.includes(tatemono))    return NextResponse.next()
+
+  const token = request.cookies.get(\`arkzen-auth-\${tatemono}\`)?.value
+
+  if (GUEST_PAGES.includes(page) && token)
+    return NextResponse.redirect(new URL(\`/\${tatemono}/dashboard\`, request.url))
+
+  if (AUTH_PAGES.includes(page) && !token)
+    return NextResponse.redirect(new URL(\`/\${tatemono}/login\`, request.url))
+
+  return NextResponse.next()
+}
+
+export const config = {
+  matcher: ['/((?!_next|api|arkzen|static|favicon.ico).*)'],
+}
+`)
+success('middleware.ts (standalone)')
+
+// next.config.js
+fs.writeFileSync(path.join(PROJ_FRONT, 'next.config.js'), hasBackend
+  ? `/** @type {import('next').NextConfig} */
+const nextConfig = {
+  experimental: { forceSwcTransforms: false },
+  async rewrites() {
+    return [{ source: '/api/:path*', destination: 'http://127.0.0.1:8001/api/:path*' }]
+  },
+}
+module.exports = nextConfig\n`
+  : `/** @type {import('next').NextConfig} */
+const nextConfig = { experimental: { forceSwcTransforms: false } }
+module.exports = nextConfig\n`
+)
+success('next.config.js')
+
+// package.json — rename, fix port
+const pkgPath = path.join(PROJ_FRONT, 'package.json')
+if (fs.existsSync(pkgPath)) {
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
+  pkg.name     = tatName
+  pkg.scripts  = {
+    dev:   'NEXT_IGNORE_INCORRECT_LOCKFILE=1 NEXT_DISABLE_SWC=1 next dev --webpack --port 3001',
+    build: 'next build',
+    start: 'next start --port 3001',
+  }
+  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2))
+  success('package.json')
+}
+
+// ─────────────────────────────────────────────
+// STEP 5 — BACKEND
+// ─────────────────────────────────────────────
+
+if (!hasBackend) {
+  log('Static tatemono — no backend needed')
+  success('Frontend only export')
+} else {
+
+  // ── 5a. Copy backend base ─────────────────────────────────────────
+
   log('Copying backend base...')
+
   fs.cpSync(BACKEND_DIR, PROJ_BACK, {
     recursive: true,
     filter: (src) => {
-      if (src.includes('/vendor/')) return false
-      if (src.includes('database.sqlite')) return false
-      if (src.includes('/database/arkzen/')) return false      // isolated SQLite files
-      if (src.includes('/app/Arkzen/')) return false
-      if (src.includes('ArkzenEngineController')) return false
-      if (src.includes('ArkzenEngineMiddleware')) return false
-      if (src.includes('/app/Providers/Arkzen/')) return false
-      if (src.includes('/routes/arkzen.php')) return false
-      if (src.includes('/routes/modules/')) return false
-      if (src.includes('/migrations/arkzen/')) return false
-      if (src.includes('/database/seeders/')) return false
-      if (src.includes('/Models/Arkzen/')) return false
-      if (src.includes('/Controllers/Arkzen/')) return false
-      if (src.includes('/Requests/Arkzen/')) return false
-      if (src.includes('/Policies/Arkzen/')) return false
-      if (src.includes('/Resources/Arkzen/')) return false
-      if (src.includes('/factories/Arkzen/')) return false
+      if (src.includes('/vendor/'))                            return false
+      if (src.endsWith('.sqlite'))                             return false
+      // Skip all engine-generated Arkzen dirs (we copy selectively below)
+      if (src.includes('/app/Arkzen/'))                       return false
+      if (src.includes('/app/Http/Controllers/Arkzen/'))      return false
+      if (src.includes('/app/Http/Requests/Arkzen/'))         return false
+      if (src.includes('/app/Http/Resources/Arkzen/'))        return false
+      if (src.includes('/app/Http/Middleware/ArkzenEngine'))  return false
+      if (src.includes('/app/Policies/Arkzen/'))              return false
+      if (src.includes('/app/Jobs/Arkzen/'))                  return false
+      if (src.includes('/app/Events/Arkzen/'))                return false
+      if (src.includes('/app/Listeners/Arkzen/'))             return false
+      if (src.includes('/app/Mail/Arkzen/'))                  return false
+      if (src.includes('/app/Notifications/Arkzen/'))         return false
+      if (src.includes('/app/Console/Commands/Arkzen/'))      return false
+      if (src.includes('/app/Models/Arkzen/'))                return false
+      if (src.includes('/app/Providers/Arkzen/'))             return false
+      if (src.includes('/database/arkzen/'))                  return false
+      if (src.includes('/database/migrations/arkzen/'))       return false
+      if (src.includes('/database/seeders/arkzen/'))          return false
+      if (src.includes('/database/factories/Arkzen/'))        return false
+      if (src.includes('/routes/arkzen.php'))                 return false
+      if (src.includes('/routes/modules/'))                   return false
+      // Skip engine debug files
+      const base = path.basename(src)
+      if (['consoles_debug.json', 'roles-routes.txt', 'mail-routes.txt'].includes(base)) return false
       return true
     }
   })
+
   log('Copying vendor...')
-  fs.cpSync(path.join(BACKEND_DIR, 'vendor'), path.join(PROJ_BACK, 'vendor'), { recursive: true })
-  success('Backend base ready')
+  fs.cpSync(
+    path.join(BACKEND_DIR, 'vendor'),
+    path.join(PROJ_BACK, 'vendor'),
+    { recursive: true }
+  )
+  success('Backend base + vendor ready')
 
-  // Base Controller.php
-  fs.mkdirSync(path.join(PROJ_BACK, 'app', 'Http', 'Controllers'), { recursive: true })
-  fs.writeFileSync(path.join(PROJ_BACK, 'app', 'Http', 'Controllers', 'Controller.php'), `<?php
+  // ── 5b. Copy tatemono-scoped generated PHP files ──────────────────
+  // Each builder outputs to a {TatPascal} subfolder — we copy them all flat.
+  // When your engine adds new builders, they appear here automatically.
 
-namespace App\\Http\\Controllers;
+  log('Copying generated backend files...')
 
-abstract class Controller
-{
-    //
-}
-`)
-  success('app/Http/Controllers/Controller.php')
+  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Models',        'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Models'))
+  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Http', 'Resources', 'Arkzen', tatPascal), path.join(PROJ_BACK, 'app', 'Http', 'Resources'))
+  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Policies',      'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Policies'))
+  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Jobs',          'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Jobs'))
+  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Events',        'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Events'))
+  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Listeners',     'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Listeners'))
+  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Mail',          'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Mail'))
+  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Notifications', 'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Notifications'))
+  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Console', 'Commands', 'Arkzen', tatPascal), path.join(PROJ_BACK, 'app', 'Console', 'Commands'))
+  copyPhpDir(path.join(BACKEND_DIR, 'database', 'factories', 'Arkzen', tatPascal),  path.join(PROJ_BACK, 'database', 'factories'))
+  copyPhpDir(path.join(BACKEND_DIR, 'database', 'migrations', 'arkzen', tatName),   path.join(PROJ_BACK, 'database', 'migrations'))
 
-  // ── Process each API resource ─────────────────────────────────────────
-  const allSeeders     = []
-  const routeIncludes  = []
-  const tatSnake       = tatName.replace(/-/g, '_')
-  // v5.1: all engine files now live under slug subfolders
-  const engMigDir      = path.join(BACKEND_DIR, 'database', 'migrations', 'arkzen', tatName)
-  const engSeederDir   = path.join(BACKEND_DIR, 'database', 'seeders', 'arkzen', tatName)
-  const engModulesDir  = path.join(BACKEND_DIR, 'routes', 'modules')
-  const engArkzenDbDir = path.join(BACKEND_DIR, 'database', 'arkzen')
-
-  for (const api of apis) {
-    const { model: modelName, controller: ctrlName, _id: apiId } = api
-
-    // ── Model ─────────────────────────────────────────────────────
-    // Engine: Models/Arkzen/{tatName}/{modelName}.php
-    // Export: Models/{modelName}.php  (flat, stripped namespace + connection + table prefix)
-    const engModelPath = path.join(BACKEND_DIR, 'app', 'Models', 'Arkzen', tatName, `${modelName}.php`)
-    if (fs.existsSync(engModelPath)) {
-      fs.mkdirSync(path.join(PROJ_BACK, 'app', 'Models'), { recursive: true })
-      let m = fs.readFileSync(engModelPath, 'utf-8')
-        .replace(`namespace App\\Models\\Arkzen\\${tatName};`, 'namespace App\\Models;')
-        .replace(/\n    protected \$connection = '[^']+';/, '')
-        .replace(new RegExp(`'${tatSnake}_([a-z_]+)'`, 'g'), "'$1'")
-        .replace(new RegExp(`\\\\App\\\\Models\\\\Arkzen\\\\${tatName}\\\\`, 'g'), '\\\\App\\\\Models\\\\')
-      fs.writeFileSync(path.join(PROJ_BACK, 'app', 'Models', `${modelName}.php`), m)
-      success(`app/Models/${modelName}.php`)
-    } else {
-      fail(`Models/Arkzen/${tatName}/${modelName}.php NOT FOUND — run engine first`)
-    }
-
-    // ── Controller ──────────────────────────────────────────────
-    // Engine: Controllers/Arkzen/{tatName}/{ctrlName}.php
-    // Export: Controllers/{ctrlName}.php
-    const engCtrlPath = path.join(BACKEND_DIR, 'app', 'Http', 'Controllers', 'Arkzen', tatName, `${ctrlName}.php`)
-    if (fs.existsSync(engCtrlPath)) {
-      let c = fs.readFileSync(engCtrlPath, 'utf-8')
-        .replace('namespace App\\Http\\Controllers\\Arkzen;', 'namespace App\\Http\\Controllers;')
-        .replace(`use App\\Models\\Arkzen\\${tatName}\\${modelName};`, `use App\\Models\\${modelName};`)
-      fs.writeFileSync(path.join(PROJ_BACK, 'app', 'Http', 'Controllers', `${ctrlName}.php`), c)
-      success(`app/Http/Controllers/${ctrlName}.php`)
-    } else {
-      fail(`Controllers/Arkzen/${tatName}/${ctrlName}.php NOT FOUND — run engine first`)
-    }
-
-    // ── Migration ───────────────────────────────────────────────
-    // Engine: migrations/arkzen/{tatName}/*.php  (with connection + prefixed table)
-    // Export: migrations/*.php  (connection removed, table prefix stripped)
-    const modelSnake = modelName.toLowerCase()
-    let migCopied    = false
-
-    if (fs.existsSync(engMigDir)) {
-      const migFiles  = fs.readdirSync(engMigDir).filter(f => f.endsWith('.php'))
-      const createMig = migFiles.find(f =>
-        f.includes('_create_') && (f.includes(tatSnake) || f.includes(apiId) || f.includes(modelSnake))
-      )
-      if (createMig) {
-        let migContent = fs.readFileSync(path.join(engMigDir, createMig), 'utf-8')
-          .replace(/\n    protected \$connection = '[^']+';/, '')
-          .replace(/Schema::connection\('[^']+'\)->create\(/g, 'Schema::create(')
-          .replace(/Schema::connection\('[^']+'\)->table\(/g, 'Schema::table(')
-          .replace(/Schema::connection\('[^']+'\)->dropIfExists\(/g, 'Schema::dropIfExists(')
-          .replace(new RegExp(`'${tatSnake}_([a-z_]+)'`, 'g'), "'$1'")
-        const cleanMigName = createMig.replace(`_${tatSnake}_`, '_')
-        fs.writeFileSync(path.join(PROJ_BACK, 'database', 'migrations', cleanMigName), migContent)
-        success(`database/migrations/${cleanMigName}`)
-        migCopied = true
+  // Controllers — flat under Arkzen/ (no tatemono subfolder yet)
+  // Identify by Tatemono comment header in the file body
+  const ctrlSrc = path.join(BACKEND_DIR, 'app', 'Http', 'Controllers', 'Arkzen')
+  const ctrlDst = path.join(PROJ_BACK, 'app', 'Http', 'Controllers')
+  fs.mkdirSync(ctrlDst, { recursive: true })
+  if (fs.existsSync(ctrlSrc)) {
+    fs.readdirSync(ctrlSrc).filter(f => f.endsWith('.php') && f !== 'ArkzenEngineController.php').forEach(f => {
+      const body = fs.readFileSync(path.join(ctrlSrc, f), 'utf-8')
+      if (body.includes(`Tatemono: ${tatName}`) || body.includes(`/${tatName}/`)) {
+        copyPhp(path.join(ctrlSrc, f), path.join(ctrlDst, f))
+        success(`app/Http/Controllers/${f}`)
       }
-    }
-
-    if (!migCopied) {
-      let dbRaw = null
-      if (version === 5) {
-        const dbBlocks = extractAllV5(content, 'database')
-        const matched  = dbBlocks.find(b => b.id === apiId || b.id === modelSnake)
-        dbRaw = matched ? matched.content : (dbBlocks[0] ? dbBlocks[0].content : null)
-      } else {
-        dbRaw = extractSectionV4(content, 'database')
-      }
-      if (dbRaw) {
-        const generatedMig = generateMigrationFromDatabase(dbRaw, tatSnake)
-        const timestamp    = new Date().toISOString().replace(/[-T:\.Z]/g, '').slice(0, 14)
-        const migFileName  = `${timestamp}_create_${apiId || tatSnake}_table.php`
-        fs.writeFileSync(path.join(PROJ_BACK, 'database', 'migrations', migFileName), generatedMig)
-        success(`database/migrations/${migFileName} (generated from tatemono)`)
-      } else {
-        fail(`No migration found for ${modelName}`)
-      }
-    }
-
-    // ── Routes ──────────────────────────────────────────────────────
-    const routeFileName = tatName
-    const routeFileById = apiId.replace(/_/g, '-')
-    let routeFound      = false
-
-    for (const candidate of [routeFileName, routeFileById]) {
-      const engRoutePath = path.join(engModulesDir, `${candidate}.php`)
-      if (fs.existsSync(engRoutePath)) {
-        let r = fs.readFileSync(engRoutePath, 'utf-8')
-          .replace(new RegExp(`App\\\\Http\\\\Controllers\\\\Arkzen\\\\${tatName}\\\\`, 'g'), 'App\\\\Http\\\\Controllers\\\\')
-          .replace(/App\\Http\\Controllers\\Arkzen\\\\/g, 'App\\Http\\Controllers\\')
-        const destName = apis.length === 1 ? tatName : `${tatName}-${apiId}`
-        fs.writeFileSync(path.join(PROJ_BACK, 'routes', `${destName}.php`), r)
-        routeIncludes.push(destName)
-        success(`routes/${destName}.php`)
-        routeFound = true
-        break
-      }
-    }
-    if (!routeFound) {
-      fail(`routes/modules/${tatName}.php NOT FOUND — run engine first`)
-    }
-
-    // ── Seeders ─────────────────────────────────────────────────────
-    // Engine: seeders/arkzen/{tatName}/*.php  (with connection + prefixed table)
-    // Export: seeders/*.php  (flat, stripped)
-    if (fs.existsSync(engSeederDir)) {
-      const seederFiles = fs.readdirSync(engSeederDir).filter(f =>
-        f.toLowerCase().includes(modelName.toLowerCase())
-      )
-      if (seederFiles.length > 0) {
-        fs.mkdirSync(path.join(PROJ_BACK, 'database', 'seeders'), { recursive: true })
-        seederFiles.forEach(sf => {
-          let s = fs.readFileSync(path.join(engSeederDir, sf), 'utf-8')
-            .replace(`namespace Database\\Seeders\\Arkzen\\${tatName};`, 'namespace Database\\Seeders;')
-            .replace(new RegExp(`DB::connection\\('${tatSnake}'\\)->`, 'g'), 'DB::')
-            .replace(new RegExp(`'${tatSnake}_([a-z_]+)'`, 'g'), "'$1'")
-          const match = s.match(/class\s+(\w+)\s+extends/)
-          if (match) allSeeders.push(match[1])
-          fs.writeFileSync(path.join(PROJ_BACK, 'database', 'seeders', sf), s)
-          success(`database/seeders/${sf}`)
-        })
-      }
-    }
+    })
   }
 
-  // ── Copy isolated SQLite → exported default DB ───────────────────────
-  // Engine uses database/arkzen/{tatName}.sqlite, export uses database/database.sqlite
-  const engSqlitePath = path.join(engArkzenDbDir, `${tatName}.sqlite`)
-  if (fs.existsSync(engSqlitePath) && fs.statSync(engSqlitePath).size > 0) {
-    fs.copyFileSync(engSqlitePath, path.join(PROJ_BACK, 'database', 'database.sqlite'))
-    success(`database/database.sqlite (copied from engine isolated DB)`)
+  // Requests — flat under Arkzen/ (no tatemono subfolder yet)
+  const reqSrc = path.join(BACKEND_DIR, 'app', 'Http', 'Requests', 'Arkzen')
+  const reqDst = path.join(PROJ_BACK, 'app', 'Http', 'Requests')
+  fs.mkdirSync(reqDst, { recursive: true })
+  if (fs.existsSync(reqSrc)) {
+    fs.readdirSync(reqSrc).filter(f => f.endsWith('.php')).forEach(f => {
+      const body = fs.readFileSync(path.join(reqSrc, f), 'utf-8')
+      if (body.includes(`Tatemono: ${tatName}`) || body.includes(`/${tatName}/`)) {
+        copyPhp(path.join(reqSrc, f), path.join(reqDst, f))
+        success(`app/Http/Requests/${f}`)
+      }
+    })
   }
-  // api.php — include all route files
-  const apiPhpLines = ['<?php']
-  const uniqueIncludes = [...new Set(routeIncludes)]
-  if (uniqueIncludes.length > 0) {
-    uniqueIncludes.forEach(r => apiPhpLines.push(`require __DIR__.'/${r}.php';`))
+
+  // Seeders — flat under arkzen/, match by tatemono name in comment
+  const seederSrc  = path.join(BACKEND_DIR, 'database', 'seeders', 'arkzen')
+  const seederDst  = path.join(PROJ_BACK, 'database', 'seeders')
+  const copiedSeeders = []
+  fs.mkdirSync(seederDst, { recursive: true })
+  if (fs.existsSync(seederSrc)) {
+    fs.readdirSync(seederSrc).filter(f => f.endsWith('.php')).forEach(f => {
+      const body = fs.readFileSync(path.join(seederSrc, f), 'utf-8')
+      if (body.includes(`Tatemono: ${tatName}`) || body.toLowerCase().includes(tatSnake) || body.toLowerCase().includes(tatName.replace(/-/g, ''))) {
+        copyPhp(path.join(seederSrc, f), path.join(seederDst, f))
+        success(`database/seeders/${f}`)
+        const m = body.match(/class\s+(\w+)\s+extends/)
+        if (m) copiedSeeders.push(m[1])
+      }
+    })
+  }
+
+  // Mail blade views
+  const mailViewSrc = path.join(BACKEND_DIR, 'resources', 'views', 'emails', 'arkzen', tatName)
+  if (fs.existsSync(mailViewSrc)) {
+    const mailViewDst = path.join(PROJ_BACK, 'resources', 'views', 'emails', tatName)
+    fs.cpSync(mailViewSrc, mailViewDst, { recursive: true })
+    success(`resources/views/emails/${tatName}/`)
+  }
+
+  // ── 5c. Routes ────────────────────────────────────────────────────
+
+  log('Writing route files...')
+
+  // Main module route file
+  const routeSrc = path.join(BACKEND_DIR, 'routes', 'modules', `${tatName}.php`)
+  if (fs.existsSync(routeSrc)) {
+    copyPhp(routeSrc, path.join(PROJ_BACK, 'routes', `${tatName}.php`))
+    success(`routes/${tatName}.php`)
   } else {
-    // Fallback: include tatName.php
-    apiPhpLines.push(`require __DIR__.'/${tatName}.php';`)
+    warn(`routes/modules/${tatName}.php not found — run engine first`)
   }
-  fs.writeFileSync(path.join(PROJ_BACK, 'routes', 'api.php'), apiPhpLines.join('\n'))
+
+  // api.php — just requires the tatemono route file
+  fs.writeFileSync(path.join(PROJ_BACK, 'routes', 'api.php'),
+    `<?php\n\nif (file_exists(__DIR__.'/${tatName}.php')) {\n    require __DIR__.'/${tatName}.php';\n}\n`
+  )
   success('routes/api.php')
 
-  // DatabaseSeeder.php
-  fs.mkdirSync(path.join(PROJ_BACK, 'database', 'seeders'), { recursive: true })
-  const seederCalls = allSeeders.map(s => `        $this->call(${s}::class);`).join('\n')
-  fs.writeFileSync(path.join(PROJ_BACK, 'database', 'seeders', 'DatabaseSeeder.php'), `<?php
+  // channels.php — extract only blocks for this tatemono
+  let channelsOut = `<?php\n\nuse Illuminate\\Support\\Facades\\Broadcast;\n\n`
+  const channelsSrc = path.join(BACKEND_DIR, 'routes', 'channels.php')
+  if (fs.existsSync(channelsSrc)) {
+    const lines = fs.readFileSync(channelsSrc, 'utf-8').split('\n')
+    let inModule = false
+    lines.forEach(line => {
+      if (line.includes(`// Module: ${tatName}`)) inModule = true
+      if (inModule) {
+        channelsOut += line + '\n'
+        if (line.trim() === '});') { inModule = false; channelsOut += '\n' }
+      }
+    })
+  }
+  fs.writeFileSync(path.join(PROJ_BACK, 'routes', 'channels.php'), channelsOut)
+  success('routes/channels.php')
+
+  // console.php — extract only schedule lines for this tatemono
+  let consoleOut = `<?php\n\nuse Illuminate\\Support\\Facades\\Schedule;\n\n`
+  const consoleSrc = path.join(BACKEND_DIR, 'routes', 'console.php')
+  if (fs.existsSync(consoleSrc)) {
+    fs.readFileSync(consoleSrc, 'utf-8').split('\n').forEach(line => {
+      if (line.includes(`[${tatName}]`)) consoleOut += line + '\n'
+    })
+  }
+  fs.writeFileSync(path.join(PROJ_BACK, 'routes', 'console.php'), consoleOut)
+  success('routes/console.php')
+
+  // ── 5d. DatabaseSeeder ────────────────────────────────────────────
+
+  const seederCalls = copiedSeeders.map(s => `        $this->call(${s}::class);`).join('\n')
+  fs.writeFileSync(path.join(seederDst, 'DatabaseSeeder.php'), `<?php
 
 namespace Database\\Seeders;
 
@@ -859,164 +653,177 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-${seederCalls}
+${seederCalls || '        //'}
     }
 }
 `)
   success('database/seeders/DatabaseSeeder.php')
 
-  // Configure backend
-  log('Configuring backend...')
+  // ── 5e. SQLite database ──────────────────────────────────────────
 
-  const dbPath = path.join(PROJ_BACK, 'database', 'database.sqlite')
-  // SQLite already copied from engine isolated DB above (or will be created empty by migrations)
-
-  const envEx = path.join(PROJ_BACK, '.env.example')
-  if (fs.existsSync(envEx)) {
-    let env = fs.readFileSync(envEx, 'utf-8')
-    env = env
-      .replace(/APP_NAME=.*/, `APP_NAME=${tatName}`)
-      .replace(/APP_ENV=.*/, 'APP_ENV=local')
-      .replace(/APP_DEBUG=.*/, 'APP_DEBUG=true')
-      .replace(/DB_CONNECTION=.*/, 'DB_CONNECTION=sqlite')
-      .replace(/DB_HOST=.*/, '# DB_HOST=')
-      .replace(/DB_PORT=.*/, '# DB_PORT=')
-      .replace(/DB_DATABASE=.*/, `DB_DATABASE=${dbPath}`)
-      .replace(/DB_USERNAME=.*/, '# DB_USERNAME=')
-      .replace(/DB_PASSWORD=.*/, '# DB_PASSWORD=')
-    fs.writeFileSync(path.join(PROJ_BACK, '.env'), env)
+  const engSqlite = path.join(BACKEND_DIR, 'database', 'arkzen', `${tatName}.sqlite`)
+  const destSqlite = path.join(PROJ_BACK, 'database', 'database.sqlite')
+  if (fs.existsSync(engSqlite) && fs.statSync(engSqlite).size > 0) {
+    fs.copyFileSync(engSqlite, destSqlite)
+    success('database/database.sqlite (copied from engine isolated DB)')
+  } else {
+    fs.writeFileSync(destSqlite, '')
+    success('database/database.sqlite (empty — migrations will populate)')
   }
 
-  const appPhpContent = [
-    '<?php',
-    '',
-    'use Illuminate\\Foundation\\Application;',
-    'use Illuminate\\Foundation\\Configuration\\Exceptions;',
-    'use Illuminate\\Foundation\\Configuration\\Middleware;',
-    'use Illuminate\\Support\\Facades\\Route;',
-    '',
-    'return Application::configure(basePath: dirname(__DIR__))',
-    '    ->withRouting(',
-    "        web: __DIR__.'/../routes/web.php',",
-    "        commands: __DIR__.'/../routes/console.php',",
-    "        health: '/up',",
-    '        then: function () {',
-    "            $routesPath = base_path('routes');",
-    "            $skip = ['web.php', 'console.php', 'api.php'];",
-    "            foreach (glob($routesPath . '/*.php') as $routeFile) {",
-    '                if (!in_array(basename($routeFile), $skip)) {',
-    "                    Route::middleware('api')->group($routeFile);",
-    '                }',
-    '            }',
-    '        },',
-    '    )',
-    '    ->withMiddleware(function (Middleware $middleware): void {',
-    '        //',
-    '    })',
-    '    ->withExceptions(function (Exceptions $exceptions): void {',
-    '        //',
-    '    })->create();',
-    '',
-  ].join('\n')
-  fs.writeFileSync(path.join(PROJ_BACK, 'bootstrap', 'app.php'), appPhpContent)
+  // ── 5f. bootstrap/app.php — standalone, no engine wiring ─────────
+
+  log('Configuring backend...')
+
+  fs.writeFileSync(path.join(PROJ_BACK, 'bootstrap', 'app.php'), `<?php
+
+use Illuminate\\Foundation\\Application;
+use Illuminate\\Foundation\\Configuration\\Exceptions;
+use Illuminate\\Foundation\\Configuration\\Middleware;
+
+return Application::configure(basePath: dirname(__DIR__))
+    ->withRouting(
+        web:      __DIR__.'/../routes/web.php',
+        api:      __DIR__.'/../routes/api.php',
+        channels: __DIR__.'/../routes/channels.php',
+        commands: __DIR__.'/../routes/console.php',
+        health:   '/up',
+    )
+    ->withMiddleware(function (Middleware \\$middleware): void {
+        //
+    })
+    ->withExceptions(function (Exceptions \\$exceptions): void {
+        \\$exceptions->shouldRenderJsonWhen(fn(\\$request) => \\$request->is('api/*'));
+    })->create();
+`)
   success('bootstrap/app.php')
 
+  // bootstrap/providers.php — strip engine-only providers
   const provPath = path.join(PROJ_BACK, 'bootstrap', 'providers.php')
   if (fs.existsSync(provPath)) {
     let prov = fs.readFileSync(provPath, 'utf-8')
-    prov = prov.replace(/\s*App\\Providers\\Arkzen\\ArkzenServiceProvider::class,?\n?/, '\n')
+      .replace(/\s*App\\Providers\\Arkzen\\ArkzenServiceProvider::class,?\n?/g, '\n')
     fs.writeFileSync(provPath, prov)
   }
+  success('bootstrap/providers.php')
 
-  ;[
-    path.join(PROJ_BACK, 'app', 'Arkzen'),
-    path.join(PROJ_BACK, 'app', 'Http', 'Controllers', 'Arkzen'),
-    path.join(PROJ_BACK, 'app', 'Models', 'Arkzen'),
-    path.join(PROJ_BACK, 'app', 'Providers', 'Arkzen'),
-  ].forEach(dir => {
-    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
-  })
-  success('Engine folders cleaned')
+  // ── 5g. .env ─────────────────────────────────────────────────────
+
+  const dbPath = path.join(PROJ_BACK, 'database', 'database.sqlite')
+  const envEx  = path.join(PROJ_BACK, '.env.example')
+
+  if (fs.existsSync(envEx)) {
+    let env = fs.readFileSync(envEx, 'utf-8')
+
+    // Core settings
+    env = env
+      .replace(/APP_NAME=.*/,      `APP_NAME=${tatName}`)
+      .replace(/APP_ENV=.*/,       'APP_ENV=local')
+      .replace(/APP_DEBUG=.*/,     'APP_DEBUG=true')
+      .replace(/APP_URL=.*/,       'APP_URL=http://localhost:8001')
+      .replace(/DB_CONNECTION=.*/, 'DB_CONNECTION=sqlite')
+      .replace(/DB_HOST=.*/,       '# DB_HOST=127.0.0.1')
+      .replace(/DB_PORT=.*/,       '# DB_PORT=3306')
+      .replace(/DB_DATABASE=.*/,   `DB_DATABASE=${dbPath}`)
+      .replace(/# DB_DATABASE=.*/, `DB_DATABASE=${dbPath}`)
+      .replace(/DB_USERNAME=.*/,   '# DB_USERNAME=root')
+      .replace(/DB_PASSWORD=.*/,   '# DB_PASSWORD=')
+      .replace(/QUEUE_CONNECTION=.*/, 'QUEUE_CONNECTION=database')
+      .replace(/SESSION_DRIVER=.*/,   'SESSION_DRIVER=database')
+
+    // Reverb vars if needed
+    if (hasRealtime && !env.includes('REVERB_APP_ID=')) {
+      env += [
+        '',
+        'BROADCAST_CONNECTION=reverb',
+        'REVERB_APP_ID=arkzen',
+        'REVERB_APP_KEY=arkzen-key',
+        'REVERB_APP_SECRET=arkzen-secret',
+        'REVERB_HOST=localhost',
+        'REVERB_PORT=8080',
+        'REVERB_SCHEME=http',
+      ].join('\n')
+    }
+
+    fs.writeFileSync(path.join(PROJ_BACK, '.env'), env)
+    success('.env')
+  }
+
+  // ── 5h. Artisan commands ──────────────────────────────────────────
 
   log('Generating app key...')
-  try { execSync('php artisan key:generate --force', { cwd: PROJ_BACK, stdio: 'pipe' }); success('App key generated') }
-  catch { warn('App key will generate on first run') }
+  try {
+    execSync('php artisan key:generate --force', { cwd: PROJ_BACK, stdio: 'pipe' })
+    success('App key generated')
+  } catch { warn('App key will be generated on first run') }
 
   log('Running migrations...')
-  try { execSync('php artisan migrate --force', { cwd: PROJ_BACK, stdio: 'pipe' }); success('Migrations complete') }
-  catch { warn('Migrations failed — check log on first start') }
-
-  log('Running seeders...')
-  try { execSync('php artisan db:seed --force', { cwd: PROJ_BACK, stdio: 'pipe' }); success('Seeders complete') }
-  catch { warn('No seeders to run') }
-
-} else {
-  log('Static tatemono — no backend needed')
-  success('Frontend only export')
-}
-
-// ─────────────────────────────────────────────
-// CONFIGURE FRONTEND
-// ─────────────────────────────────────────────
-
-log('Configuring frontend...')
-
-fs.writeFileSync(path.join(PROJ_FRONT, 'next.config.js'), isStatic
-  ? `/** @type {import('next').NextConfig} */
-const nextConfig = { experimental: { forceSwcTransforms: false } }
-module.exports = nextConfig
-`
-  : `/** @type {import('next').NextConfig} */
-const nextConfig = {
-  experimental: { forceSwcTransforms: false },
-  async rewrites() {
-    return [{ source: '/api/:path*', destination: 'http://127.0.0.1:8001/api/:path*' }]
-  },
-}
-module.exports = nextConfig
-`)
-
-const pkgPath = path.join(PROJ_FRONT, 'package.json')
-if (fs.existsSync(pkgPath)) {
-  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
-  pkg.name = tatName
-  pkg.scripts = {
-    dev:   'NEXT_IGNORE_INCORRECT_LOCKFILE=1 NEXT_DISABLE_SWC=1 next dev --webpack --port 3001',
-    build: 'next build',
-    start: 'next start --port 3001',
+  try {
+    execSync('php artisan migrate --force', { cwd: PROJ_BACK, stdio: 'pipe' })
+    success('Migrations complete')
+  } catch (e) {
+    warn('Migrations failed — will retry on first start')
+    warn(e.message?.slice(0, 120) || '')
   }
-  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2))
-}
-success('Frontend configured')
+
+  if (copiedSeeders.length) {
+    log('Running seeders...')
+    try {
+      execSync('php artisan db:seed --force', { cwd: PROJ_BACK, stdio: 'pipe' })
+      success('Seeders complete')
+    } catch { warn('Seeders failed — run: php artisan db:seed') }
+  }
+
+} // end hasBackend
 
 // ─────────────────────────────────────────────
-// START SCRIPT
+// STEP 6 — start.js FOR EXPORTED PROJECT
 // ─────────────────────────────────────────────
 
-if (isStatic) {
-  fs.writeFileSync(path.join(PROJECT_DIR, 'start.js'), [
-    `const { spawn } = require('child_process')`,
-    `const path = require('path')`,
-    `const FRONT = path.join(__dirname, 'frontend')`,
-    `console.log('\\n  Starting ${tatName}...')`,
-    `console.log('  URL: http://localhost:3001\\n')`,
-    `const frontend = spawn('npm', ['run', 'dev'], { cwd: FRONT, stdio: 'inherit' })`,
-    `process.on('SIGINT', () => { frontend.kill(); process.exit(0) })`,
-  ].join('\n'))
-} else {
-  fs.writeFileSync(path.join(PROJECT_DIR, 'start.js'), [
-    `const { spawn } = require('child_process')`,
-    `const path = require('path')`,
-    `const FRONT = path.join(__dirname, 'frontend')`,
-    `const BACK  = path.join(__dirname, 'backend')`,
-    `console.log('\\n  Starting ${tatName}...')`,
-    `console.log('  Frontend: http://localhost:3001')`,
-    `console.log('  Backend:  http://localhost:8001\\n')`,
-    `const backend  = spawn('php', ['artisan', 'serve', '--port=8001'], { cwd: BACK, stdio: 'inherit' })`,
-    `const frontend = spawn('npm', ['run', 'dev'], { cwd: FRONT, stdio: 'inherit' })`,
-    `process.on('SIGINT', () => { backend.kill(); frontend.kill(); process.exit(0) })`,
-  ].join('\n'))
-}
+log('Writing start.js...')
+
+const startLines = [
+  `const { spawn } = require('child_process')`,
+  `const path      = require('path')`,
+  `const FRONT     = path.join(__dirname, 'frontend')`,
+  hasBackend  ? `const BACK      = path.join(__dirname, 'backend')` : null,
+  ``,
+  `function run(label, cmd, args, cwd, color) {`,
+  `  const colors = { frontend:'\\x1b[36m', backend:'\\x1b[35m', queue:'\\x1b[33m', reverb:'\\x1b[34m' }`,
+  `  const c = colors[color] || '', r = '\\x1b[0m'`,
+  `  const p = spawn(cmd, args, { cwd, stdio: 'pipe', env: { ...process.env, FORCE_COLOR: '1' } })`,
+  `  const out = d => String(d).trim().split('\\n').forEach(l => l && console.log(\`\${c}[\${label}]\${r} \${l}\`))`,
+  `  p.stdout?.on('data', out)`,
+  `  p.stderr?.on('data', out)`,
+  `  p.on('exit', code => code && code !== 0 && console.log(\`\${c}[\${label}]\${r} exited \${code}\`))`,
+  `  return p`,
+  `}`,
+  ``,
+  `console.log('\\n  Starting ${tatName}...')`,
+  hasBackend  ? `console.log('  Backend:  http://localhost:8001')` : null,
+  hasRealtime ? `console.log('  Reverb:   ws://localhost:8080')` : null,
+  `console.log('  Frontend: http://localhost:3001\\n')`,
+  ``,
+  hasBackend  ? `const backend  = run('backend', 'php', ['artisan', 'serve', '--port=8001'], BACK, 'backend')` : null,
+  hasJobs     ? `const queue    = run('queue',   'php', ['artisan', 'queue:work', '--queue=default,heavy', '--sleep=3', '--tries=3'], BACK, 'queue')` : null,
+  hasRealtime ? `const reverb   = run('reverb',  'php', ['artisan', 'reverb:start', '--host=0.0.0.0', '--port=8080', '--debug'], BACK, 'reverb')` : null,
+  `const frontend = run('frontend', 'npm', ['run', 'dev'], FRONT, 'frontend')`,
+  ``,
+  `process.on('SIGINT', () => {`,
+  hasBackend  ? `  backend?.kill()` : null,
+  hasJobs     ? `  queue?.kill()` : null,
+  hasRealtime ? `  reverb?.kill()` : null,
+  `  frontend.kill()`,
+  `  process.exit(0)`,
+  `})`,
+].filter(l => l !== null).join('\n')
+
+fs.writeFileSync(path.join(PROJECT_DIR, 'start.js'), startLines)
+success('start.js')
+
+// ─────────────────────────────────────────────
+// STEP 7 — .gitignore
+// ─────────────────────────────────────────────
 
 fs.writeFileSync(path.join(PROJECT_DIR, '.gitignore'), [
   '**/node_modules/', '**/vendor/', '**/.next/',
@@ -1030,8 +837,8 @@ fs.writeFileSync(path.join(PROJECT_DIR, '.gitignore'), [
 
 divider()
 console.log(`\n  ✓ EXPORTED: ${tatName}`)
-console.log(`  Format: v${version}`)
-console.log(`  Type:   ${isStatic ? 'Static (frontend only)' : 'Full stack (frontend + backend)'}`)
+console.log(`  Format: v6`)
+console.log(`  Type:   ${hasBackend ? 'Full stack (frontend + backend)' : 'Static (frontend only)'}`)
 console.log(`  Run:    cd projects/${tatName} && node start.js`)
 console.log(`  Deploy: push projects/${tatName} to GitHub`)
 divider()
