@@ -1,8 +1,18 @@
 /* @arkzen:meta
 name: roles-test
-version: 2.0.0
-description: Tests role-based access control with real Sanctum auth. Two roles (admin, user), protected routes, role-gated UI. Requires auth:true so CheckRole middleware has a real $request->user() to read from.
+version: 2.1.0
+description: "Tests role-based access control with real Sanctum auth. Two roles (admin, user), protected routes, role-gated UI. v2.1: middleware now declares [auth, role:admin] at the DSL level to exercise MiddlewareBuilder v6.0 scoped CheckRole generation."
 auth: true
+auth_seed:
+  users:
+    - name: Admin User
+      email: admin@roles-test.com
+      password: password123
+      role: admin
+    - name: Regular User
+      email: user@roles-test.com
+      password: password123
+      role: user
 */
 
 /* @arkzen:config
@@ -44,7 +54,7 @@ timestamps: true
 model: RoleAuditLog
 controller: RoleAuditLogController
 prefix: /api/roles-test
-middleware: [auth]
+middleware: [auth, role:admin]
 endpoints:
   index:
     method: GET

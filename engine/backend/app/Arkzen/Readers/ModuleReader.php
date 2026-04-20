@@ -1,8 +1,12 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — MODULE READER v7.1
-// v7.1: customRoutes added to parse() and $isStatic check.
+// ARKZEN ENGINE — MODULE READER v7.2
+// v7.2: authSeed added to parse() return array.
+//       Payload field authSeed (from meta.auth_seed in the tatemono)
+//       is now forwarded into $module['authSeed'] so AuthBuilder
+//       can seed the isolated users table with hashed passwords.
+// v7.1 (kept): customRoutes added to parse() and $isStatic check.
 //       @arkzen:routes blocks are forwarded by the bridge as
 //       a typed array of { controller, middleware, routes[] }.
 //       ModuleReader normalises them into $module['customRoutes']
@@ -175,6 +179,7 @@ class ModuleReader
             'name'          => $payload['name'],
             'version'       => $payload['version'] ?? '1.0.0',
             'auth'          => (bool) ($payload['auth'] ?? false),
+            'authSeed'      => $payload['authSeed'] ?? null,   // ← v7.2
             'databases'     => $databases,
             'apis'          => $apis,
             'customRoutes'  => $customRoutes,   // ← v7.1

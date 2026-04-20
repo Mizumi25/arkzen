@@ -1,6 +1,9 @@
 // ============================================================
-// ARKZEN ENGINE — PARSER v6.1
-// v6.1: Added parseAllNotifications() and parseAllMails() —
+// ARKZEN ENGINE — PARSER v6.2
+// v6.2: parseMeta now reads auth_seed.users from @arkzen:meta block.
+//       Parsed into meta.authSeed and forwarded via bridge to AuthBuilder
+//       for seeding the tatemono's isolated users table with hashed passwords.
+// v6.1 (kept): Added parseAllNotifications() and parseAllMails() —
 //       dedicated parsers for the new :name:end DSL pattern.
 //       These markers have YAML config inside the opening comment
 //       and no PHP body (unlike console/jobs which have handle() bodies).
@@ -199,6 +202,16 @@ function parseMeta(content: string): ArkzenMeta {
     description:  String(parsed.description ?? ''),
     auth:         Boolean(parsed.auth ?? false),
     dependencies: (parsed.dependencies as string[]) ?? [],
+    authSeed:     parsed.auth_seed
+      ? {
+          users: ((parsed.auth_seed as any).users ?? []).map((u: any) => ({
+            name:     String(u.name),
+            email:    String(u.email),
+            password: String(u.password),
+            role:     String(u.role ?? 'user'),
+          })),
+        }
+      : undefined,
   }
 }
 

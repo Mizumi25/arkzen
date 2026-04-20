@@ -245,9 +245,11 @@ class ArkzenEngineController extends Controller
     }
 
     // ─────────────────────────────────────────────
-    // REMOVE v5.2 — SLUG-NAMESPACE AWARE (FIXED)
+    // REMOVE v5.3 — MIDDLEWARE FOLDER ADDED
     // Deletes entire tatemono camel-case folder from every
     // backend directory. Matches the fixed builders.
+    // v5.3: Added Http/Middleware/Arkzen/{slugNs} to cleanup list
+    //       to match MiddlewareBuilder v6.0 scoped output path.
     // ─────────────────────────────────────────────
 
     public function remove(Request $request): JsonResponse
@@ -281,6 +283,7 @@ class ArkzenEngineController extends Controller
             app_path("Notifications/Arkzen/{$slugNs}"),
             app_path("Mail/Arkzen/{$slugNs}"),
             app_path("Console/Commands/Arkzen/{$slugNs}"),
+            app_path("Http/Middleware/Arkzen/{$slugNs}"),
         ];
 
         foreach ($slugFolders as $folder) {

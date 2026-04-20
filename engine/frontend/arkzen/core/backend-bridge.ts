@@ -1,6 +1,9 @@
 // ============================================================
-// ARKZEN ENGINE — BACKEND BRIDGE v5.2
-// v5.2: customRoutes added to hasBackend check and payload.
+// ARKZEN ENGINE — BACKEND BRIDGE v5.3
+// v5.3: authSeed forwarded in build payload from meta.authSeed.
+//       Allows @arkzen:meta auth_seed.users to seed the tatemono's
+//       isolated users table via AuthBuilder with hashed passwords.
+// v5.2 (kept): customRoutes added to hasBackend check and payload.
 //       @arkzen:routes blocks now trigger backend build and
 //       are forwarded to Laravel for CustomRouteBuilder.
 //
@@ -50,11 +53,15 @@ export async function triggerBackendBuild(tatemono: ParsedTatemono): Promise<voi
   if (tatemono.notifications.length) console.log(`[Arkzen Bridge]   Notifications: ${tatemono.notifications.length} block(s)`)
   if (tatemono.mails.length)        console.log(`[Arkzen Bridge]   Mail: ${tatemono.mails.length} block(s)`)
   if (tatemono.consoles.length)     console.log(`[Arkzen Bridge]   Console: ${tatemono.consoles.length} block(s)`)
+  if (tatemono.meta.authSeed?.users?.length) console.log(`[Arkzen Bridge]   Auth seed: ${tatemono.meta.authSeed.users.length} user(s)`)
 
   const payload = {
     name:    tatemono.meta.name,
     version: tatemono.meta.version,
     auth:    tatemono.meta.auth,
+
+    // ← v5.3: seed users into the tatemono's isolated users table
+    authSeed: tatemono.meta.authSeed ?? null,
 
     databases: tatemono.databases,
 

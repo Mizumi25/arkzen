@@ -1,25 +1,14 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — AUTH BUILDER v2.11 (PER-TATEMONO)
-// v2.11: Notification infrastructure (notifications table,
-//        Notifiable trait, DatabaseNotification model, and the
-//        notifications()/unreadNotifications() relations on User)
-//        is now CONDITIONAL on the tatemono declaring
-//        @arkzen:notifications blocks. Tatemonos with auth: true
-//        but no notification DSL get a lean User model with no
-//        Notifiable trait, no notification relations, and no
-//        _notifications table. Rebuilding toggles correctly.
-//        Also adds buildAuthChannel() so ArkzenEngineController
-//        Phase 6.5 can register the private notification channel
-//        independently of @arkzen:realtime blocks.
-//
-// v2.10: Replace fragile regex user-ID extraction with safe
-//        str_starts_with + substr approach.
-// v2.9:  Strip stray Broadcast::auth() route groups.
-// v2.8:  Stronger self-heal for auth block.
-// v2.7:  Broadcasting auth uses direct HMAC signing.
-// v2.6:  Broadcasting auth route moved inside auth:sanctum prefix.
+// ARKZEN ENGINE — AUTH BUILDER v2.12 (PER-TATEMONO)
+// v2.12: Added seedUsers() — seeds the tatemono's isolated users
+//        table from auth_seed.users declared in @arkzen:meta.
+//        Passwords are hashed via Hash::make() so plain-text
+//        passwords in the DSL are never stored raw. Seeding is
+//        idempotent: existing emails are skipped (updateOrInsert).
+// v2.11 (kept): Notification infrastructure conditional on
+//        @arkzen:notifications blocks.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -27,6 +16,8 @@ namespace App\Arkzen\Builders;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 
 class AuthBuilder
 {
@@ -52,6 +43,11 @@ class AuthBuilder
         self::generateAuthController($name, $slugNs, $dbConn, $prefix);
         self::injectAuthRoutes($name, $slugNs);
 
+        // ← v2.12: Seed users if auth_seed declared in meta
+        if (!empty($module['authSeed']['users'])) {
+            self::seedUsers($dbConn, $prefix, $module['authSeed']['users']);
+        }
+
         Log::info("[Arkzen Auth] ✓ Isolated auth complete for: {$name}");
     }
 
@@ -66,6 +62,39 @@ class AuthBuilder
     {
         if (empty($module['notifications'])) return;
         ChannelBuilder::buildAuthChannel($module);
+    }
+
+    // ─────────────────────────────────────────────
+    // SEED USERS — v2.12
+    // Seeds the tatemono's isolated users table from
+    // auth_seed.users declared in @arkzen:meta.
+    // Idempotent: uses updateOrInsert keyed on email,
+    // so rebuilding the tatemono won't duplicate users.
+    // Passwords are hashed — never stored plain.
+    // ─────────────────────────────────────────────
+
+    private static function seedUsers(string $dbConn, string $prefix, array $users): void
+    {
+        $usersTable = "{$prefix}_users";
+
+        foreach ($users as $user) {
+            $email = $user['email'] ?? null;
+            if (!$email) continue;
+
+            DB::connection($dbConn)->table($usersTable)->updateOrInsert(
+                ['email' => $email],
+                [
+                    'name'       => $user['name']     ?? $email,
+                    'email'      => $email,
+                    'password'   => Hash::make($user['password'] ?? 'password'),
+                    'role'       => $user['role']     ?? 'user',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]
+            );
+
+            Log::info("[Arkzen Auth] ✓ Seeded user: {$email} (role: " . ($user['role'] ?? 'user') . ")");
+        }
     }
 
     private static function migrateAuthTables(string $dbConn, string $prefix, bool $hasNotifications): void

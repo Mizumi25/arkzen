@@ -1,10 +1,17 @@
 // ============================================================
-// ARKZEN ENGINE — TYPE DEFINITIONS v5.1
-// v5.1: Added ArkzenCustomRoute + customRoutes to ParsedTatemono
-//       Supports @arkzen:routes blocks — lightweight custom endpoints
-//       with no model/database required. Used for simulate routes,
-//       health checks, webhooks, and any one-off API handlers.
+// ARKZEN ENGINE — TYPE DEFINITIONS v5.2
+// v5.2: Added ArkzenAuthSeedUser + authSeed to ArkzenMeta.
+//       Supports auth_seed.users in @arkzen:meta block to
+//       seed the tatemono's isolated users table on build.
+// v5.1 (kept): Added ArkzenCustomRoute + customRoutes to ParsedTatemono.
 // ============================================================
+
+export interface ArkzenAuthSeedUser {
+  name: string
+  email: string
+  password: string
+  role: string
+}
 
 export interface ArkzenMeta {
   name: string
@@ -12,6 +19,9 @@ export interface ArkzenMeta {
   description: string
   auth: boolean
   dependencies: string[]
+  authSeed?: {
+    users: ArkzenAuthSeedUser[]
+  }
 }
 
 export interface ArkzenConfigOverride {
