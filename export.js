@@ -231,34 +231,41 @@ function rewriteNamespaces(src) {
     .replace(/namespace Database\\Factories\\Arkzen;/g,            'namespace Database\\Factories;')
 
     // ── use statements — scoped two-level (Arkzen\{TatPascal}\Class) ─
-    .replace(new RegExp(`use App\\\\Models\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,                  'g'), 'use App\\Models\\$1;')
-    .replace(new RegExp(`use App\\\\Http\\\\Controllers\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,     'g'), 'use App\\Http\\Controllers\\$1;')
-    .replace(new RegExp(`use App\\\\Http\\\\Requests\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,        'g'), 'use App\\Http\\Requests\\$1;')
-    .replace(new RegExp(`use App\\\\Http\\\\Resources\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,       'g'), 'use App\\Http\\Resources\\$1;')
-    .replace(new RegExp(`use App\\\\Http\\\\Middleware\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,      'g'), 'use App\\Http\\Middleware\\$1;')
-    .replace(new RegExp(`use App\\\\Policies\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,                'g'), 'use App\\Policies\\$1;')
-    .replace(new RegExp(`use App\\\\Jobs\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,                    'g'), 'use App\\Jobs\\$1;')
-    .replace(new RegExp(`use App\\\\Events\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,                  'g'), 'use App\\Events\\$1;')
-    .replace(new RegExp(`use App\\\\Listeners\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,               'g'), 'use App\\Listeners\\$1;')
-    .replace(new RegExp(`use App\\\\Mail\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,                    'g'), 'use App\\Mail\\$1;')
-    .replace(new RegExp(`use App\\\\Notifications\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,           'g'), 'use App\\Notifications\\$1;')
-    .replace(new RegExp(`use App\\\\Console\\\\Commands\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,     'g'), 'use App\\Console\\Commands\\$1;')
-    .replace(new RegExp(`use Database\\\\Factories\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,          'g'), 'use Database\\Factories\\$1;')
+    // NOTE: (\s+as\s+[A-Za-z0-9_]+)? at the end captures an optional ' as Alias'
+    // suffix so that aliased imports like:
+    //   use App\Http\Controllers\Arkzen\AuthTest\AuthController as AuthTestController;
+    // are correctly rewritten to:
+    //   use App\Http\Controllers\AuthController as AuthTestController;
+    // Without this, the regex fails to match and the scoped class path survives
+    // into the exported project, causing "class does not exist" errors.
+    .replace(new RegExp(`use App\\\\Models\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,                  'g'), 'use App\\Models\\$1$2;')
+    .replace(new RegExp(`use App\\\\Http\\\\Controllers\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,     'g'), 'use App\\Http\\Controllers\\$1$2;')
+    .replace(new RegExp(`use App\\\\Http\\\\Requests\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,        'g'), 'use App\\Http\\Requests\\$1$2;')
+    .replace(new RegExp(`use App\\\\Http\\\\Resources\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,       'g'), 'use App\\Http\\Resources\\$1$2;')
+    .replace(new RegExp(`use App\\\\Http\\\\Middleware\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,      'g'), 'use App\\Http\\Middleware\\$1$2;')
+    .replace(new RegExp(`use App\\\\Policies\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,                'g'), 'use App\\Policies\\$1$2;')
+    .replace(new RegExp(`use App\\\\Jobs\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,                    'g'), 'use App\\Jobs\\$1$2;')
+    .replace(new RegExp(`use App\\\\Events\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,                  'g'), 'use App\\Events\\$1$2;')
+    .replace(new RegExp(`use App\\\\Listeners\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,               'g'), 'use App\\Listeners\\$1$2;')
+    .replace(new RegExp(`use App\\\\Mail\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,                    'g'), 'use App\\Mail\\$1$2;')
+    .replace(new RegExp(`use App\\\\Notifications\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,           'g'), 'use App\\Notifications\\$1$2;')
+    .replace(new RegExp(`use App\\\\Console\\\\Commands\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,     'g'), 'use App\\Console\\Commands\\$1$2;')
+    .replace(new RegExp(`use Database\\\\Factories\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,          'g'), 'use Database\\Factories\\$1$2;')
 
     // ── use statements — flat one-level (Arkzen\Class) ───────────────
-    .replace(/use App\\Models\\Arkzen\\([A-Za-z0-9_]+);/g,                    'use App\\Models\\$1;')
-    .replace(/use App\\Http\\Controllers\\Arkzen\\([A-Za-z0-9_]+);/g,         'use App\\Http\\Controllers\\$1;')
-    .replace(/use App\\Http\\Requests\\Arkzen\\([A-Za-z0-9_]+);/g,            'use App\\Http\\Requests\\$1;')
-    .replace(/use App\\Http\\Resources\\Arkzen\\([A-Za-z0-9_]+);/g,           'use App\\Http\\Resources\\$1;')
-    .replace(/use App\\Http\\Middleware\\Arkzen\\([A-Za-z0-9_]+);/g,          'use App\\Http\\Middleware\\$1;')
-    .replace(/use App\\Policies\\Arkzen\\([A-Za-z0-9_]+);/g,                  'use App\\Policies\\$1;')
-    .replace(/use App\\Jobs\\Arkzen\\([A-Za-z0-9_]+);/g,                      'use App\\Jobs\\$1;')
-    .replace(/use App\\Events\\Arkzen\\([A-Za-z0-9_]+);/g,                    'use App\\Events\\$1;')
-    .replace(/use App\\Listeners\\Arkzen\\([A-Za-z0-9_]+);/g,                 'use App\\Listeners\\$1;')
-    .replace(/use App\\Mail\\Arkzen\\([A-Za-z0-9_]+);/g,                      'use App\\Mail\\$1;')
-    .replace(/use App\\Notifications\\Arkzen\\([A-Za-z0-9_]+);/g,             'use App\\Notifications\\$1;')
-    .replace(/use App\\Console\\Commands\\Arkzen\\([A-Za-z0-9_]+);/g,         'use App\\Console\\Commands\\$1;')
-    .replace(/use Database\\Factories\\Arkzen\\([A-Za-z0-9_]+);/g,            'use Database\\Factories\\$1;')
+    .replace(/use App\\Models\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,                    'use App\\Models\\$1$2;')
+    .replace(/use App\\Http\\Controllers\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,         'use App\\Http\\Controllers\\$1$2;')
+    .replace(/use App\\Http\\Requests\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,            'use App\\Http\\Requests\\$1$2;')
+    .replace(/use App\\Http\\Resources\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,           'use App\\Http\\Resources\\$1$2;')
+    .replace(/use App\\Http\\Middleware\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,          'use App\\Http\\Middleware\\$1$2;')
+    .replace(/use App\\Policies\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,                  'use App\\Policies\\$1$2;')
+    .replace(/use App\\Jobs\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,                      'use App\\Jobs\\$1$2;')
+    .replace(/use App\\Events\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,                    'use App\\Events\\$1$2;')
+    .replace(/use App\\Listeners\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,                 'use App\\Listeners\\$1$2;')
+    .replace(/use App\\Mail\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,                      'use App\\Mail\\$1$2;')
+    .replace(/use App\\Notifications\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,             'use App\\Notifications\\$1$2;')
+    .replace(/use App\\Console\\Commands\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,         'use App\\Console\\Commands\\$1$2;')
+    .replace(/use Database\\Factories\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,            'use Database\\Factories\\$1$2;')
 
     // ── Fully-qualified class refs inside strings/new/static calls ───
     // Handles inline App\Models\Arkzen\{TatPascal}\Foo::class etc.
@@ -266,6 +273,16 @@ function rewriteNamespaces(src) {
     .replace(new RegExp(`App\\\\\\\\Http\\\\\\\\Middleware\\\\\\\\Arkzen\\\\\\\\${tatPascal}\\\\\\\\([A-Za-z0-9_]+)`, 'g'), 'App\\\\Http\\\\Middleware\\\\$1')
     .replace(/App\\\\Models\\\\Arkzen\\\\([A-Za-z0-9_]+)/g,                   'App\\\\Models\\\\$1')
     .replace(/App\\\\Http\\\\Middleware\\\\Arkzen\\\\([A-Za-z0-9_]+)/g,       'App\\\\Http\\\\Middleware\\\\$1')
+
+    // ── Route prefix fix — strip /api/ from ->prefix() calls ─────────
+    // In the engine, routes/modules/{name}.php is loaded directly via
+    // ArkzenServiceProvider::registerModuleRoutes(), outside the api.php
+    // pipeline, so AuthBuilder writes prefix('/api/{slug}/auth').
+    // In the export, the file is required from routes/api.php which
+    // Laravel serves under the /api prefix already — causing a double
+    // /api/api/{slug}/... path.  Strip the leading /api/ here so the
+    // exported route file only carries /{slug}/... prefixes.
+    .replace(/->prefix\('\/api\//g, "->prefix('/" )
 
     // ── Database connection stripping ────────────────────────────────
     .replace(new RegExp(`DB::connection\\('${tatSnake}'\\)->`, 'g'),  'DB::')
@@ -743,10 +760,38 @@ ${seederCalls || '        //'}
   log('Writing route files...')
 
   // Main tatemono route file
-  const routeSrc = path.join(BACKEND_DIR, 'routes', 'modules', `${tatName}.php`)
+  const routeSrc  = path.join(BACKEND_DIR, 'routes', 'modules', `${tatName}.php`)
+  const routeDest = path.join(PROJ_BACK, 'routes', `${tatName}.php`)
   if (fs.existsSync(routeSrc)) {
-    copyPhp(routeSrc, path.join(PROJ_BACK, 'routes', `${tatName}.php`))
+    copyPhp(routeSrc, routeDest)
     success(`routes/${tatName}.php`)
+  } else if (hasAuth) {
+    // Engine build didn't run — write a minimal standalone auth-only route file.
+    // Uses the flat namespace (App\Http\Controllers\AuthController) that the
+    // standalone AuthController above lives in.
+    fs.writeFileSync(routeDest, [
+      '<?php',
+      '',
+      '// ============================================================',
+      `// STANDALONE AUTH ROUTES — ${tatName}`,
+      `// Generated by export.js v8 (engine build not available).`,
+      '// ============================================================',
+      '',
+      'use Illuminate\\Support\\Facades\\Route;',
+      'use App\\Http\\Controllers\\AuthController;',
+      '',
+      `Route::middleware(['api'])->prefix('/${tatName}/auth')->group(function () {`,
+      "    Route::post('/register', [AuthController::class, 'register']);",
+      "    Route::post('/login',    [AuthController::class, 'login']);",
+      '});',
+      '',
+      `Route::middleware(['api', 'auth:sanctum'])->prefix('/${tatName}/auth')->group(function () {`,
+      "    Route::post('/logout', [AuthController::class, 'logout']);",
+      "    Route::get('/me',      [AuthController::class, 'me']);",
+      '});',
+      '',
+    ].join('\n'))
+    success(`routes/${tatName}.php (standalone auth-only fallback)`)
   } else {
     warn(`routes/modules/${tatName}.php not found — run engine build first`)
   }
@@ -805,7 +850,7 @@ ${seederCalls || '        //'}
 
   log('Writing standalone middleware...')
 
-  const tokenClass = `App\\Models\\${tatPascal}\\PersonalAccessToken`
+  const tokenClass = `App\\Models\\PersonalAccessToken`
   fs.mkdirSync(path.join(PROJ_BACK, 'app', 'Http', 'Middleware'), { recursive: true })
   const resolverLines = [
     '<?php',
@@ -846,6 +891,175 @@ ${seederCalls || '        //'}
     resolverLines.join('\n')
   )
   success('app/Http/Middleware/ArkzenSanctumTokenResolver.php (standalone)')
+
+  // ── 5h-2. Standalone auth PHP files (AuthController, User, PersonalAccessToken) ──
+  // The engine generates these inside app/…/Arkzen/{TatPascal}/ and export.js
+  // copies + namespace-rewrites them.  But if the engine build (Step 1) didn't
+  // run on this machine (e.g. Termux, CI, no tsx) those source dirs don't exist
+  // and copyPhpDir silently skips them — leaving Composer with a class it can
+  // never find.  Write them unconditionally here (same content AuthBuilder
+  // produces, but already in the flat exported namespace) so the project always
+  // has working auth files regardless of engine build state.
+
+  if (hasAuth) {
+    const tatSnakeForAuth  = tatName.replace(/-/g, '_')
+    const usersTable       = `${tatSnakeForAuth}_users`
+    const tokensTable      = `${tatSnakeForAuth}_personal_access_tokens`
+    const modelsDir        = path.join(PROJ_BACK, 'app', 'Models')
+    const controllersDir   = path.join(PROJ_BACK, 'app', 'Http', 'Controllers')
+    fs.mkdirSync(modelsDir,      { recursive: true })
+    fs.mkdirSync(controllersDir, { recursive: true })
+
+    // PersonalAccessToken
+    const patDest = path.join(modelsDir, 'PersonalAccessToken.php')
+    if (!fs.existsSync(patDest)) {
+      fs.writeFileSync(patDest, [
+        '<?php',
+        '',
+        '// ============================================================',
+        `// STANDALONE — generated by export.js v8 for: ${tatName}`,
+        '// ============================================================',
+        '',
+        'namespace App\\Models;',
+        '',
+        'use Laravel\\Sanctum\\PersonalAccessToken as SanctumToken;',
+        '',
+        'class PersonalAccessToken extends SanctumToken',
+        '{',
+        `    protected $connection = 'sqlite';`,
+        `    protected $table      = '${tokensTable}';`,
+        '}',
+        '',
+      ].join('\n'))
+      success('app/Models/PersonalAccessToken.php (standalone)')
+    }
+
+    // User
+    const userDest = path.join(modelsDir, 'User.php')
+    if (!fs.existsSync(userDest)) {
+      fs.writeFileSync(userDest, [
+        '<?php',
+        '',
+        '// ============================================================',
+        `// STANDALONE — generated by export.js v8 for: ${tatName}`,
+        '// ============================================================',
+        '',
+        'namespace App\\Models;',
+        '',
+        'use Illuminate\\Foundation\\Auth\\User as Authenticatable;',
+        'use Laravel\\Sanctum\\HasApiTokens;',
+        '',
+        'class User extends Authenticatable',
+        '{',
+        '    use HasApiTokens;',
+        '',
+        `    protected $connection = 'sqlite';`,
+        '',
+        `    protected $table = '${usersTable}';`,
+        '',
+        "    protected $fillable = ['name', 'email', 'password', 'role'];",
+        '',
+        "    protected $hidden = ['password', 'remember_token'];",
+        '',
+        '    protected $casts = [',
+        "        'email_verified_at' => 'datetime',",
+        "        'password'          => 'hashed',",
+        '    ];',
+        '',
+        '    public function tokens()',
+        '    {',
+        '        return $this->morphMany(PersonalAccessToken::class, \'tokenable\');',
+        '    }',
+        '}',
+        '',
+      ].join('\n'))
+      success('app/Models/User.php (standalone)')
+    }
+
+    // AuthController
+    const authCtrlDest = path.join(controllersDir, 'AuthController.php')
+    if (!fs.existsSync(authCtrlDest)) {
+      fs.writeFileSync(authCtrlDest, [
+        '<?php',
+        '',
+        '// ============================================================',
+        `// STANDALONE — generated by export.js v8 for: ${tatName}`,
+        '// ============================================================',
+        '',
+        'namespace App\\Http\\Controllers;',
+        '',
+        'use Illuminate\\Routing\\Controller;',
+        'use Illuminate\\Http\\Request;',
+        'use Illuminate\\Http\\JsonResponse;',
+        'use Illuminate\\Support\\Facades\\Hash;',
+        'use Illuminate\\Validation\\ValidationException;',
+        'use Laravel\\Sanctum\\Sanctum;',
+        'use App\\Models\\User;',
+        'use App\\Models\\PersonalAccessToken;',
+        '',
+        'class AuthController extends Controller',
+        '{',
+        '    public function __construct()',
+        '    {',
+        '        Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);',
+        '    }',
+        '',
+        '    public function register(Request $request): JsonResponse',
+        '    {',
+        '        $validated = $request->validate([',
+        "            'name'     => 'required|string|max:255',",
+        `            'email'    => 'required|email|unique:App\\\\Models\\\\User,email',`,
+        "            'password' => 'required|string|min:8|confirmed',",
+        '        ]);',
+        '',
+        '        $user = User::create([',
+        "            'name'     => \$validated['name'],",
+        "            'email'    => \$validated['email'],",
+        "            'password' => Hash::make(\$validated['password']),",
+        '        ]);',
+        '',
+        "        \$token = \$user->createToken('arkzen-token')->plainTextToken;",
+        '',
+        "        return response()->json(['user' => \$user, 'token' => \$token], 201);",
+        '    }',
+        '',
+        '    public function login(Request $request): JsonResponse',
+        '    {',
+        '        $validated = $request->validate([',
+        "            'email'    => 'required|email',",
+        "            'password' => 'required|string',",
+        '        ]);',
+        '',
+        "        \$user = User::where('email', \$validated['email'])->first();",
+        '',
+        "        if (!\$user || !Hash::check(\$validated['password'], \$user->password)) {",
+        '            throw ValidationException::withMessages([',
+        "                'email' => ['The provided credentials are incorrect.'],",
+        '            ]);',
+        '        }',
+        '',
+        '        $user->tokens()->delete();',
+        "        \$token = \$user->createToken('arkzen-token')->plainTextToken;",
+        '',
+        "        return response()->json(['user' => \$user, 'token' => \$token]);",
+        '    }',
+        '',
+        '    public function logout(Request $request): JsonResponse',
+        '    {',
+        '        $request->user()->currentAccessToken()->delete();',
+        "        return response()->json(['message' => 'Logged out successfully']);",
+        '    }',
+        '',
+        '    public function me(Request $request): JsonResponse',
+        '    {',
+        '        return response()->json($request->user());',
+        '    }',
+        '}',
+        '',
+      ].join('\n'))
+      success('app/Http/Controllers/AuthController.php (standalone)')
+    }
+  }
 
   // ── 5i. bootstrap/app.php — standalone, wires resolver + routes ────
 
@@ -1000,6 +1214,20 @@ ${seederCalls || '        //'}
       success('Seeders complete')
     } catch { warn('Seeders failed — run: php artisan db:seed') }
   }
+
+  // ── 5n. Regenerate Composer classmap ─────────────────────────────────
+  // vendor/composer/autoload_classmap.php is generated inside the engine's
+  // backend and contains absolute paths pointing at the engine folder.
+  // Every exported tatemono gets this stale classmap unless we regenerate it
+  // here — otherwise Composer tries to load classes from the engine path
+  // instead of the exported project path, causing "Failed to open stream"
+  // errors on every exported tatemono that has namespace-rewritten classes.
+
+  log('Regenerating Composer classmap...') 
+  try {
+    execSync('composer dump-autoload --optimize --quiet', { cwd: PROJ_BACK, stdio: 'pipe' })
+    success('Composer classmap regenerated (vendor/composer/autoload_classmap.php)')
+  } catch { warn('composer dump-autoload failed — run manually: cd backend && composer dump-autoload') }
 
 } // end hasBackend
 
