@@ -1,4 +1,4 @@
-# ARKZEN GUIDELINES DOCUMENT v6.0
+# ARKZEN GUIDELINES DOCUMENT v6.1
 ## For Claude AI — Generating Tatemono Files
 
 ---
@@ -52,7 +52,7 @@ import styles from './page.module.css'
 
 ---
 
-## SECTION 2B — ICON & EMOJI POLICY (NEW v6)
+## SECTION 2B — ICON & EMOJI POLICY
 
 ### Icons: Lucide React (Primary) + Hero Icons (Secondary)
 
@@ -119,7 +119,7 @@ ONLY use emoji when:
 
 ---
 
-## SECTION 2C — DESIGN AESTHETIC POLICY (NEW v6)
+## SECTION 2C — DESIGN AESTHETIC POLICY
 
 ### Awwwards-Quality, Apple-Minimalist Design Standard
 
@@ -211,7 +211,6 @@ text-blue-600 bg-blue-50         // info
 
 **Table Design Standard:**
 ```tsx
-// Clean table (prefer over heavy bordered tables)
 <table className="w-full text-sm">
   <thead>
     <tr className="border-b border-neutral-100">
@@ -236,7 +235,6 @@ text-blue-600 bg-blue-50         // info
 
 **Page Header Standard:**
 ```tsx
-// Every main page should have a clean header area
 <div className="flex items-center justify-between mb-8">
   <div>
     <h1 className="text-xl font-semibold text-neutral-900">Page Title</h1>
@@ -255,7 +253,7 @@ text-blue-600 bg-blue-50         // info
 ```
 1. One Tatemono = one complete isolated system
 2. File extension is always .tsx
-3. File lives at: tatemonos/<n>/core.tsx
+3. File lives at: tatemonos/<name>/core.tsx
 4. Tatemono name is always lowercase with hyphens
    CORRECT:   pos-system
    CORRECT:   project-management
@@ -268,13 +266,17 @@ text-blue-600 bg-blue-50         // info
    @arkzen:database[:identifier]    (REPEAT — identifier optional when single table)
    @arkzen:api[:identifier]         (REPEAT — identifier optional when single resource)
    @arkzen:routes                   (optional — custom routes, no identifier)
+   @arkzen:middleware:name          (optional, REPEAT — named :end block with PHP body)
    @arkzen:store:identifier         (optional, REPEAT)
    @arkzen:realtime:identifier      (optional, REPEAT — named :end block)
    @arkzen:events:identifier        (optional, REPEAT — named :end block)
+   @arkzen:listener:name            (optional, REPEAT — named :end block with PHP body)
    @arkzen:jobs:identifier          (optional, REPEAT — named :end block with PHP body)
-   @arkzen:notifications:identifier (optional, REPEAT — named :end block)
-   @arkzen:mail:identifier          (optional, REPEAT — named :end block, YAML only)
+   @arkzen:notifications:identifier (optional, REPEAT — named :end block, YAML + optional toMail() body)
+   @arkzen:mail:identifier          (optional, REPEAT — named :end block, YAML + optional Blade body)
    @arkzen:console:identifier       (optional, REPEAT — named :end block with PHP body)
+   @arkzen:endpoint:name            (optional, REPEAT — named :end block with PHP body)
+   @arkzen:handler:name             (optional, REPEAT — named :end block with PHP body)
    @arkzen:layout:name              (optional, REPEAT — custom layouts)
    @arkzen:components:identifier    (REPEAT — one per group)
    @arkzen:page:name                (REPEAT — one per page/route)
@@ -315,7 +317,7 @@ When `auth: false`:
 - Use `arkzenFetch` only if the Tatemono needs to call its own public API
 
 When `auth: true`:
-- You MUST call `setActiveTatemono('<n>')` once in the first `@arkzen:components` block:
+- You MUST call `setActiveTatemono('<name>')` once in the first `@arkzen:components` block:
   ```tsx
   import { useAuthStore, setActiveTatemono } from '@/arkzen/core/stores/authStore'
   if (typeof window !== 'undefined') {
@@ -445,12 +447,12 @@ seeder:
    /* @arkzen:database:items  → required when multiple tables exist
 2. When using multiple @arkzen:database blocks, ALL must have identifiers
 3. Table name always plural snake_case
-3. Foreign keys reference table.column within same Tatemono ONLY
-4. Exception: users.id is allowed for auth:true Tatemonos
-5. Seeder is optional per table
-6. softDeletes: true adds deleted_at
-7. Engine auto-sorts migrations by foreign key dependency
-8. Never add a database:users block — AuthBuilder manages this for auth:true Tatemonos
+4. Foreign keys reference table.column within same Tatemono ONLY
+5. Exception: users.id is allowed for auth:true Tatemonos
+6. Seeder is optional per table
+7. softDeletes: true adds deleted_at
+8. Engine auto-sorts migrations by foreign key dependency
+9. Never add a database:users block — AuthBuilder manages this for auth:true Tatemonos
 ```
 
 ---
@@ -524,14 +526,39 @@ endpoints:
 
 **RULE: Only use `auth:sanctum` or `[auth]` in middleware if `auth: true` in meta.**
 
-**Special endpoint types (v6):**
+**Special endpoint types:**
 ```
 type: notification_trigger  → Routes through native Laravel notifications (no model needed)
 type: role_admin_only       → Generates admin role check in controller body
 type: role_user_only        → Generates user-role check in controller body
 type: role_promote          → Promotes authenticated user to admin
 type: role_demote           → Demotes authenticated user to user role
+type: upload                → File upload store endpoint
+type: upload_destroy        → File upload delete endpoint
+type: command_run           → Runs an Artisan command (scheduler-test pattern)
+type: job_dispatch          → Dispatches a background job
+type: event_fire            → Fires a Laravel event
+type: broadcast             → Broadcasts a Reverb event
+type: mail_send             → Sends a Mailable
 ```
+
+**Custom endpoint body injection (v5.8) — `@arkzen:endpoint:name`:**
+
+Any endpoint name that doesn't match a standard CRUD name (index, show, store, update, destroy) gets routed through `generateCustomMethod()`. You can inject PHP into it via a named `@arkzen:endpoint:name` DSL block. The body is placed after all `@arkzen:api` blocks:
+
+```tsx
+/* @arkzen:endpoint:stats
+*/
+$total = \App\Models\Arkzen\MyModule\Product::count();
+$value = \App\Models\Arkzen\MyModule\Product::sum('price');
+return response()->json(['total' => $total, 'value' => $value]);
+/* @arkzen:endpoint:stats:end */
+```
+
+- The endpoint must already be declared inside an `@arkzen:api` block
+- The name in `@arkzen:endpoint:name` must exactly match the endpoint key in the YAML
+- If no `@arkzen:endpoint` block is provided, the engine emits a stub with a TODO comment
+- Standard CRUD methods (index, show, store, update, destroy) are NOT injectable — they are generated from schema
 
 **Optional flags per @arkzen:api block:**
 ```
@@ -560,12 +587,93 @@ routes:
 */
 ```
 
+**Handler body injection — `@arkzen:handler:name` (v2.0):**
+
+Custom route handlers can have their PHP body injected via a named `@arkzen:handler:name` DSL block. Place these after the `@arkzen:routes` block:
+
+```tsx
+/* @arkzen:handler:reset
+*/
+\App\Models\Arkzen\MyModule\MyModel::truncate();
+return response()->json(['message' => 'Reset complete']);
+/* @arkzen:handler:reset:end */
+```
+
+- The handler name must exactly match the `handler:` value in the routes YAML
+- Special case: if the route contains a `{code}` parameter, the engine auto-generates a simulation handler — body injection is ignored for that route
+- If no `@arkzen:handler` block is provided, the engine emits a TODO stub
+
 **Rules:**
 ```
 1. No identifier needed — only one @arkzen:routes block per Tatemono
 2. handler name maps to the public method on the generated controller
 3. middleware follows same rules as @arkzen:api middleware
 4. Use for non-resource routes: simulators, command runners, custom actions
+```
+
+---
+
+## SECTION 10 — @arkzen:middleware (optional, REPEAT — named :end block)
+
+Middleware is declared as **named** blocks. The YAML config (currently reserved for future options) goes in the opening comment. The `handle()` method body goes between the comment close `*/` and the `:end` marker.
+
+```
+/* @arkzen:middleware:requireJson
+*/
+if (!$request->isJson()) {
+    return response()->json([
+        'message' => 'Content-Type: application/json is required.',
+        'hint'    => 'Set the Content-Type header to application/json',
+    ], 415);
+}
+return $next($request);
+/* @arkzen:middleware:requireJson:end */
+
+/* @arkzen:middleware:checkSubscription
+*/
+$user = $request->user();
+if (!$user || !$user->subscribed) {
+    return response()->json(['message' => 'Subscription required.'], 403);
+}
+return $next($request);
+/* @arkzen:middleware:checkSubscription:end */
+```
+
+**How it wires up:**
+
+The middleware name (e.g. `requireJson`) is declared in the `@arkzen:api` or `@arkzen:routes` middleware array. The engine:
+1. Generates `app/Http/Middleware/Arkzen/{SlugNs}/{ClassName}.php` with the injected `handle()` body
+2. Registers the alias in the route file so Laravel can resolve the string at runtime
+3. Adds the `use` statement for the scoped class
+
+```tsx
+/* @arkzen:api
+middleware: [auth:sanctum, requireJson, checkSubscription]
+...
+*/
+```
+
+**Built-in middleware (no file generated — pass through directly):**
+```
+auth             → resolved to auth:sanctum
+auth:sanctum     → Sanctum guard
+throttle         → Laravel rate limiter (e.g. throttle:60,1)
+verified         → email verification guard
+cors             → CORS middleware
+api              → always injected as the first middleware
+web              → web middleware group
+cache.headers    → HTTP cache headers
+role:admin       → generates scoped CheckRole middleware (special case)
+```
+
+**Rules:**
+```
+1. Name is camelCase (e.g. requireJson, checkSubscription)
+2. The @arkzen:middleware:name block MUST exist if the middleware name is declared
+   in @arkzen:api or @arkzen:routes and is NOT a built-in
+3. Falls back to a TODO stub if the block body is empty — but always declare it
+4. Multiple custom middleware blocks are supported — one per name
+5. If file already exists on disk, alias is still re-registered — idempotent
 ```
 
 ---
@@ -598,7 +706,7 @@ const usePosStore = create<PosState>((set) => ({
 
 ### @arkzen:jobs — Named :end blocks WITH PHP handle() body
 
-Jobs are now **named** blocks. The YAML config goes in the opening comment. The `handle()` method body goes between the comment close and the `:end` marker.
+Jobs are **named** blocks. The YAML config goes in the opening comment. The `handle()` body goes between `*/` and the `:end` marker.
 
 ```tsx
 /* @arkzen:jobs:process-data
@@ -608,7 +716,6 @@ timeout: 30
 */
 public function handle(): void
 {
-    // Your PHP job logic here
     \App\Models\Arkzen\MyModule\MyModel::create([
         'status' => 'completed',
         'result' => 'Job finished successfully',
@@ -647,9 +754,14 @@ tries:   integer — retry attempts on failure
 timeout: integer — seconds before job is killed
 ```
 
+**Notes:**
+- If the body contains the full `public function handle(): void { ... }` signature, the engine strips the signature and uses only the inner lines
+- Falls back to a log-and-TODO stub if no body is provided
+- The generated class always has a `failed()` method that logs the exception
+
 ### @arkzen:console — Named :end blocks WITH PHP handle() body
 
-Console commands are also **named** blocks with YAML config + PHP body.
+Console commands are **named** blocks with YAML config + PHP body.
 
 ```tsx
 /* @arkzen:console:cleanup-temp
@@ -686,9 +798,13 @@ schedule:    cron expression (e.g. '0 * * * *', '*/5 * * * *', '0 8 * * *')
              IMPORTANT: wrap cron expressions in single quotes — */5 contains */ which can break YAML
 ```
 
-### @arkzen:events — Named :end blocks (YAML only)
+**Notes:**
+- If `schedule:` is declared, the engine auto-registers the command in `routes/console.php` — no manual setup needed
+- Falls back to a log-and-TODO stub if no body is provided
 
-Events are **named** blocks with YAML only — no PHP body.
+### @arkzen:events — Named :end blocks (YAML only, with optional listener body injection)
+
+Events are **named** blocks with YAML only — no PHP body in the event block itself.
 
 ```tsx
 /* @arkzen:events:user-signed-up
@@ -701,6 +817,30 @@ listeners: [ProcessPayment, UpdateInventory, SendOrderConfirmation]
 */
 /* @arkzen:events:order-placed:end */
 ```
+
+**Listener body injection — `@arkzen:listener:ListenerName` (v3.2):**
+
+Listener `handle()` bodies can be injected via named `@arkzen:listener:ClassName` blocks. Place these after the `@arkzen:events` blocks:
+
+```tsx
+/* @arkzen:listener:SendWelcomeEmail
+*/
+\Mail::to($event->data['email'] ?? '')->send(
+    new \App\Mail\Arkzen\MyModule\WelcomeMail($event->data)
+);
+/* @arkzen:listener:SendWelcomeEmail:end */
+
+/* @arkzen:listener:ProcessPayment
+*/
+$orderId = $event->data['order_id'] ?? null;
+\Log::info('[Payment] Processing order: ' . $orderId);
+// payment logic here
+/* @arkzen:listener:ProcessPayment:end */
+```
+
+- The listener class name must exactly match the string declared in the `listeners:` array
+- Falls back to a log-and-EventLog-record stub if no body is provided
+- The generated listener implements `ShouldQueue` — all listeners are queued
 
 ### @arkzen:realtime — Named :end blocks (YAML only)
 
@@ -724,7 +864,9 @@ type: public
 /* @arkzen:realtime:event-name:end */
 ```
 
-### @arkzen:notifications — Named :end blocks (YAML only)
+### @arkzen:notifications — Named :end blocks (YAML + optional toMail() body injection)
+
+Notification blocks support **optional PHP body injection** for the `toMail()` method (v3.9). The YAML config goes in the opening comment. If a PHP body is placed between `*/` and `:end`, it is injected into `toMail()` instead of the generated stub.
 
 ```tsx
 /* @arkzen:notifications:order-confirmed
@@ -733,14 +875,39 @@ message: Your order has been confirmed
 subject: Order Confirmation
 */
 /* @arkzen:notifications:order-confirmed:end */
+```
 
-/* @arkzen:notifications:order-broadcast
-channels: [broadcast, database]
-channel_type: private
-message: Real-time order update received
-subject: Order Update
+With injected `toMail()` body:
+
+```tsx
+/* @arkzen:notifications:order-confirmed
+channels: [database, mail]
+message: Your order has been confirmed
+subject: Order Confirmation
 */
-/* @arkzen:notifications:order-broadcast:end */
+return (new \Illuminate\Notifications\Messages\MailMessage)
+    ->subject('Order #' . ($this->data['order_id'] ?? '') . ' Confirmed')
+    ->greeting('Hello ' . ($this->data['name'] ?? 'there') . '!')
+    ->line('Your order has been confirmed and is being processed.')
+    ->action('View Order', url('/orders/' . ($this->data['order_id'] ?? '')))
+    ->line('Thank you for your purchase.');
+/* @arkzen:notifications:order-confirmed:end */
+```
+
+**What is injectable vs fixed:**
+```
+toMail()       → INJECTABLE — provide a PHP body between */ and :end
+toBroadcast()  → FIXED — always returns ['message' => ..., 'data' => $this->data]
+toArray()      → FIXED — always returns type/message/tatemono merged with $this->data
+```
+
+**Notification YAML fields:**
+```
+channels:      [database] | [mail] | [broadcast] | [database, mail] | [broadcast, database] | etc.
+message:       string — used in toArray() and default toMail() stub
+subject:       string — used in default toMail() stub subject line
+channel_type:  private (default) | public | presence
+               only applies when 'broadcast' is in channels
 ```
 
 **Notification `channel_type` values:**
@@ -749,11 +916,12 @@ private   → PrivateChannel('{slug}.{user_id}')      ← default
 public    → Channel('{slug}.notifications')
 presence  → PresenceChannel('{slug}.{user_id}')
 ```
-`channel_type` only applies when `broadcast` is in the channels list.
 
-### @arkzen:mail — Named :end blocks (YAML only, same pattern as notifications)
+### @arkzen:mail — Named :end blocks (YAML + optional Blade view body injection)
 
-Despite how `mail-test` was written (as a single no-identifier block), **the parser (`parseAllMails` v6.1) looks for `/* @arkzen:mail:identifier`** — the same named `:end` pattern as notifications. Each mailable gets its own named block.
+Mail blocks support **optional Blade/HTML body injection** for the view file (v3.1). The YAML config goes in the opening comment. If a Blade/HTML body is placed between `*/` and `:end`, it is written as the actual Blade view file instead of the generic stub.
+
+The Mailable class structure (envelope, content, attachments) is always generated from YAML — it is not injectable.
 
 ```tsx
 /* @arkzen:mail:welcome-mail
@@ -763,7 +931,11 @@ data:
   app_name: string
 */
 /* @arkzen:mail:welcome-mail:end */
+```
 
+With injected Blade view body:
+
+```tsx
 /* @arkzen:mail:order-confirmation
 subject: "Your order has been confirmed"
 data:
@@ -771,18 +943,33 @@ data:
   total: string
   customer_name: string
 */
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Order Confirmed</title></head>
+<body style="font-family: sans-serif; padding: 40px; color: #333; max-width: 600px; margin: 0 auto;">
+  <h2 style="color: #111;">Order Confirmed ✓</h2>
+  <p>Hi {{ $customer_name }},</p>
+  <p>Your order <strong>#{{ $order_id }}</strong> has been confirmed.</p>
+  <p style="font-size: 20px; font-weight: bold;">Total: ${{ $total }}</p>
+  <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;">
+  <p style="color: #999; font-size: 12px;">Thank you for your purchase.</p>
+</body>
+</html>
 /* @arkzen:mail:order-confirmation:end */
-
-/* @arkzen:mail:password-reset
-subject: "Reset your password"
-data:
-  reset_link: string
-  expires_in: string
-*/
-/* @arkzen:mail:password-reset:end */
 ```
 
-> **Note:** `mail-test/core.tsx` uses the old no-identifier single block format (`/* @arkzen:mail ... */`) which the parser also tolerates as a fallback — but the **correct v6 format is named per-mailable blocks**, matching how notifications work. Always use the named format for new tatemonos.
+**What is injectable vs fixed:**
+```
+Blade view file     → INJECTABLE — provide HTML/Blade between */ and :end
+Mailable class      → FIXED — envelope(subject), content(view), attachments() generated from YAML
+data: fields        → CONFIG — declare in YAML; become public readonly properties on the Mailable
+```
+
+**Mail YAML fields:**
+```
+subject:  string — the email subject line
+data:     map of field → type — these become constructor args + public properties on the Mailable
+```
 
 ---
 
@@ -801,7 +988,7 @@ data:
 
 ### Custom Layouts
 
-Define reusable layouts for shared structure within the same Tatemono. These must meet the v6 design standard — clean sidebar, subtle borders, proper hierarchy.
+Define reusable layouts for shared structure within the same Tatemono.
 
 ```tsx
 /* @arkzen:layout:dashboard-layout */
@@ -1036,6 +1223,37 @@ const ServerErrorPage = ({ reset }: { reset: () => void }) => (
 6. Follow v6 design aesthetic — clean, minimal error state
 ```
 
+---
+
+## SECTION 18B — COMPLETE DSL BODY INJECTION REFERENCE (v6.1)
+
+This is the authoritative table of every block that supports PHP or HTML body injection. When a block supports injection, the PHP/HTML goes **between `*/` and the `:end` marker**. The opening `/* @arkzen:... */` comment carries YAML config only.
+
+| DSL Block | Builder | Injection Status | What is injected | Falls back to |
+|-----------|---------|-----------------|-----------------|---------------|
+| `@arkzen:jobs:name` | JobBuilder v3.1 | **Full body** | PHP → `handle(): void` inner lines | Log + TODO stub |
+| `@arkzen:console:name` | ConsoleBuilder v4.0 | **Full body** | PHP → `handle(): int` inner lines | Log + TODO stub |
+| `@arkzen:middleware:name` | MiddlewareBuilder v7.0 | **Full body** | PHP → `handle()` inner lines | TODO stub |
+| `@arkzen:listener:Name` | ListenerBuilder v3.2 | **Full body** | PHP → `handle(Event $event)` inner lines | Log + EventLog record stub |
+| `@arkzen:endpoint:name` | ControllerBuilder v5.8 | **Full body** | PHP → custom controller method body | TODO stub |
+| `@arkzen:handler:name` | CustomRouteBuilder v2.0 | **Full body** | PHP → custom route handler method body | TODO stub |
+| `@arkzen:notifications:name` | NotificationBuilder v3.9 | **Partial** | PHP → `toMail()` body only | Generic MailMessage chain |
+| `@arkzen:mail:name` | MailBuilder v3.1 | **Partial** | HTML/Blade → written as view file | Generic HTML stub |
+| `@arkzen:events:name` | EventBuilder v3.0 | **Config only** | No body — listeners declared in YAML | n/a |
+| `@arkzen:realtime:name` | BroadcastBuilder v3.2 | **Config only** | No body — channel/type from YAML | n/a |
+| `@arkzen:database[:name]` | MigrationBuilder | **Config only** | No body — columns/indexes from YAML | n/a |
+| `@arkzen:api[:name]` | ControllerBuilder (CRUD) | **Config only** | CRUD methods generated from schema — not injectable | n/a |
+| `@arkzen:store:name` | Frontend only | **Full body** | TypeScript/React — the entire store body | n/a |
+| `@arkzen:page:name` | Frontend only | **Full body** | TypeScript/React — the entire page component | n/a |
+| `@arkzen:components:name` | Frontend only | **Full body** | TypeScript/React — imports + components | n/a |
+| `@arkzen:layout:name` | Frontend only | **Full body** | TypeScript/React — layout component | n/a |
+
+**Body stripping:** For jobs, console, listeners, middleware, endpoints, and handlers — if you write the full function signature (`public function handle(): void { ... }`), the engine strips the signature and uses only the inner lines. You can write just the inner lines directly.
+
+---
+
+## SECTION 19 — NEVER DO (Complete Rules List)
+
 ```
 1.  Never generate incomplete sections
 2.  Never skip @arkzen:components or @arkzen:page sections
@@ -1066,21 +1284,26 @@ const ServerErrorPage = ({ reset }: { reset: () => void }) => (
 27. Never use layout:auth when auth: false
 28. Never share components, stores, or types between Tatemonos
 29. Never use middleware: [auth:sanctum] when auth: false
-30. Never use emoji as icon replacements — use lucide-react icons (NEW v6)
-31. Never use emoji in UI unless the feature is literally about emoji (NEW v6)
-32. Never use any icon library other than lucide-react (primary) or heroicons (secondary) (NEW v6)
-33. Never generate cluttered, low-contrast, or visually noisy UI — follow the minimalist aesthetic (NEW v6)
-34. Never use heavy drop shadows, rainbow colors, or more than one accent color per tatemono (NEW v6)
-35. Never add @arkzen:database:users — AuthBuilder manages users for auth:true tatemonos (NEW v6)
-36. Never write @arkzen:mail as a single no-identifier block — use named @arkzen:mail:mailable-name :end blocks, one per mailable (NEW v6)
-37. Never write @arkzen:jobs or @arkzen:console as plain YAML comment blocks — they require named :end blocks with PHP handle() body (NEW v6)
-38. Never write cron expressions in console schedule without single quotes — always schedule: '*/5 * * * *' not schedule: */5 * * * * (NEW v6)
-39. Never add @arkzen:database or @arkzen:api identifiers when there is only one table/resource — identifier is optional for single blocks (NEW v6)
+30. Never use emoji as icon replacements — use lucide-react icons
+31. Never use emoji in UI unless the feature is literally about emoji
+32. Never use any icon library other than lucide-react (primary) or heroicons (secondary)
+33. Never generate cluttered, low-contrast, or visually noisy UI — follow the minimalist aesthetic
+34. Never use heavy drop shadows, rainbow colors, or more than one accent color per tatemono
+35. Never add @arkzen:database:users — AuthBuilder manages users for auth:true tatemonos
+36. Never write @arkzen:mail as a single no-identifier block — use named @arkzen:mail:name :end blocks
+37. Never write @arkzen:jobs or @arkzen:console as plain YAML comment blocks — they require named :end blocks with PHP handle() body
+38. Never write cron expressions in console schedule without single quotes — always schedule: '*/5 * * * *' not schedule: */5 * * * *
+39. Never add @arkzen:database or @arkzen:api identifiers when there is only one table/resource — identifier is optional for single blocks
+40. Never declare a custom middleware in @arkzen:api or @arkzen:routes without a matching @arkzen:middleware:name block (unless it's a built-in)
+41. Never inject a body into @arkzen:events — events are data carriers, use @arkzen:listener:Name for listener logic
+42. Never inject a body into @arkzen:realtime — channel config is YAML only
+43. Never write @arkzen:endpoint:name without first declaring the endpoint key inside an @arkzen:api block
+44. Never write @arkzen:handler:name without first declaring the handler in an @arkzen:routes block
 ```
 
 ---
 
-## SECTION 19 — VALIDATION
+## SECTION 20 — VALIDATION
 
 Before submitting, run:
 ```bash
@@ -1099,7 +1322,7 @@ Output example:
 
 ---
 
-## SECTION 20 — EXPORT SYSTEM (v6)
+## SECTION 21 — EXPORT SYSTEM
 
 ### How Export Works
 
@@ -1131,24 +1354,19 @@ DB_CONNECTION=sqlite
 DB_DATABASE=<absolute-path-to-exported-sqlite>
 ```
 
-**When would you want per-tatemono ENV?**
-- When deploying an exported tatemono to a server with different SMTP, S3, or external service credentials
-- In that case: customize the `.env` inside `projects/<tatemono-name>/backend/` after export
-- Do NOT put per-tatemono ENV into the main Arkzen repo — it defeats the global engine approach
-
 **Summary:**
 ```
 Development:   global engine .env → handles all tatemonos
 Export:        auto-generated .env per exported project → self-contained
-Production:    edit projects/<name>/backend/.env after export for server-specific values
+Production:    edit projects/<n>/backend/.env after export for server-specific values
 ```
 
 ---
 
-## SECTION 21 — GENERATION PROMPT TEMPLATE
+## SECTION 22 — GENERATION PROMPT TEMPLATE
 
 ```
-ARKZEN GUIDELINES: [paste this document or reference v6]
+ARKZEN GUIDELINES: [paste this document or reference v6.1]
 
 PROJECT STACK:
 - Frontend: Next.js 16 + TypeScript + Tailwind CSS + Zustand
@@ -1172,14 +1390,14 @@ ROLES: [yes — admin/user split needed | no]
 Generate one complete Arkzen Tatemono TSX file.
 File name: [system-name]
 One file. Every table, every API resource, every page in one Tatemono.
-Follow ALL v6.0 guidelines strictly.
+Follow ALL v6.1 guidelines strictly.
 Design must meet the minimalist premium standard (Section 2C).
 Icons from lucide-react only. No emoji in UI.
 ```
 
 ---
 
-## SECTION 22 — COMPLETE STRUCTURE REFERENCE v6.0
+## SECTION 23 — COMPLETE STRUCTURE REFERENCE v6.1
 
 ```
 tatemonos/<n>/core.tsx
@@ -1197,36 +1415,52 @@ tatemonos/<n>/core.tsx
 │
 ├── /* @arkzen:routes            → OPTIONAL custom routes (no identifier, YAML comment)
 │
+├── /* @arkzen:middleware:name   → OPTIONAL custom middleware (PHP handle() body + :end)
+│   if (!$request->isJson()) { ... }
+│   return $next($request);
+│   └── /* @arkzen:middleware:name:end */
+│
 ├── /* @arkzen:store:name        → OPTIONAL Zustand stores (repeat)
 │   └── /* @arkzen:store:name:end */
 │
-├── /* @arkzen:realtime:channel-name   → OPTIONAL Reverb channel (YAML comment + :end)
-│   └── /* @arkzen:realtime:channel-name:end */
+├── /* @arkzen:realtime:channel  → OPTIONAL Reverb channel (YAML comment + :end)
+│   └── /* @arkzen:realtime:channel:end */
 │
-├── /* @arkzen:events:event-name       → OPTIONAL Laravel event (YAML comment + :end)
+├── /* @arkzen:events:event-name → OPTIONAL Laravel event (YAML + :end)
+│   listeners: [ListenerA, ListenerB]
 │   └── /* @arkzen:events:event-name:end */
 │
-├── /* @arkzen:jobs:job-name           → OPTIONAL job (YAML comment + PHP handle() + :end)
+├── /* @arkzen:listener:ListenerA → OPTIONAL listener body injection (PHP handle() + :end)
+│   // PHP body for ListenerA::handle()
+│   └── /* @arkzen:listener:ListenerA:end */
+│
+├── /* @arkzen:jobs:job-name     → OPTIONAL job (YAML + PHP handle() + :end)
 │   public function handle(): void { ... }
 │   └── /* @arkzen:jobs:job-name:end */
 │
-├── /* @arkzen:notifications:name      → OPTIONAL notification (YAML comment + :end)
+├── /* @arkzen:notifications:name → OPTIONAL notification (YAML + optional toMail() body + :end)
 │   └── /* @arkzen:notifications:name:end */
 │
-├── /* @arkzen:mail:mailable-name      → OPTIONAL mailable (YAML comment + :end, repeat per mailable)
-│   └── /* @arkzen:mail:mailable-name:end */
+├── /* @arkzen:mail:name         → OPTIONAL mailable (YAML + optional Blade body + :end)
+│   └── /* @arkzen:mail:name:end */
 │
-├── /* @arkzen:console:cmd-name        → OPTIONAL command (YAML comment + PHP handle() + :end)
+├── /* @arkzen:console:cmd-name  → OPTIONAL command (YAML + PHP handle() + :end)
 │   public function handle(): int { ... return Command::SUCCESS; }
 │   └── /* @arkzen:console:cmd-name:end */
+│
+├── /* @arkzen:endpoint:name     → OPTIONAL custom endpoint body injection (PHP + :end)
+│   // PHP body for the custom endpoint method
+│   └── /* @arkzen:endpoint:name:end */
+│
+├── /* @arkzen:handler:name      → OPTIONAL custom route handler body injection (PHP + :end)
+│   // PHP body for the custom route handler method
+│   └── /* @arkzen:handler:name:end */
 │
 ├── /* @arkzen:layout:name       → OPTIONAL custom reusable layouts (repeat)
 │   └── /* @arkzen:layout:name:end */
 │
 ├── /* @arkzen:components:group1 → 'use client' + imports + interfaces + components
 │   └── /* @arkzen:components:group1:end */
-├── /* @arkzen:components:group2 → additional components (repeat as needed)
-│   └── /* @arkzen:components:group2:end */
 │
 │   ── auth: false Tatemono ──────────────────────────────────
 ├── /* @arkzen:page:index        → public index page
@@ -1247,11 +1481,9 @@ tatemonos/<n>/core.tsx
 │   └── /* @arkzen:page:dashboard:end */
 │
 ├── /* @arkzen:error:404 */      → OPTIONAL Next.js not-found.tsx (after pages)
-│   const NotFoundPage = () => (...)
 │   └── /* @arkzen:error:404:end */
 │
 ├── /* @arkzen:error:500 */      → OPTIONAL Next.js error.tsx (after pages)
-│   const ServerErrorPage = ({ reset }) => (...)
 │   └── /* @arkzen:error:500:end */
 │
 └── /* @arkzen:animation         → OPTIONAL GSAP + Framer (once)
@@ -1260,9 +1492,9 @@ tatemonos/<n>/core.tsx
 
 ---
 
-## SECTION 23 — THE 12 VALIDATED SYSTEM BLUEPRINTS (v6 Reference)
+## SECTION 24 — THE 12 VALIDATED SYSTEM BLUEPRINTS (Reference)
 
-These are the 12 proven, fully working Tatemono types established in v6. Use these as generation references.
+These are the 12 proven, fully working Tatemono types. Use these as generation references.
 
 | # | Name | Auth | Key Features |
 |---|------|------|-------------|
@@ -1277,11 +1509,11 @@ These are the 12 proven, fully working Tatemono types established in v6. Use the
 | 9 | `notification-test` | true | Database + mail + broadcast notifications, native notifications table |
 | 10 | `roles-test` | true | Admin/user roles, role-gated routes, promote/demote, audit log |
 | 11 | `scheduler-test` | false | Console commands, scheduler, manual run via `run` endpoint type |
-| 12 | `upload-test` | false | Single + multi file upload, image preview, download, delete |
+| 12 | `middleware-test` | false | Custom middleware body injection, alias registration, runtime validation |
 
 ---
 
-## SECTION 24 — COMPLETE EXAMPLE: auth:false Tatemono (v6 Design Standard)
+## SECTION 25 — COMPLETE EXAMPLE: auth:false Tatemono (v6.1 Design Standard)
 
 ```tsx
 /* @arkzen:meta
@@ -1442,7 +1674,6 @@ const IndexPage = () => {
 
   return (
     <div className="arkzen-container">
-      {/* Page Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-xl font-semibold text-neutral-900">Inventory</h1>
@@ -1456,7 +1687,6 @@ const IndexPage = () => {
         </button>
       </div>
 
-      {/* Search */}
       <div className="relative mb-4">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
         <input
@@ -1467,7 +1697,6 @@ const IndexPage = () => {
         />
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -1500,16 +1729,10 @@ const IndexPage = () => {
                 </td>
                 <td className="px-4 py-3.5">
                   <div className="flex items-center gap-1 justify-end">
-                    <button
-                      onClick={() => openEdit(item)}
-                      className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
-                    >
+                    <button onClick={() => openEdit(item)} className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors">
                       <Edit2 size={13} />
                     </button>
-                    <button
-                      onClick={() => remove(`/api/inventories/${item.id}`, {})}
-                      className="p-1.5 rounded-md text-neutral-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                    >
+                    <button onClick={() => remove(`/api/inventories/${item.id}`, {})} className="p-1.5 rounded-md text-neutral-400 hover:text-red-500 hover:bg-red-50 transition-colors">
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -1520,17 +1743,13 @@ const IndexPage = () => {
         </table>
       </div>
 
-      {/* Modal */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editing ? 'Edit Item' : 'Add Item'}
         renderFooter={(onClose) => (
           <div className="flex gap-2 pt-2">
-            <button
-              onClick={onClose}
-              className="flex-1 border border-neutral-200 text-neutral-700 text-sm font-medium py-2 rounded-lg hover:bg-neutral-50 transition-colors"
-            >
+            <button onClick={onClose} className="flex-1 border border-neutral-200 text-neutral-700 text-sm font-medium py-2 rounded-lg hover:bg-neutral-50 transition-colors">
               Cancel
             </button>
             <button
@@ -1547,37 +1766,13 @@ const IndexPage = () => {
         )}
       >
         <div className="space-y-3">
-          <input
-            className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900/10 focus:border-neutral-400 transition-colors"
-            placeholder="Name"
-            value={form.name}
-            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-          />
-          <input
-            className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900/10 focus:border-neutral-400 transition-colors disabled:bg-neutral-50 disabled:text-neutral-400"
-            placeholder="SKU"
-            value={form.sku}
-            onChange={e => setForm(f => ({ ...f, sku: e.target.value }))}
-            disabled={!!editing}
-          />
+          <input className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900/10 focus:border-neutral-400 transition-colors" placeholder="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+          <input className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900/10 focus:border-neutral-400 transition-colors disabled:bg-neutral-50 disabled:text-neutral-400" placeholder="SKU" value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} disabled={!!editing} />
           <div className="grid grid-cols-2 gap-3">
-            <input
-              className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900/10 focus:border-neutral-400 transition-colors"
-              type="number" placeholder="Quantity" value={form.quantity}
-              onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
-            />
-            <input
-              className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900/10 focus:border-neutral-400 transition-colors"
-              type="number" placeholder="Price" value={form.price}
-              onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
-            />
+            <input className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900/10 focus:border-neutral-400 transition-colors" type="number" placeholder="Quantity" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} />
+            <input className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900/10 focus:border-neutral-400 transition-colors" type="number" placeholder="Price" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} />
           </div>
-          <input
-            className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900/10 focus:border-neutral-400 transition-colors"
-            placeholder="Category (optional)"
-            value={form.category}
-            onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-          />
+          <input className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900/10 focus:border-neutral-400 transition-colors" placeholder="Category (optional)" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} />
         </div>
       </Modal>
     </div>
@@ -1588,27 +1783,18 @@ const IndexPage = () => {
 
 ---
 
-## SECTION 25 — v5.9 → v6.0 CHANGES
+## SECTION 26 — v6.0 → v6.1 CHANGES
 
-| Feature | v5.9 | v6.0 |
+| Feature | v6.0 | v6.1 |
 |---------|------|------|
-| Icon library | Not specified | Lucide React primary, Hero Icons secondary — both specified explicitly |
-| Emoji policy | Not addressed | Forbidden in UI except emoji-feature contexts |
-| Design standard | Not documented | Apple-minimalist, Awwwards-quality — fully documented in Section 2C |
-| Design examples | Generic Tailwind | Specific button, card, table, input, and page header patterns |
-| `@arkzen:jobs` format | YAML comment block (old) | Named `:end` block with YAML config + PHP `handle()` body between comment and `:end` |
-| `@arkzen:console` format | YAML comment block (old) | Named `:end` block with YAML config + PHP `handle()` body, `schedule` field for cron |
-| `@arkzen:events` format | Single YAML block (old) | Named `:end` blocks — one per event |
-| `@arkzen:realtime` format | Single YAML block (old) | Named `:end` blocks — one per channel or event |
-| `@arkzen:notifications` format | Named `:end` blocks | Same — confirmed and documented properly |
-| `@arkzen:mail` format | Single no-identifier YAML block (old, still parsed as fallback) | Named `:end` blocks per mailable — `@arkzen:mail:name` matching notifications pattern. Parser (`parseAllMails` v6.1) expects identifiers. |
-| `@arkzen:database` identifier | Required | Optional when single table |
-| `@arkzen:api` identifier | Required | Optional when single resource |
-| `@arkzen:routes` | In codebase, undocumented | Fully documented in Section 9 |
-| `@arkzen:error:404/500` | In codebase, undocumented | Fully documented in Section 18 |
-| Notification `channel_type` | In builder, undocumented | Documented — private/public/presence |
-| Special endpoint types | Partially documented | All types documented — notification_trigger, role_* |
-| Roles system | In codebase, undocumented | Fully documented — role column, promote/demote endpoints |
-| `@arkzen:database:users` | Could be accidentally added | Explicitly forbidden — AuthBuilder manages users |
-| Export ENV strategy | Not addressed | Documented — global dev ENV, auto-generated per-export ENV |
-| 12 validated blueprints | Working but undocumented | Section 23 reference table |
+| `@arkzen:middleware` | Undocumented — existed in codebase as MiddlewareBuilder v7.0 but never described in guidelines | **Fully documented** in Section 10 — named `:end` block, full PHP `handle()` body injection, built-in list, alias auto-registration |
+| `@arkzen:listener:Name` | Undocumented — ListenerBuilder v3.2 had body injection but no DSL documentation | **Fully documented** in Section 12 — named `:end` block, PHP `handle(Event $event)` body injection |
+| `@arkzen:endpoint:name` | Undocumented — ControllerBuilder v5.8 had injection for custom endpoint methods | **Fully documented** in Section 8 — named `:end` block, PHP body injection for non-CRUD endpoints |
+| `@arkzen:handler:name` | Undocumented — CustomRouteBuilder v2.0 had injection for route handler methods | **Fully documented** in Section 9 — named `:end` block, PHP body injection for custom route handlers |
+| `@arkzen:notifications` | Documented as "YAML only" | **Corrected** — partial body injection since NotificationBuilder v3.9. PHP body between `*/` and `:end` is injected into `toMail()`. `toBroadcast()` and `toArray()` remain fixed. |
+| `@arkzen:mail` | Documented as "YAML only" | **Corrected** — partial body injection since MailBuilder v3.1. HTML/Blade body between `*/` and `:end` is written as the Blade view file. Mailable class structure remains fixed. |
+| Section order in file | Did not include middleware, listener, endpoint, handler markers | **Updated** Section 3 and Section 23 with all new markers in correct order |
+| DSL body injection reference | No consolidated table | **New Section 18B** — complete table of all blocks, injection status, what is injected, fallback |
+| NEVER DO rules | 39 rules | **Updated to 44 rules** — added rules 40–44 covering new DSL blocks |
+| Backend bridge | `middlewareSnippets` parsed by parser but never sent to Laravel — MiddlewareBuilder always fell through to TODO stub | **Fixed** in bridge v5.4 — `middlewareSnippets` added to payload and `hasBackend` check |
+| Blueprint #12 | `upload-test` | **Replaced with `middleware-test`** — validates full middleware body injection pipeline |

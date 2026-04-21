@@ -3,8 +3,7 @@
 // ============================================================
 // ARKZEN GENERATED MIDDLEWARE — RequireJson [MiddlewareTest]
 // Scoped to this tatemono.
-// No body provided in DSL — fill in handle() logic below.
-// To inject: add @arkzen:middleware:requireJson ... :end block to your tatemono.
+// Body injected from @arkzen:middleware:requireJson DSL block.
 // ============================================================
 
 namespace App\Http\Middleware\Arkzen\MiddlewareTest;
@@ -17,7 +16,12 @@ class RequireJson
 {
     public function handle(Request $request, Closure $next): Response
     {
-        // TODO: implement requireJson middleware logic
+        if (!$request->isJson()) {
+            return response()->json([
+                'message' => 'Content-Type: application/json is required for this endpoint.',
+                'hint'    => 'Set the Content-Type header to application/json',
+            ], 415);
+        }
         return $next($request);
     }
 }

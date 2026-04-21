@@ -57,10 +57,11 @@ class RouteRegistrar
 
             // v5.0: build() now returns ['middleware', 'aliases', 'useLines']
             $mwResult = MiddlewareBuilder::build([
-                'api'       => $api,
-                'name'      => $name,
-                'databases' => $module['databases'],
-                'apis'      => $apis,
+                'api'                => $api,
+                'name'               => $name,
+                'databases'          => $module['databases'],
+                'apis'               => $apis,
+                'middlewareSnippets' => $module['middlewareSnippets'] ?? [],
             ]);
 
             $resolvedMiddleware = $mwResult['middleware'];

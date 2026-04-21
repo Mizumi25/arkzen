@@ -1,6 +1,16 @@
 // ============================================================
-// ARKZEN ENGINE — BACKEND BRIDGE v5.3
-// v5.3: authSeed forwarded in build payload from meta.authSeed.
+// ARKZEN ENGINE — BACKEND BRIDGE v5.4
+// v5.4: middlewareSnippets forwarded in build payload.
+//       The parser correctly extracted @arkzen:middleware:name DSL
+//       bodies into ParsedTatemono.middlewareSnippets since v6.3 of
+//       the parser — but the bridge never included them in the payload
+//       sent to Laravel. MiddlewareBuilder therefore always fell through
+//       to the stub branch and generated TODO handle() bodies even when
+//       real PHP was provided in the tatemono.
+//       Fix: middlewareSnippets added to hasBackend check (so a
+//       middleware-only tatemono still triggers a build) and to the
+//       payload object so ModuleReader/MiddlewareBuilder receive it.
+// v5.3 (kept): authSeed forwarded in build payload from meta.authSeed.
 //       Allows @arkzen:meta auth_seed.users to seed the tatemono's
 //       isolated users table via AuthBuilder with hashed passwords.
 // v5.2 (kept): customRoutes added to hasBackend check and payload.
@@ -27,16 +37,17 @@ const ARKZEN_ENGINE_SECRET = process.env.ARKZEN_ENGINE_SECRET ?? 'arkzen-engine-
 
 export async function triggerBackendBuild(tatemono: ParsedTatemono): Promise<void> {
   const hasBackend =
-    tatemono.databases.length     > 0 ||
-    tatemono.apis.length          > 0 ||
-    tatemono.customRoutes.length  > 0 ||  // ← v5.2
-    tatemono.meta.auth            === true ||
-    tatemono.events.length        > 0 ||
-    tatemono.realtimes.length     > 0 ||
-    tatemono.jobs.length          > 0 ||
-    tatemono.notifications.length > 0 ||
-    tatemono.mails.length         > 0 ||
-    tatemono.consoles.length      > 0
+    tatemono.databases.length                             > 0 ||
+    tatemono.apis.length                                  > 0 ||
+    tatemono.customRoutes.length                          > 0 ||  // ← v5.2
+    tatemono.meta.auth                                    === true ||
+    tatemono.events.length                                > 0 ||
+    tatemono.realtimes.length                             > 0 ||
+    tatemono.jobs.length                                  > 0 ||
+    tatemono.notifications.length                         > 0 ||
+    tatemono.mails.length                                 > 0 ||
+    tatemono.consoles.length                              > 0 ||
+    Object.keys(tatemono.middlewareSnippets ?? {}).length > 0   // ← v5.4
 
   if (!hasBackend) {
     console.log(`[Arkzen Bridge] ✓ Static tatemono — skipping backend build: ${tatemono.meta.name}`)
@@ -54,6 +65,8 @@ export async function triggerBackendBuild(tatemono: ParsedTatemono): Promise<voi
   if (tatemono.mails.length)        console.log(`[Arkzen Bridge]   Mail: ${tatemono.mails.length} block(s)`)
   if (tatemono.consoles.length)     console.log(`[Arkzen Bridge]   Console: ${tatemono.consoles.length} block(s)`)
   if (tatemono.meta.authSeed?.users?.length) console.log(`[Arkzen Bridge]   Auth seed: ${tatemono.meta.authSeed.users.length} user(s)`)
+  if (Object.keys(tatemono.middlewareSnippets ?? {}).length > 0)
+    console.log(`[Arkzen Bridge]   Middleware snippets: ${Object.keys(tatemono.middlewareSnippets).join(', ')}`)
 
   const payload = {
     name:    tatemono.meta.name,
@@ -97,6 +110,12 @@ export async function triggerBackendBuild(tatemono: ParsedTatemono): Promise<voi
     notifications: tatemono.notifications.map(s => s.raw),
     mails:         tatemono.mails.map(s          => s.raw),
     consoles:      tatemono.consoles.map(s       => s.raw),
+
+    // ← v5.4: middleware PHP bodies — map of name → base64-encoded handle() body
+    // Parser extracts these from @arkzen:middleware:name ... :end DSL blocks.
+    // ModuleReader reads payload.middlewareSnippets and passes to MiddlewareBuilder.
+    // Without this, MiddlewareBuilder always fell through to the TODO stub.
+    middlewareSnippets: tatemono.middlewareSnippets ?? {},
   }
 
   try {
