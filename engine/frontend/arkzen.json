@@ -1,19 +1,7 @@
 {
-  "engine": "1.0.0",
+  "engine": "5.1.0",
   "project": "frontend",
   "modules": [
-    {
-      "name": "inventory-management",
-      "version": "2.0.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/inventory-management/core.tsx",
-      "pages": [
-        "index"
-      ],
-      "registered": "2026-03-29T05:18:40.255Z",
-      "lastUpdated": "2026-04-21T03:16:26.112Z",
-      "auth": false
-    },
     {
       "name": "auth-test",
       "version": "1.0.0",
@@ -24,149 +12,9 @@
         "register",
         "dashboard"
       ],
-      "registered": "2026-04-04T03:21:43.921Z",
-      "lastUpdated": "2026-04-21T03:16:23.323Z",
+      "registered": "2026-04-21T03:52:52.413Z",
+      "lastUpdated": "2026-04-21T03:52:52.413Z",
       "auth": true
-    },
-    {
-      "name": "broadcast-test",
-      "version": "2.0.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/broadcast-test/core.tsx",
-      "pages": [
-        "login",
-        "register",
-        "dashboard"
-      ],
-      "registered": "2026-04-04T06:17:46.456Z",
-      "lastUpdated": "2026-04-21T03:16:24.828Z",
-      "auth": true
-    },
-    {
-      "name": "crud-test",
-      "version": "1.0.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/crud-test/core.tsx",
-      "pages": [
-        "index"
-      ],
-      "registered": "2026-04-04T06:17:46.866Z",
-      "lastUpdated": "2026-04-21T03:16:25.258Z",
-      "auth": false
-    },
-    {
-      "name": "events-test",
-      "version": "1.0.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/events-test/core.tsx",
-      "pages": [
-        "index"
-      ],
-      "registered": "2026-04-04T06:17:46.875Z",
-      "lastUpdated": "2026-04-21T03:16:25.871Z",
-      "auth": false
-    },
-    {
-      "name": "job-test",
-      "version": "1.0.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/job-test/core.tsx",
-      "pages": [
-        "dashboard"
-      ],
-      "registered": "2026-04-04T06:17:46.972Z",
-      "lastUpdated": "2026-04-21T03:16:26.345Z",
-      "auth": false
-    },
-    {
-      "name": "notification-test",
-      "version": "2.1.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/notification-test/core.tsx",
-      "pages": [
-        "login",
-        "register",
-        "dashboard"
-      ],
-      "registered": "2026-04-04T06:17:46.988Z",
-      "lastUpdated": "2026-04-21T03:16:27.111Z",
-      "auth": true
-    },
-    {
-      "name": "roles-test",
-      "version": "2.1.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/roles-test/core.tsx",
-      "pages": [
-        "login",
-        "register",
-        "dashboard"
-      ],
-      "registered": "2026-04-04T06:17:46.998Z",
-      "lastUpdated": "2026-04-21T03:16:28.655Z",
-      "auth": true
-    },
-    {
-      "name": "upload-test",
-      "version": "1.0.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/upload-test/core.tsx",
-      "pages": [
-        "dashboard"
-      ],
-      "registered": "2026-04-04T06:17:47.014Z",
-      "lastUpdated": "2026-04-21T03:16:29.184Z",
-      "auth": false
-    },
-    {
-      "name": "scheduler-test",
-      "version": "2.0.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/scheduler-test/core.tsx",
-      "pages": [
-        "dashboard"
-      ],
-      "registered": "2026-04-09T08:20:28.450Z",
-      "lastUpdated": "2026-04-21T03:16:28.919Z",
-      "auth": false
-    },
-    {
-      "name": "errors-test",
-      "version": "1.0.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/errors-test/core.tsx",
-      "pages": [
-        "index"
-      ],
-      "registered": "2026-04-11T13:03:20.834Z",
-      "lastUpdated": "2026-04-21T03:16:25.509Z",
-      "auth": false
-    },
-    {
-      "name": "mail-test",
-      "version": "2.0.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/mail-test/core.tsx",
-      "pages": [
-        "login",
-        "register",
-        "dashboard"
-      ],
-      "registered": "2026-04-14T09:31:29.424Z",
-      "lastUpdated": "2026-04-21T03:16:26.572Z",
-      "auth": true
-    },
-    {
-      "name": "middleware-test",
-      "version": "2.0.0",
-      "status": "active",
-      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/middleware-test/core.tsx",
-      "pages": [
-        "index"
-      ],
-      "registered": "2026-04-20T11:26:44.812Z",
-      "lastUpdated": "2026-04-21T03:16:26.829Z",
-      "auth": false
     },
     {
       "name": "body-endpoint-handler",
@@ -176,8 +24,8 @@
       "pages": [
         "index"
       ],
-      "registered": "2026-04-21T02:52:15.439Z",
-      "lastUpdated": "2026-04-21T03:16:23.910Z",
+      "registered": "2026-04-21T03:52:52.878Z",
+      "lastUpdated": "2026-04-21T03:52:52.878Z",
       "auth": false
     },
     {
@@ -190,9 +38,161 @@
         "register",
         "dashboard"
       ],
-      "registered": "2026-04-21T02:59:38.660Z",
-      "lastUpdated": "2026-04-21T03:16:24.587Z",
+      "registered": "2026-04-21T03:52:53.457Z",
+      "lastUpdated": "2026-04-21T03:52:53.457Z",
       "auth": true
+    },
+    {
+      "name": "broadcast-test",
+      "version": "2.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/broadcast-test/core.tsx",
+      "pages": [
+        "login",
+        "register",
+        "dashboard"
+      ],
+      "registered": "2026-04-21T03:52:53.736Z",
+      "lastUpdated": "2026-04-21T03:52:53.736Z",
+      "auth": true
+    },
+    {
+      "name": "crud-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/crud-test/core.tsx",
+      "pages": [
+        "index"
+      ],
+      "registered": "2026-04-21T03:52:54.019Z",
+      "lastUpdated": "2026-04-21T03:52:54.019Z",
+      "auth": false
+    },
+    {
+      "name": "errors-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/errors-test/core.tsx",
+      "pages": [
+        "index"
+      ],
+      "registered": "2026-04-21T03:52:54.242Z",
+      "lastUpdated": "2026-04-21T03:52:54.242Z",
+      "auth": false
+    },
+    {
+      "name": "events-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/events-test/core.tsx",
+      "pages": [
+        "index"
+      ],
+      "registered": "2026-04-21T03:52:54.516Z",
+      "lastUpdated": "2026-04-21T03:52:54.516Z",
+      "auth": false
+    },
+    {
+      "name": "inventory-management",
+      "version": "2.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/inventory-management/core.tsx",
+      "pages": [
+        "index"
+      ],
+      "registered": "2026-04-21T03:52:54.768Z",
+      "lastUpdated": "2026-04-21T03:52:54.768Z",
+      "auth": false
+    },
+    {
+      "name": "job-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/job-test/core.tsx",
+      "pages": [
+        "dashboard"
+      ],
+      "registered": "2026-04-21T03:52:54.982Z",
+      "lastUpdated": "2026-04-21T03:52:54.982Z",
+      "auth": false
+    },
+    {
+      "name": "mail-test",
+      "version": "2.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/mail-test/core.tsx",
+      "pages": [
+        "login",
+        "register",
+        "dashboard"
+      ],
+      "registered": "2026-04-21T03:52:55.196Z",
+      "lastUpdated": "2026-04-21T03:52:55.196Z",
+      "auth": true
+    },
+    {
+      "name": "middleware-test",
+      "version": "2.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/middleware-test/core.tsx",
+      "pages": [
+        "index"
+      ],
+      "registered": "2026-04-21T03:52:55.425Z",
+      "lastUpdated": "2026-04-21T03:52:55.425Z",
+      "auth": false
+    },
+    {
+      "name": "notification-test",
+      "version": "2.1.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/notification-test/core.tsx",
+      "pages": [
+        "login",
+        "register",
+        "dashboard"
+      ],
+      "registered": "2026-04-21T03:52:55.633Z",
+      "lastUpdated": "2026-04-21T03:52:55.633Z",
+      "auth": true
+    },
+    {
+      "name": "roles-test",
+      "version": "2.1.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/roles-test/core.tsx",
+      "pages": [
+        "login",
+        "register",
+        "dashboard"
+      ],
+      "registered": "2026-04-21T03:52:56.622Z",
+      "lastUpdated": "2026-04-21T03:52:56.622Z",
+      "auth": true
+    },
+    {
+      "name": "scheduler-test",
+      "version": "2.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/scheduler-test/core.tsx",
+      "pages": [
+        "dashboard"
+      ],
+      "registered": "2026-04-21T03:52:56.877Z",
+      "lastUpdated": "2026-04-21T03:52:56.877Z",
+      "auth": false
+    },
+    {
+      "name": "upload-test",
+      "version": "1.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/upload-test/core.tsx",
+      "pages": [
+        "dashboard"
+      ],
+      "registered": "2026-04-21T03:52:57.130Z",
+      "lastUpdated": "2026-04-21T03:52:57.130Z",
+      "auth": false
     }
   ]
 }
