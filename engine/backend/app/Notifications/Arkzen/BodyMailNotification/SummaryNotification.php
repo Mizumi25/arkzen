@@ -1,23 +1,22 @@
 <?php
 
 // ============================================================
-// ARKZEN GENERATED NOTIFICATION — BroadcastPingNotification
-// Tatemono: notification-test
-// Channels: broadcast, database
+// ARKZEN GENERATED NOTIFICATION — SummaryNotification
+// Tatemono: body-mail-notification
+// Channels: mail, database
 // Broadcast channel type: private
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-21T03:16:27.103954Z
+// Generated: 2026-04-21T03:16:24.572613Z
 // ============================================================
 
-namespace App\Notifications\Arkzen\NotificationTest;
+namespace App\Notifications\Arkzen\BodyMailNotification;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
-use Illuminate\Broadcasting\PrivateChannel;
 
-class BroadcastPingNotification extends Notification implements ShouldQueue
+class SummaryNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
@@ -46,33 +45,26 @@ class BroadcastPingNotification extends Notification implements ShouldQueue
 
     public function via(object $notifiable): array
     {
-        return ['broadcast', 'database'];
+        return ['mail', 'database'];
     }
 
-    public function toBroadcast(object $notifiable): array
+    public function toMail(object $notifiable): MailMessage
     {
-        return [
-            'message' => 'Real-time notification received on your private channel!',
-            'data'    => $this->data,
-        ];
-    }
-
-    public function broadcastOn(): array
-    {
-        return [new PrivateChannel('notification-test.' . $this->notifiable->id)];
-    }
-
-    public function broadcastAs(): string
-    {
-        return 'notification-test.notification';
+        return (new \Illuminate\Notifications\Messages\MailMessage)
+            ->subject('📊 Activity Summary — toMail_body injection test')
+            ->greeting('Hi there!')
+            ->line($this->message ?? 'Here is your latest activity summary.')
+            ->line('Notifications: 2 unread | Mails: 3 sent | Status: All healthy')
+            ->action('View Dashboard', url('/'))
+            ->salutation('Cheers, Arkzen Engine');
     }
 
     public function toArray(object $notifiable): array
     {
         return array_merge([
-            'type'     => 'NotificationTest\\BroadcastPingNotification',
-            'message'  => 'Real-time notification received on your private channel!',
-            'tatemono' => 'notification-test',
+            'type'     => 'BodyMailNotification\\SummaryNotification',
+            'message'  => 'Here is your activity summary.',
+            'tatemono' => 'body-mail-notification',
         ], $this->data);
     }
 }

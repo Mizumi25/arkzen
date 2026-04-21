@@ -28,3 +28,8 @@ Broadcast::channel('notification-test.notifications', function () {
     return true;
 });
 
+
+// Module: body-mail-notification
+Broadcast::channel('body-mail-notification.{id}', function ($user, $id = null) {
+    return (int) $user->id === (int) $id;
+});

@@ -1,22 +1,22 @@
 <?php
 
 // ============================================================
-// ARKZEN GENERATED NOTIFICATION — MailPingNotification
-// Tatemono: notification-test
-// Channels: mail
+// ARKZEN GENERATED NOTIFICATION — ActionRequiredNotification
+// Tatemono: body-mail-notification
+// Channels: mail, database
 // Broadcast channel type: private
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-21T03:16:27.102926Z
+// Generated: 2026-04-21T03:16:24.571978Z
 // ============================================================
 
-namespace App\Notifications\Arkzen\NotificationTest;
+namespace App\Notifications\Arkzen\BodyMailNotification;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 
-class MailPingNotification extends Notification implements ShouldQueue
+class ActionRequiredNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
@@ -45,24 +45,26 @@ class MailPingNotification extends Notification implements ShouldQueue
 
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        return ['mail', 'database'];
     }
 
     public function toMail(object $notifiable): MailMessage
     {
-        return (new MailMessage)
-            ->subject('Mail Ping from Arkzen')
-            ->line('This is a test mail notification')
-            ->action('View', url('/'))
-            ->line('Thank you for using our application.');
+        return (new \Illuminate\Notifications\Messages\MailMessage)
+            ->subject('⚠ Action Required — toMail_body injection test')
+            ->greeting('Hello!')
+            ->line($this->message ?? 'You have a pending action that requires your attention.')
+            ->line('This toMail() body was injected via the Arkzen DSL — not a stub.')
+            ->action('Review Now', url('/'))
+            ->line('NotificationBuilder v3.9 toMail_body injection confirmed ✓');
     }
 
     public function toArray(object $notifiable): array
     {
         return array_merge([
-            'type'     => 'NotificationTest\\MailPingNotification',
-            'message'  => 'This is a test mail notification',
-            'tatemono' => 'notification-test',
+            'type'     => 'BodyMailNotification\\ActionRequiredNotification',
+            'message'  => 'You have a pending action that requires your attention.',
+            'tatemono' => 'body-mail-notification',
         ], $this->data);
     }
 }
