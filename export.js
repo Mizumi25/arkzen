@@ -197,7 +197,7 @@ if (buildResult.status === 0 && buildOut.includes('[export-build] OK')) {
 // Both forms are rewritten to clean App\...\{Class}
 // ─────────────────────────────────────────────
 
-function rewriteNamespaces(src) {
+    function rewriteNamespaces(src) {
   return src
     // ── Namespace declarations — scoped (Arkzen\{TatPascal}) ────────
     .replace(new RegExp(`namespace App\\\\Models\\\\Arkzen\\\\${tatPascal};`,                        'g'), 'namespace App\\Models;')
@@ -231,13 +231,6 @@ function rewriteNamespaces(src) {
     .replace(/namespace Database\\Factories\\Arkzen;/g,            'namespace Database\\Factories;')
 
     // ── use statements — scoped two-level (Arkzen\{TatPascal}\Class) ─
-    // NOTE: (\s+as\s+[A-Za-z0-9_]+)? at the end captures an optional ' as Alias'
-    // suffix so that aliased imports like:
-    //   use App\Http\Controllers\Arkzen\AuthTest\AuthController as AuthTestController;
-    // are correctly rewritten to:
-    //   use App\Http\Controllers\AuthController as AuthTestController;
-    // Without this, the regex fails to match and the scoped class path survives
-    // into the exported project, causing "class does not exist" errors.
     .replace(new RegExp(`use App\\\\Models\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,                  'g'), 'use App\\Models\\$1$2;')
     .replace(new RegExp(`use App\\\\Http\\\\Controllers\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,     'g'), 'use App\\Http\\Controllers\\$1$2;')
     .replace(new RegExp(`use App\\\\Http\\\\Requests\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,        'g'), 'use App\\Http\\Requests\\$1$2;')
@@ -268,20 +261,12 @@ function rewriteNamespaces(src) {
     .replace(/use Database\\Factories\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,            'use Database\\Factories\\$1$2;')
 
     // ── Fully-qualified class refs inside strings/new/static calls ───
-    // Handles inline App\Models\Arkzen\{TatPascal}\Foo::class etc.
     .replace(new RegExp(`App\\\\\\\\Models\\\\\\\\Arkzen\\\\\\\\${tatPascal}\\\\\\\\([A-Za-z0-9_]+)`,       'g'), 'App\\\\Models\\\\$1')
     .replace(new RegExp(`App\\\\\\\\Http\\\\\\\\Middleware\\\\\\\\Arkzen\\\\\\\\${tatPascal}\\\\\\\\([A-Za-z0-9_]+)`, 'g'), 'App\\\\Http\\\\Middleware\\\\$1')
     .replace(/App\\\\Models\\\\Arkzen\\\\([A-Za-z0-9_]+)/g,                   'App\\\\Models\\\\$1')
     .replace(/App\\\\Http\\\\Middleware\\\\Arkzen\\\\([A-Za-z0-9_]+)/g,       'App\\\\Http\\\\Middleware\\\\$1')
 
     // ── Route prefix fix — strip /api/ from ->prefix() calls ─────────
-    // In the engine, routes/modules/{name}.php is loaded directly via
-    // ArkzenServiceProvider::registerModuleRoutes(), outside the api.php
-    // pipeline, so AuthBuilder writes prefix('/api/{slug}/auth').
-    // In the export, the file is required from routes/api.php which
-    // Laravel serves under the /api prefix already — causing a double
-    // /api/api/{slug}/... path.  Strip the leading /api/ here so the
-    // exported route file only carries /{slug}/... prefixes.
     .replace(/->prefix\('\/api\//g, "->prefix('/" )
 
     // ── Database connection stripping ────────────────────────────────
@@ -295,9 +280,13 @@ function rewriteNamespaces(src) {
     // ── Table prefix stripping ───────────────────────────────────────
     .replace(new RegExp(`'${tatSnake}_([a-z_]+)'`, 'g'),              "'$1'")
 
+    // ── Fix unique/exists validation rules that use connection.table syntax ─────
+    // Engine generates: unique:auth_test.auth_test_users,email
+    // Export needs:      unique:users,email
+    .replace(new RegExp(`unique:${tatSnake}\\.${tatSnake}_([a-z_]+),`, 'g'), 'unique:$1,')
+    .replace(new RegExp(`exists:${tatSnake}\\.${tatSnake}_([a-z_]+),`, 'g'), 'exists:$1,')
+
     // ── Middleware alias FQCN rewrite in route files ─────────────────
-    // aliasMiddleware('role', \App\Http\Middleware\Arkzen\{TatPascal}\CheckRole::class)
-    // → aliasMiddleware('role', \App\Http\Middleware\CheckRole::class)
     .replace(new RegExp(`\\\\App\\\\Http\\\\Middleware\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)`,       'g'), '\\App\\Http\\Middleware\\$1')
     .replace(/\\App\\Http\\Middleware\\Arkzen\\([A-Za-z0-9_]+)/g,             '\\App\\Http\\Middleware\\$1')
 }
