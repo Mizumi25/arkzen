@@ -7,7 +7,6 @@ use Illuminate\Support\Facades\Broadcast;
 // DO NOT EDIT DIRECTLY. Arkzen manages this file.
 // ============================================================
 
-
 // Module: broadcast-test
 Broadcast::channel('broadcast-test-public', function () {
     return true;
@@ -28,3 +27,4 @@ Broadcast::channel('notification-test.{id}', function ($user, $id = null) {
 Broadcast::channel('notification-test.notifications', function () {
     return true;
 });
+

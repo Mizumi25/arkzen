@@ -1,23 +1,23 @@
 // ============================================================
-// ARKZEN ENGINE — PARSER v6.2
-// v6.2: parseMeta now reads auth_seed.users from @arkzen:meta block.
-//       Parsed into meta.authSeed and forwarded via bridge to AuthBuilder
-//       for seeding the tatemono's isolated users table with hashed passwords.
-// v6.1 (kept): Added parseAllNotifications() and parseAllMails() —
-//       dedicated parsers for the new :name:end DSL pattern.
-//       These markers have YAML config inside the opening comment
-//       and no PHP body (unlike console/jobs which have handle() bodies).
+// ARKZEN ENGINE — PARSER v6.3
+// v6.3: Body injection support for middleware, custom route handlers,
+//       and custom controller endpoints.
+//       - parseAllMiddlewareSnippets(): @arkzen:middleware:name ... :end
+//         Extracts PHP body per middleware name, base64-encoded.
+//         MiddlewareBuilder injects into handle() instead of // TODO stub.
+//       - parseAllHandlerSnippets(): @arkzen:handler:name ... :end
+//         Extracts PHP body per handler name, base64-encoded.
+//         CustomRouteBuilder injects into handler method.
+//       - parseAllEndpointBodies(): @arkzen:endpoint:name ... :end
+//         Extracts PHP body per endpoint name, base64-encoded.
+//         ControllerBuilder injects into generateCustomMethod().
+//       - parseAllCustomRoutes() updated to attach handler body from
+//         handler snippets map into each ArkzenCustomRouteEntry.
+//       - parseTatemono() wires all three + passes middlewareSnippets.
 //
-// v5.1: Added parseAllCustomRoutes() for @arkzen:routes blocks.
-//
-// Key changes v5 (kept):
-//   - meta.layout removed — layout is now per-page
-//   - extractAllNamedSections() for ALL repeatable markers
-//   - parseAllPages() extracts per-page layout declarations
-//   - parseAllLayouts() for @arkzen:layout:name blocks
-//   - parseAllComponents() — components now repeatable
-//   - ALL markers repeatable: store, events, jobs, etc.
-//   - Topological sort for migrations (auto foreign key ordering)
+// v6.2 (kept): parseMeta now reads auth_seed.users from @arkzen:meta block.
+// v6.1 (kept): Added parseAllNotifications() and parseAllMails().
+// v5.1 (kept): Added parseAllCustomRoutes() for @arkzen:routes blocks.
 // ============================================================
 
 import * as fs   from 'fs'
@@ -31,6 +31,7 @@ import type {
   ArkzenApi,
   ArkzenCustomRoute,
   ArkzenCustomRouteEntry,
+  ArkzenMiddlewareSnippets,
   ArkzenSection,
   ArkzenPage,
   ArkzenLayout,
@@ -358,6 +359,10 @@ function parseAllCustomRoutes(content: string): ArkzenCustomRoute[] {
   const raws   = extractAllSections(content, 'routes')
   const result: ArkzenCustomRoute[] = []
 
+  // Build a handler-name → base64 body map from @arkzen:handler:name blocks
+  // so each route entry can carry its injected PHP body.
+  const handlerBodies = parseAllHandlerSnippets(content)
+
   for (const raw of raws) {
     const parsed = yaml.load(raw) as Record<string, unknown>
     if (!parsed) continue
@@ -368,16 +373,179 @@ function parseAllCustomRoutes(content: string): ArkzenCustomRoute[] {
 
     if (rawRoutes.length === 0) continue
 
-    const routes: ArkzenCustomRouteEntry[] = rawRoutes.map(r => ({
-      method:  (String(r.method ?? 'GET').toUpperCase()) as ArkzenCustomRouteEntry['method'],
-      route:   String(r.route ?? '/'),
-      handler: String(r.handler ?? 'handle'),
-    }))
+    const routes: ArkzenCustomRouteEntry[] = rawRoutes.map(r => {
+      const handler = String(r.handler ?? 'handle')
+      const entry: ArkzenCustomRouteEntry = {
+        method:  (String(r.method ?? 'GET').toUpperCase()) as ArkzenCustomRouteEntry['method'],
+        route:   String(r.route ?? '/'),
+        handler,
+      }
+      // Attach body if a @arkzen:handler:name block exists for this handler
+      if (handlerBodies[handler]) {
+        entry.body = handlerBodies[handler]
+      }
+      return entry
+    })
 
     result.push({ controller, middleware, routes })
   }
 
   return result
+}
+
+// ─────────────────────────────────────────────
+// PARSE ALL MIDDLEWARE SNIPPETS — v6.3
+// Extracts @arkzen:middleware:name ... :end blocks.
+// YAML config in the opening comment (currently unused — reserved for
+// future options like `params`, `priority`).
+// PHP body between */ and :end is base64-encoded and stored by name.
+// MiddlewareBuilder reads this map to inject into handle() instead of stub.
+//
+// Format:
+//   /* @arkzen:middleware:requireJson
+//   */
+//   if (!$request->isJson()) {
+//       return response()->json(['message' => 'Content-Type: application/json required'], 415);
+//   }
+//   return $next($request);
+//   /* @arkzen:middleware:requireJson:end */
+// ─────────────────────────────────────────────
+
+function parseAllMiddlewareSnippets(content: string): ArkzenMiddlewareSnippets {
+  const snippets: ArkzenMiddlewareSnippets = {}
+  const openPattern = `/* @arkzen:middleware:`
+  let searchFrom = 0
+
+  while (true) {
+    const openIdx = content.indexOf(openPattern, searchFrom)
+    if (openIdx === -1) break
+
+    const afterOpen  = content.slice(openIdx + openPattern.length)
+    const identMatch = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
+    if (!identMatch) { searchFrom = openIdx + openPattern.length; continue }
+
+    const identifier = identMatch[1]
+    if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
+
+    const openCommentEnd = content.indexOf('*/', openIdx)
+    if (openCommentEnd === -1) break
+
+    const closeMarker = `/* @arkzen:middleware:${identifier}:end */`
+    const closeIdx    = content.indexOf(closeMarker, openCommentEnd)
+
+    const body        = closeIdx !== -1
+      ? content.slice(openCommentEnd + 2, closeIdx).trim()
+      : ''
+
+    if (body) {
+      snippets[identifier] = Buffer.from(body).toString('base64')
+    }
+
+    searchFrom = closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2
+  }
+
+  return snippets
+}
+
+// ─────────────────────────────────────────────
+// PARSE ALL HANDLER SNIPPETS — v6.3
+// Extracts @arkzen:handler:name ... :end blocks.
+// Used by parseAllCustomRoutes() to attach PHP bodies to route entries.
+// Returns a map of handler name → base64-encoded PHP body.
+//
+// Format:
+//   /* @arkzen:handler:myHandler
+//   */
+//   $result = MyModel::where('active', true)->get();
+//   return response()->json(['data' => $result]);
+//   /* @arkzen:handler:myHandler:end */
+// ─────────────────────────────────────────────
+
+function parseAllHandlerSnippets(content: string): Record<string, string> {
+  const snippets: Record<string, string> = {}
+  const openPattern = `/* @arkzen:handler:`
+  let searchFrom = 0
+
+  while (true) {
+    const openIdx = content.indexOf(openPattern, searchFrom)
+    if (openIdx === -1) break
+
+    const afterOpen  = content.slice(openIdx + openPattern.length)
+    const identMatch = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
+    if (!identMatch) { searchFrom = openIdx + openPattern.length; continue }
+
+    const identifier = identMatch[1]
+    if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
+
+    const openCommentEnd = content.indexOf('*/', openIdx)
+    if (openCommentEnd === -1) break
+
+    const closeMarker = `/* @arkzen:handler:${identifier}:end */`
+    const closeIdx    = content.indexOf(closeMarker, openCommentEnd)
+
+    const body        = closeIdx !== -1
+      ? content.slice(openCommentEnd + 2, closeIdx).trim()
+      : ''
+
+    if (body) {
+      snippets[identifier] = Buffer.from(body).toString('base64')
+    }
+
+    searchFrom = closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2
+  }
+
+  return snippets
+}
+
+// ─────────────────────────────────────────────
+// PARSE ALL ENDPOINT BODIES — v6.3
+// Extracts @arkzen:endpoint:name ... :end blocks.
+// Used to attach PHP bodies to custom @arkzen:api endpoints so
+// ControllerBuilder injects them into generateCustomMethod().
+// Returns a map of endpoint name → base64-encoded PHP body.
+//
+// Format:
+//   /* @arkzen:endpoint:myCustomAction
+//   */
+//   $user = $request->user();
+//   return response()->json(['role' => $user->role, 'id' => $user->id]);
+//   /* @arkzen:endpoint:myCustomAction:end */
+// ─────────────────────────────────────────────
+
+function parseAllEndpointBodies(content: string): Record<string, string> {
+  const bodies: Record<string, string> = {}
+  const openPattern = `/* @arkzen:endpoint:`
+  let searchFrom = 0
+
+  while (true) {
+    const openIdx = content.indexOf(openPattern, searchFrom)
+    if (openIdx === -1) break
+
+    const afterOpen  = content.slice(openIdx + openPattern.length)
+    const identMatch = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
+    if (!identMatch) { searchFrom = openIdx + openPattern.length; continue }
+
+    const identifier = identMatch[1]
+    if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
+
+    const openCommentEnd = content.indexOf('*/', openIdx)
+    if (openCommentEnd === -1) break
+
+    const closeMarker = `/* @arkzen:endpoint:${identifier}:end */`
+    const closeIdx    = content.indexOf(closeMarker, openCommentEnd)
+
+    const body        = closeIdx !== -1
+      ? content.slice(openCommentEnd + 2, closeIdx).trim()
+      : ''
+
+    if (body) {
+      bodies[identifier] = Buffer.from(body).toString('base64')
+    }
+
+    searchFrom = closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2
+  }
+
+  return bodies
 }
 
 // ─────────────────────────────────────────────
@@ -503,6 +671,14 @@ function parseAllLayouts(content: string): ArkzenLayout[] {
 //   /* @arkzen:notifications:database-ping:end */
 // ─────────────────────────────────────────────
 
+// ─────────────────────────────────────────────
+// PARSE ALL NOTIFICATIONS — v6.3
+// v6.3: Body extraction added. PHP body between */ and :end is
+// base64-encoded and embedded as `toMail_body` in the YAML so
+// NotificationBuilder can inject it into toMail() instead of the stub.
+// If no body is written, the stub is used as before.
+// ─────────────────────────────────────────────
+
 function parseAllNotifications(content: string): ArkzenSection[] {
   const results: ArkzenSection[] = []
   const openPattern = `/* @arkzen:notifications:`
@@ -519,22 +695,25 @@ function parseAllNotifications(content: string): ArkzenSection[] {
     const identifier = identMatch[1]
     if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
 
-    // Find closing */ of opening comment
     const openCommentEnd = content.indexOf('*/', openIdx)
     if (openCommentEnd === -1) break
 
-    // YAML config inside the opening comment
     const yamlRaw = content
       .slice(openIdx + openPattern.length + identifier.length, openCommentEnd)
       .trim()
 
-    // Find the :end closer (no body for notifications)
     const closeMarker = `/* @arkzen:notifications:${identifier}:end */`
     const closeIdx = content.indexOf(closeMarker, openCommentEnd)
 
-    // Emit as YAML string with name as top-level key
+    // v6.3: capture PHP body between */ and :end
+    const body = closeIdx !== -1
+      ? content.slice(openCommentEnd + 2, closeIdx).trim()
+      : ''
+
+    const bodyEncoded = Buffer.from(body).toString('base64')
     const raw = `${identifier}:\n` +
-      yamlRaw.split('\n').map(l => `  ${l}`).join('\n')
+      yamlRaw.split('\n').map(l => `  ${l}`).join('\n') +
+      `\n  toMail_body: '${bodyEncoded}'`
 
     results.push({ raw, start: openIdx, end: closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2 })
 
@@ -547,6 +726,13 @@ function parseAllNotifications(content: string): ArkzenSection[] {
 // ─────────────────────────────────────────────
 // PARSE ALL MAILS — v6.1
 // Same pattern as notifications — YAML inside opening comment, no body.
+// ─────────────────────────────────────────────
+
+// ─────────────────────────────────────────────
+// PARSE ALL MAILS — v6.3
+// v6.3: Blade view body added. HTML/Blade between */ and :end is
+// base64-encoded and embedded as `blade_body` so MailBuilder can
+// inject it into the generated Blade view instead of the generic stub.
 // ─────────────────────────────────────────────
 
 function parseAllMails(content: string): ArkzenSection[] {
@@ -575,8 +761,15 @@ function parseAllMails(content: string): ArkzenSection[] {
     const closeMarker = `/* @arkzen:mail:${identifier}:end */`
     const closeIdx = content.indexOf(closeMarker, openCommentEnd)
 
+    // v6.3: capture Blade/HTML body between */ and :end
+    const body = closeIdx !== -1
+      ? content.slice(openCommentEnd + 2, closeIdx).trim()
+      : ''
+
+    const bodyEncoded = Buffer.from(body).toString('base64')
     const raw = `${identifier}:\n` +
-      yamlRaw.split('\n').map(l => `  ${l}`).join('\n')
+      yamlRaw.split('\n').map(l => `  ${l}`).join('\n') +
+      `\n  blade_body: '${bodyEncoded}'`
 
     results.push({ raw, start: openIdx, end: closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2 })
 
@@ -796,10 +989,62 @@ function parseAllJobs(content: string): ArkzenSection[] {
 }
 
 
+// ─────────────────────────────────────────────
+// PARSE ALL LISTENER BODIES — v6.3
+// Extracts @arkzen:listener:name ... :end blocks.
+// Returns map of listener class name → base64-encoded PHP handle() body.
+// ListenerBuilder uses this to inject real logic instead of log-and-record stub.
+//
+// Format:
+//   /* @arkzen:listener:SendWelcomeEmail
+//   */
+//   Mail::to($event->data['email'] ?? '')->send(new WelcomeMail($event->data));
+//   /* @arkzen:listener:SendWelcomeEmail:end */
+// ─────────────────────────────────────────────
+
+function parseAllListenerBodies(content: string): Record<string, string> {
+  const bodies: Record<string, string> = {}
+  const openPattern = `/* @arkzen:listener:`
+  let searchFrom = 0
+
+  while (true) {
+    const openIdx = content.indexOf(openPattern, searchFrom)
+    if (openIdx === -1) break
+
+    const afterOpen  = content.slice(openIdx + openPattern.length)
+    const identMatch = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
+    if (!identMatch) { searchFrom = openIdx + openPattern.length; continue }
+
+    const identifier = identMatch[1]
+    if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
+
+    const openCommentEnd = content.indexOf('*/', openIdx)
+    if (openCommentEnd === -1) break
+
+    const closeMarker = `/* @arkzen:listener:${identifier}:end */`
+    const closeIdx    = content.indexOf(closeMarker, openCommentEnd)
+
+    const body = closeIdx !== -1
+      ? content.slice(openCommentEnd + 2, closeIdx).trim()
+      : ''
+
+    if (body) {
+      bodies[identifier] = Buffer.from(body).toString('base64')
+    }
+
+    searchFrom = closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2
+  }
+
+  return bodies
+}
+
 function parseAllEvents(content: string): ArkzenSection[] {
   const results: ArkzenSection[] = []
   const openPattern = `/* @arkzen:events:`
   let searchFrom = 0
+
+  // v6.3: gather listener bodies to embed into each event's YAML
+  const listenerBodies = parseAllListenerBodies(content)
 
   while (true) {
     const openIdx = content.indexOf(openPattern, searchFrom)
@@ -815,20 +1060,22 @@ function parseAllEvents(content: string): ArkzenSection[] {
     const openCommentEnd = content.indexOf('*/', openIdx)
     if (openCommentEnd === -1) break
 
-    // YAML config inside the opening comment
     const yamlRaw = content
       .slice(openIdx + openPattern.length + identifier.length, openCommentEnd)
       .trim()
 
-    // No PHP body for events — only YAML config with listeners
+    // Events don't have a PHP body — body is '' (kept for compat)
     const closeMarker = `/* @arkzen:events:${identifier}:end */`
     const closeIdx = content.indexOf(closeMarker, openCommentEnd)
-    const body = '' // events don't have PHP body
+    const bodyEncoded = Buffer.from('').toString('base64')
 
-    const bodyEncoded = Buffer.from(body).toString('base64')
+    // v6.3: embed serialized listener bodies map as YAML-safe base64
+    const listenerBodiesEncoded = Buffer.from(JSON.stringify(listenerBodies)).toString('base64')
+
     const raw = `${identifier}:\n` +
       yamlRaw.split('\n').map(l => `  ${l}`).join('\n') +
-      `\n  body: '${bodyEncoded}'`
+      `\n  body: '${bodyEncoded}'` +
+      `\n  listener_bodies: '${listenerBodiesEncoded}'`
 
     results.push({ raw, start: openIdx, end: closeIdx !== -1 ? closeIdx + closeMarker.length : openCommentEnd + 2 })
 
@@ -1004,12 +1251,27 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   const meta         = parseMeta(content)
   const config       = parseConfig(content)
   const databases    = parseAllDatabases(content)
-  const apis         = parseAllApis(content)
-  const customRoutes = parseAllCustomRoutes(content)
+  const customRoutes = parseAllCustomRoutes(content)  // internally calls parseAllHandlerSnippets
   const pages        = parseAllPages(content)
   const layouts      = parseAllLayouts(content)
   const components   = parseAllComponents(content)
   const errorHandlers = parseAllErrorHandlers(content)
+
+  // v6.3: parse endpoint bodies BEFORE apis so we can attach them
+  const endpointBodies = parseAllEndpointBodies(content)
+  const apisRaw        = parseAllApis(content)
+  const apis = apisRaw.map(api => ({
+    ...api,
+    endpoints: Object.fromEntries(
+      Object.entries(api.endpoints).map(([name, endpoint]) => [
+        name,
+        endpointBodies[name] ? { ...endpoint, body: endpointBodies[name] } : endpoint,
+      ])
+    ),
+  }))
+
+  // v6.3: middleware snippets (name → base64 PHP body)
+  const middlewareSnippets = parseAllMiddlewareSnippets(content)
 
   // Repeatable sections
   const stores        = parseAllNamedCode(content, 'store')
@@ -1031,7 +1293,7 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   const hasBackend =
     databases.length     > 0 ||
     apis.length          > 0 ||
-    customRoutes.length  > 0 ||  // ← v5.1
+    customRoutes.length  > 0 ||
     stores.length        > 0 ||
     events.length        > 0 ||
     realtimes.length     > 0 ||
@@ -1061,6 +1323,7 @@ export function parseTatemono(filePath: string): ParsedTatemono {
     notifications,
     mails,
     consoles,
+    middlewareSnippets,  // ← v6.3
     animation,
   }
 
@@ -1077,6 +1340,8 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   if (notifications.length)  console.log(`[Arkzen Parser]   Notifications (${notifications.length}): ${notifications.length} block(s)`)
   if (mails.length)          console.log(`[Arkzen Parser]   Mail (${mails.length}): ${mails.length} block(s)`)
   if (consoles.length)       console.log(`[Arkzen Parser]   Console (${consoles.length}): ${consoles.length} block(s)`)
+  if (Object.keys(middlewareSnippets).length > 0)
+    console.log(`[Arkzen Parser]   Middleware snippets: ${Object.keys(middlewareSnippets).join(', ')}`)
 
   return parsed
 }

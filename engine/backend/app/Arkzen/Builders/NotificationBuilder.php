@@ -1,7 +1,10 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — NOTIFICATION BUILDER v3.8
+// ARKZEN ENGINE — NOTIFICATION BUILDER v3.9
+// v3.9: toMail() body injection. PHP body between */ and :end in
+//       @arkzen:notifications:name block → base64 `toMail_body` key →
+//       decoded and injected into toMail() instead of the generic stub.
 // v3.8: Added channel_type DSL key to notification blocks.
 //       Supported values: private (default), public, presence.
 //       - private  → PrivateChannel('{slug}.{notifiable->id}')
@@ -58,7 +61,10 @@ class NotificationBuilder
         $filePath = app_path("Notifications/Arkzen/{$slugNs}/{$className}.php");
 
         $channelList    = self::generateChannelList($channels);
-        $channelMethods = self::generateChannelMethods($channels, $message, $subject);
+        // v3.9: decode optional toMail_body injected from DSL block body
+        $toMailBodyEncoded = $config['toMail_body'] ?? '';
+        $toMailBody        = $toMailBodyEncoded ? base64_decode($toMailBodyEncoded) : '';
+        $channelMethods = self::generateChannelMethods($channels, $message, $subject, $toMailBody);
 
         $broadcastOnMethod = in_array('broadcast', $channels)
             ? self::generateBroadcastOnMethod($slug, $channelType)
@@ -159,12 +165,20 @@ class {$className} extends Notification implements ShouldQueue
         return '[' . implode(', ', $mapped) . ']';
     }
 
-    private static function generateChannelMethods(array $channels, string $message, string $subject): string
+    private static function generateChannelMethods(array $channels, string $message, string $subject, string $toMailBody = ''): string
     {
         $methods = [];
 
         if (in_array('mail', $channels)) {
-            $methods[] = "    public function toMail(object \$notifiable): MailMessage
+            if ($toMailBody && trim($toMailBody) !== '') {
+                // v3.9: injected body from @arkzen:notifications:name DSL block
+                $indented = self::indentBody(trim($toMailBody));
+                $methods[] = "    public function toMail(object \$notifiable): MailMessage
+    {
+{$indented}
+    }";
+            } else {
+                $methods[] = "    public function toMail(object \$notifiable): MailMessage
     {
         return (new MailMessage)
             ->subject('{$subject}')
@@ -172,6 +186,7 @@ class {$className} extends Notification implements ShouldQueue
             ->action('View', url('/'))
             ->line('Thank you for using our application.');
     }";
+            }
         }
 
         if (in_array('broadcast', $channels)) {
@@ -185,6 +200,12 @@ class {$className} extends Notification implements ShouldQueue
         }
 
         return implode("\n\n", $methods);
+    }
+
+    private static function indentBody(string $body): string
+    {
+        $lines = explode("\n", $body);
+        return implode("\n", array_map(fn($l) => '        ' . $l, $lines));
     }
 
     private static function generateBroadcastOnMethod(string $slug, string $channelType): string

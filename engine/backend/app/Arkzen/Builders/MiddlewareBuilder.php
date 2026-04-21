@@ -1,29 +1,37 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — MIDDLEWARE BUILDER v6.0
+// ARKZEN ENGINE — MIDDLEWARE BUILDER v7.0
 //
-// v6.0: Scoped all generated middleware under
+// v7.0: Body injection + alias fix.
+//
+//   ALIAS BUG FIX:
+//   Previously, only role:* middleware had its alias registered in the
+//   route file. Custom middleware like 'requireJson' had a use statement
+//   injected but NO aliasMiddleware() call — Laravel could not resolve
+//   the string at runtime → 500. Now ALL generated custom middleware
+//   returns an aliases map so RouteRegistrar registers them correctly.
+//
+//   BODY INJECTION:
+//   build() now accepts $module['middlewareSnippets'] — a map of
+//   middleware name → base64-encoded PHP handle() body. Passed from
+//   ModuleReader which reads it from the parsed tatemono payload.
+//   generateCustomMiddleware() decodes and injects the body instead of
+//   the // TODO stub. Falls back to stub if no snippet provided.
+//
+//   DSL usage:
+//     /* @arkzen:middleware:requireJson
+//     */
+//     if (!$request->isJson()) {
+//         return response()->json(['message' => 'Content-Type: application/json required'], 415);
+//     }
+//     return $next($request);
+//     /* @arkzen:middleware:requireJson:end */
+//
+// v6.0 (kept): Scoped all generated middleware under
 //   app/Http/Middleware/Arkzen/{slugNs}/
-//   to match every other Arkzen builder's isolation convention.
 //
-//   Previously CheckRole and custom stubs were written to the
-//   global app/Http/Middleware/ directory — shared across all
-//   tatemonos and inconsistent with the rest of the engine.
-//
-//   Changes:
-//   - ensureRoleMiddleware() now writes to
-//       app/Http/Middleware/Arkzen/{slugNs}/CheckRole.php
-//     with namespace App\Http\Middleware\Arkzen\{slugNs}
-//   - generateCustomMiddleware() now writes to
-//       app/Http/Middleware/Arkzen/{slugNs}/{Class}.php
-//     with namespace App\Http\Middleware\Arkzen\{slugNs}
-//   - build() now returns a $meta array alongside the resolved
-//     middleware strings so RouteRegistrar can inject per-tatemono
-//     alias registrations (e.g. 'role') at the top of the route
-//     file — the same pattern used for Sanctum::usePersonalAccessTokenModel().
-//
-// BUILT-IN MIDDLEWARE (no file generated, unchanged):
+// BUILT-IN MIDDLEWARE (no file generated):
 //   auth, auth:sanctum, throttle, verified, cors, api, web, cache.headers
 // ============================================================
 
@@ -36,7 +44,6 @@ class MiddlewareBuilder
 {
     // ─────────────────────────────────────────────
     // KNOWN BUILT-IN MIDDLEWARE
-    // These are resolved directly by Laravel — no file needed.
     // ─────────────────────────────────────────────
 
     private static array $builtIn = [
@@ -52,23 +59,21 @@ class MiddlewareBuilder
 
     // ─────────────────────────────────────────────
     // BUILD
-    // Resolves middleware list, generates scoped files for any
-    // non-built-in middleware, and returns both the resolved
-    // middleware strings and alias registrations needed in the
-    // route file.
     //
     // Returns:
     //   [
-    //     'middleware' => ['api', 'auth:sanctum', 'role'],   // for Route::middleware()
-    //     'aliases'    => ['role' => 'App\Http\Middleware\Arkzen\{slugNs}\CheckRole'],
-    //     'useLines'   => ['use App\Http\Middleware\Arkzen\{slugNs}\CheckRole;'],
+    //     'middleware' => ['api', 'auth:sanctum', 'requireJson'],
+    //     'aliases'    => ['requireJson' => 'App\Http\Middleware\Arkzen\{slugNs}\RequireJson'],
+    //     'useLines'   => ['use App\Http\Middleware\Arkzen\{slugNs}\RequireJson;'],
     //   ]
     // ─────────────────────────────────────────────
 
     public static function build(array $module): array
     {
-        $declared = $module['api']['middleware'] ?? [];
-        $slugNs   = EventBuilder::toNamespace($module['name']);
+        $declared        = $module['api']['middleware'] ?? [];
+        $slugNs          = EventBuilder::toNamespace($module['name']);
+        // v7.0: body snippets map (name → base64 PHP)
+        $bodySnippets    = $module['middlewareSnippets'] ?? [];
 
         if (empty($declared)) {
             Log::info("[Arkzen Middleware] No middleware declared — routes will be public.");
@@ -84,7 +89,7 @@ class MiddlewareBuilder
         $useLines = [];
 
         foreach ($declared as $mw) {
-            [$resolvedMw, $alias, $useLine] = self::resolve($mw, $slugNs);
+            [$resolvedMw, $alias, $useLine] = self::resolve($mw, $slugNs, $bodySnippets);
             $resolved[] = $resolvedMw;
 
             if ($alias) {
@@ -106,11 +111,9 @@ class MiddlewareBuilder
 
     // ─────────────────────────────────────────────
     // RESOLVE SINGLE MIDDLEWARE ENTRY
-    //
-    // Returns: [resolvedString, aliasMap|null, useLines|null]
     // ─────────────────────────────────────────────
 
-    private static function resolve(string $mw, string $slugNs): array
+    private static function resolve(string $mw, string $slugNs, array $bodySnippets): array
     {
         // throttle:60,1 — pass through with params intact
         if (str_starts_with($mw, 'throttle')) {
@@ -119,8 +122,8 @@ class MiddlewareBuilder
 
         // role:admin — generate scoped CheckRole middleware
         if (str_starts_with($mw, 'role:')) {
-            $fqcn    = self::ensureRoleMiddleware($slugNs);
-            $aliases = ['role' => $fqcn];
+            $fqcn     = self::ensureRoleMiddleware($slugNs);
+            $aliases  = ['role' => $fqcn];
             $useLines = ["use {$fqcn};"];
             return [$mw, $aliases, $useLines];
         }
@@ -130,20 +133,16 @@ class MiddlewareBuilder
             return [self::$builtIn[$mw], null, null];
         }
 
-        // Unknown — generate a scoped custom middleware stub
-        [$resolvedMw, $fqcn] = self::generateCustomMiddleware($mw, $slugNs);
+        // Unknown — generate a scoped custom middleware (with optional injected body)
+        $body = isset($bodySnippets[$mw]) ? base64_decode($bodySnippets[$mw]) : null;
+        [$resolvedMw, $fqcn, $alias] = self::generateCustomMiddleware($mw, $slugNs, $body);
         $useLines = $fqcn ? ["use {$fqcn};"] : [];
-        return [$resolvedMw, null, $useLines ?: null];
+        // v7.0 FIX: always return alias for custom middleware so RouteRegistrar registers it
+        return [$resolvedMw, $alias ?: null, $useLines ?: null];
     }
 
     // ─────────────────────────────────────────────
     // ENSURE ROLE MIDDLEWARE EXISTS (SCOPED)
-    //
-    // Previously: app/Http/Middleware/CheckRole.php (global, shared)
-    // Now:        app/Http/Middleware/Arkzen/{slugNs}/CheckRole.php
-    //
-    // Returns the fully qualified class name so RouteRegistrar
-    // can register the 'role' alias in the route file.
     // ─────────────────────────────────────────────
 
     private static function ensureRoleMiddleware(string $slugNs): string
@@ -200,39 +199,53 @@ PHP;
     }
 
     // ─────────────────────────────────────────────
-    // GENERATE CUSTOM MIDDLEWARE STUB (SCOPED)
+    // GENERATE CUSTOM MIDDLEWARE (SCOPED)
     //
-    // Previously: app/Http/Middleware/{Class}.php (global)
-    // Now:        app/Http/Middleware/Arkzen/{slugNs}/{Class}.php
+    // v7.0: Accepts optional $body (decoded PHP string).
+    //       If provided, injects into handle() instead of stub.
+    //       Always returns aliases map so RouteRegistrar can register.
     //
-    // Returns [middlewareString, fqcn|null]
+    // Returns [$middlewareString, $fqcn|null, $aliasMap|null]
     // ─────────────────────────────────────────────
 
-    private static function generateCustomMiddleware(string $name, string $slugNs): array
+    private static function generateCustomMiddleware(string $name, string $slugNs, ?string $body = null): array
     {
         $safeName  = preg_replace('/[^a-zA-Z0-9\-_]/', '', $name);
         $className = str_replace(['-', '_'], '', ucwords($safeName, '-_'));
 
         if (empty($className)) {
             Log::warning("[Arkzen Middleware] ⚠ Could not derive class name for middleware: {$name} — skipping.");
-            return [$name, null];
+            return [$name, null, null];
         }
 
         $namespace = "App\\Http\\Middleware\\Arkzen\\{$slugNs}";
         $dir       = app_path("Http/Middleware/Arkzen/{$slugNs}");
         $path      = "{$dir}/{$className}.php";
+        $fqcn      = "{$namespace}\\{$className}";
+        $alias     = [$name => $fqcn];
 
+        // If file already exists, skip writing but still return alias
+        // so the route file alias registration is always emitted.
         if (File::exists($path)) {
-            return [$name, "{$namespace}\\{$className}"];
+            return [$name, $fqcn, $alias];
+        }
+
+        // Build handle() body — injected snippet or fallback stub
+        if ($body && trim($body) !== '') {
+            $handleBody = self::indentBody(trim($body));
+            $bodyNote   = "Body injected from @arkzen:middleware:{$name} DSL block.";
+        } else {
+            $handleBody = "        // TODO: implement {$name} middleware logic\n        return \$next(\$request);";
+            $bodyNote   = "No body provided in DSL — fill in handle() logic below.\n// To inject: add @arkzen:middleware:{$name} ... :end block to your tatemono.";
         }
 
         $content = <<<PHP
 <?php
 
 // ============================================================
-// ARKZEN GENERATED MIDDLEWARE STUB — {$className} [{$slugNs}]
-// Scoped to this tatemono. Declared in the tatemono DSL but
-// not a known built-in. Fill in your logic below.
+// ARKZEN GENERATED MIDDLEWARE — {$className} [{$slugNs}]
+// Scoped to this tatemono.
+// {$bodyNote}
 // ============================================================
 
 namespace {$namespace};
@@ -245,16 +258,25 @@ class {$className}
 {
     public function handle(Request \$request, Closure \$next): Response
     {
-        // TODO: implement {$name} middleware logic
-        return \$next(\$request);
+{$handleBody}
     }
 }
 PHP;
 
         File::ensureDirectoryExists($dir);
         File::put($path, $content);
-        Log::info("[Arkzen Middleware] ✓ Generated scoped stub middleware: Http/Middleware/Arkzen/{$slugNs}/{$className}.php");
+        Log::info("[Arkzen Middleware] ✓ Generated scoped middleware: Http/Middleware/Arkzen/{$slugNs}/{$className}.php");
 
-        return [$name, "{$namespace}\\{$className}"];
+        return [$name, $fqcn, $alias];
+    }
+
+    // ─────────────────────────────────────────────
+    // INDENT BODY — re-indent injected PHP to 8 spaces (inside handle())
+    // ─────────────────────────────────────────────
+
+    private static function indentBody(string $body): string
+    {
+        $lines = explode("\n", $body);
+        return implode("\n", array_map(fn($l) => '        ' . $l, $lines));
     }
 }

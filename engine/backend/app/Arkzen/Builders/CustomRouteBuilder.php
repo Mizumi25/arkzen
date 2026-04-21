@@ -1,10 +1,18 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — CUSTOM ROUTE BUILDER v1.1
-// v1.1: Smart generation for simulation endpoints. If the route
-//       contains a {code} parameter, auto-generate a handler that
-//       returns that HTTP status code instead of a stub.
+// ARKZEN ENGINE — CUSTOM ROUTE BUILDER v2.0
+//
+// v2.0: Body injection for handler methods.
+//       Each route entry now carries an optional `body` key
+//       (base64-encoded PHP set by parser.ts from @arkzen:handler:name blocks).
+//       Handler methods inject the body instead of // TODO stub.
+//       Falls back gracefully: if no body, emits the same stub as before.
+//       The {code} simulation smart-path is preserved and takes priority
+//       over body injection (simulation routes are generated, not injectable).
+//
+// v1.1 (kept): Smart generation for simulation endpoints. If the route
+//       contains a {code} parameter, auto-generate a simulation handler.
 // ============================================================
 
 namespace App\Arkzen\Builders;
@@ -62,6 +70,7 @@ class CustomRouteBuilder
             $route    = $r['route'];
             $method   = $r['method'];
             $docRoute = "{$method} {$route}";
+            $body     = isset($r['body']) && $r['body'] ? base64_decode($r['body']) : null;
 
             preg_match_all('/\{([a-zA-Z0-9_]+)\}/', $route, $paramMatches);
             $paramNames = $paramMatches[1] ?? [];
@@ -71,8 +80,7 @@ class CustomRouteBuilder
                 $paramExtractions .= "\n        \${$paramName} = \$params[{$i}] ?? null;";
             }
 
-            // SMART GENERATION: if the route has exactly one parameter named "code",
-            // generate a simulation handler that returns that HTTP status code.
+            // SIMULATION SMART PATH: {code} route → auto-generate, ignore body injection
             if (count($paramNames) === 1 && $paramNames[0] === 'code') {
                 $methods .= "
     /**
@@ -83,7 +91,6 @@ class CustomRouteBuilder
     {{$paramExtractions}
 
         \$code = isset(\$params[0]) ? (int)\$params[0] : 200;
-        // Ensure the code is a valid HTTP status
         \$code = \$code >= 100 && \$code < 600 ? \$code : 400;
 
         return response()->json([
@@ -92,13 +99,30 @@ class CustomRouteBuilder
         ], \$code);
     }
 ";
-            } else {
-                // Fallback stub for truly custom routes
+                continue;
+            }
+
+            // INJECTED BODY PATH: body from @arkzen:handler:name DSL block
+            if ($body && trim($body) !== '') {
+                $methodBody = self::indentBody(trim($body));
                 $methods .= "
     /**
      * {$docRoute}
-     * Auto-generated stub — replace with your custom logic.
-     * DO NOT EDIT DIRECTLY — edit the @arkzen:routes block in the tatemono.
+     */
+    public function {$handler}(Request \$request, mixed ...\$params): JsonResponse
+    {{$paramExtractions}
+
+{$methodBody}
+    }
+";
+                continue;
+            }
+
+            // FALLBACK STUB: no body provided
+            $methods .= "
+    /**
+     * {$docRoute}
+     * Add @arkzen:handler:{$handler} ... :end block to your tatemono to inject logic.
      */
     public function {$handler}(Request \$request, mixed ...\$params): JsonResponse
     {{$paramExtractions}
@@ -111,7 +135,6 @@ class CustomRouteBuilder
         ], 200);
     }
 ";
-            }
         }
 
         $filePath = app_path("Http/Controllers/Arkzen/{$slugNs}/{$controllerName}.php");
@@ -139,5 +162,21 @@ class {$controllerName} extends Controller
 
         File::put($filePath, $content);
         Log::info("[Arkzen CustomRouteBuilder] ✓ Controller created: {$slugNs}/{$controllerName}");
+    }
+
+    // ─────────────────────────────────────────────
+    // INDENT BODY — re-indent injected PHP to 8 spaces (inside method)
+    // ─────────────────────────────────────────────
+
+    private static function indentBody(string $body): string
+    {
+        // Strip outer function signature if user wrote the full method
+        if (preg_match('/public\s+function\s+\w+\s*\(.*\)\s*(?::\s*\w+\s*)?\{(.+)\}/s', $body, $matches)) {
+            $inner = trim($matches[1]);
+        } else {
+            $inner = trim($body);
+        }
+        $lines = explode("\n", $inner);
+        return implode("\n", array_map(fn($l) => '        ' . $l, $lines));
     }
 }

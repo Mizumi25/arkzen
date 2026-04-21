@@ -1,7 +1,10 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — MAIL BUILDER v3.0
+// ARKZEN ENGINE — MAIL BUILDER v3.1
+// v3.1: Blade view body injection. HTML/Blade content between */ and :end
+//       in @arkzen:mail:name block → base64 `blade_body` key →
+//       decoded and written as the Blade view instead of the generic stub.
 // Generates Laravel Mailable classes + Blade view stubs.
 // Declared in @arkzen:mail section.
 //
@@ -104,16 +107,24 @@ class {$className} extends Mailable
         File::put($filePath, $content);
         Log::info("[Arkzen Mail] ✓ {$slugNs}\\{$className}");
 
-        self::generateView($slug, $viewName, $subject, $dataFields);
+        // v3.1: decode optional blade_body from DSL block body
+        $bladeBodyEncoded = $config['blade_body'] ?? '';
+        $bladeBody        = $bladeBodyEncoded ? base64_decode($bladeBodyEncoded) : '';
+        self::generateView($slug, $viewName, $subject, $dataFields, $bladeBody);
     }
 
-    private static function generateView(string $slug, string $viewName, string $subject, array $dataFields): void
+    private static function generateView(string $slug, string $viewName, string $subject, array $dataFields, string $bladeBody = ''): void
     {
         $viewPath = resource_path('views/' . str_replace('.', '/', $viewName) . '.blade.php');
-        $varLines = array_map(fn($f) => "<p>{{ \${$f} }}</p>", array_keys($dataFields));
-        $varBlock = implode("\n    ", $varLines);
 
-        $view = "<!DOCTYPE html>
+        if ($bladeBody && trim($bladeBody) !== '') {
+            // v3.1: use injected Blade/HTML body from DSL block
+            $view = $bladeBody;
+        } else {
+            // Fallback: generic stub
+            $varLines = array_map(fn($f) => "<p>{{ \${$f} }}</p>", array_keys($dataFields));
+            $varBlock = implode("\n    ", $varLines);
+            $view = "<!DOCTYPE html>
 <html>
 <head><meta charset=\"UTF-8\"><title>{$subject}</title></head>
 <body style=\"font-family: sans-serif; padding: 40px; color: #333;\">
@@ -126,6 +137,7 @@ class {$className} extends Mailable
 </body>
 </html>
 ";
+        }
 
         File::ensureDirectoryExists(dirname($viewPath));
         File::put($viewPath, $view);

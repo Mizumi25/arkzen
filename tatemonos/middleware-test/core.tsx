@@ -1,7 +1,7 @@
 /* @arkzen:meta
 name: middleware-test
-version: 1.0.0
-description: "Tests MiddlewareBuilder v6.0 custom (non-built-in) middleware generation. Declares [requireJson] — not a Laravel built-in — so MiddlewareBuilder generates a scoped stub at app/Http/Middleware/Arkzen/MiddlewareTest/RequireJson.php for you to fill in."
+version: 2.0.0
+description: "Tests MiddlewareBuilder v7.0 body injection. Declares [requireJson] with real logic injected via @arkzen:middleware:requireJson DSL block. Also tests alias registration fix — previously requireJson was never registered as an alias so Laravel 500'd at runtime."
 auth: false
 */
 
@@ -34,13 +34,13 @@ endpoints:
   index:
     method: GET
     route: /ping
-    description: Returns all ping logs — passes through requireJson middleware stub
+    description: Returns all ping logs — passes through requireJson middleware
     response:
       type: collection
   store:
     method: POST
     route: /ping
-    description: Create a ping log entry
+    description: Create a ping log entry — blocked by requireJson if Content-Type is wrong
     validation:
       message: required|string|max:255
       headers_ok: sometimes|boolean
@@ -48,12 +48,22 @@ endpoints:
       type: single
 */
 
+/* @arkzen:middleware:requireJson
+*/
+if (!$request->isJson()) {
+    return response()->json([
+        'message' => 'Content-Type: application/json is required for this endpoint.',
+        'hint'    => 'Set the Content-Type header to application/json',
+    ], 415);
+}
+return $next($request);
+/* @arkzen:middleware:requireJson:end */
+
 /* @arkzen:components:shared */
 
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 /* @arkzen:components:shared:end */
 
@@ -62,13 +72,13 @@ import { arkzenFetch } from '@/arkzen/core/stores/authStore'
 const IndexPage = () => {
   const [logs,    setLogs]    = useState<any[]>([])
   const [message, setMessage] = useState('')
-  const [result,  setResult]  = useState<{ status: 'idle' | 'pass' | 'fail'; text: string }>({ status: 'idle', text: '' })
+  const [result,  setResult]  = useState<{ status: 'idle' | 'pass' | 'fail' | 'blocked'; text: string }>({ status: 'idle', text: '' })
   const [loading, setLoading] = useState(false)
 
   const loadLogs = async () => {
     try {
       const res = await fetch('/api/middleware-test/ping', {
-        headers: { 'Accept': 'application/json' },
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
       })
       const d = await res.json()
       setLogs(d.data ?? d ?? [])
@@ -77,25 +87,27 @@ const IndexPage = () => {
 
   useEffect(() => { loadLogs() }, [])
 
-  const sendPing = async () => {
+  const sendPing = async (withCorrectHeader: boolean) => {
     setLoading(true)
     setResult({ status: 'idle', text: 'Sending...' })
     try {
+      const headers: Record<string, string> = { 'Accept': 'application/json' }
+      if (withCorrectHeader) headers['Content-Type'] = 'application/json'
+
       const res = await fetch('/api/middleware-test/ping', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept':       'application/json',
-        },
-        body: JSON.stringify({ message: message || 'Test ping', headers_ok: true }),
+        headers,
+        body: JSON.stringify({ message: message || 'Test ping', headers_ok: withCorrectHeader }),
       })
       const d = await res.json()
       if (res.ok) {
-        setResult({ status: 'pass', text: '✓ Request passed through requireJson middleware stub' })
+        setResult({ status: 'pass', text: '✓ Request passed — Content-Type was application/json' })
         setMessage('')
         setTimeout(loadLogs, 300)
+      } else if (res.status === 415) {
+        setResult({ status: 'blocked', text: `✗ Blocked by requireJson middleware — ${d.message}` })
       } else {
-        setResult({ status: 'fail', text: d.message ?? '✗ Request blocked' })
+        setResult({ status: 'fail', text: d.message ?? '✗ Request failed' })
       }
     } catch (e) {
       setResult({ status: 'fail', text: e instanceof Error ? e.message : 'Request failed' })
@@ -105,8 +117,9 @@ const IndexPage = () => {
   }
 
   const resultStyle =
-    result.status === 'pass' ? 'bg-green-50 border-green-200 text-green-700' :
-    result.status === 'fail' ? 'bg-red-50 border-red-200 text-red-700' :
+    result.status === 'pass'    ? 'bg-green-50 border-green-200 text-green-700' :
+    result.status === 'blocked' ? 'bg-amber-50 border-amber-200 text-amber-700' :
+    result.status === 'fail'    ? 'bg-red-50 border-red-200 text-red-700' :
     'bg-neutral-50 border-neutral-200 text-neutral-500'
 
   return (
@@ -117,7 +130,7 @@ const IndexPage = () => {
         <div>
           <h1 className="text-2xl font-bold">🔧 Middleware Test</h1>
           <p className="text-sm text-neutral-500 mt-1">
-            Tests <code>MiddlewareBuilder</code> custom stub generation.
+            Tests <code>MiddlewareBuilder</code> v7.0 body injection + alias fix.
           </p>
         </div>
 
@@ -126,44 +139,44 @@ const IndexPage = () => {
           <div className="font-medium text-sm">What Arkzen generated</div>
           <div className="text-xs text-neutral-500 space-y-1">
             <p>
-              Declaring <code>middleware: [requireJson]</code> in the DSL triggered{' '}
-              <code>MiddlewareBuilder::generateCustomMiddleware()</code>.
-            </p>
-            <p>
-              A scoped stub was created at:
+              <code>@arkzen:middleware:requireJson</code> block provided real PHP logic.
+              MiddlewareBuilder v7.0 decoded it and injected into <code>handle()</code>.
             </p>
             <code className="block bg-neutral-50 rounded-lg p-2 text-neutral-700">
               app/Http/Middleware/Arkzen/MiddlewareTest/RequireJson.php
             </code>
             <p>
-              The route file registered it locally via:
+              Alias registered in route file (v7.0 fix):
             </p>
             <code className="block bg-neutral-50 rounded-lg p-2 text-neutral-700">
-              {"app('router')->aliasMiddleware('requireJson', \\App\\Http\\Middleware\\Arkzen\\MiddlewareTest\\RequireJson::class);"}
+              {"app('router')->aliasMiddleware('requireJson', RequireJson::class);"}
             </code>
-            <p className="text-amber-600">
-              ⚠ The stub currently passes all requests through. Fill in{' '}
-              <code>handle()</code> to add real logic (e.g. enforce Content-Type: application/json).
-            </p>
           </div>
         </div>
 
-        {/* Send ping */}
+        {/* Test buttons */}
         <div className="bg-white rounded-2xl border border-neutral-100 p-5 space-y-3">
-          <div className="font-medium text-sm">Send a ping through the middleware</div>
+          <div className="font-medium text-sm">Test the middleware</div>
+          <input
+            className="arkzen-input w-full"
+            placeholder="Optional message"
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+          />
           <div className="flex gap-2">
-            <input
-              className="arkzen-input flex-1"
-              placeholder="Optional message"
-              value={message}
-              onChange={e => setMessage(e.target.value)}
-            />
             <button
-              className="arkzen-btn"
-              onClick={sendPing}
+              className="arkzen-btn flex-1 text-sm"
+              onClick={() => sendPing(true)}
               disabled={loading}
             >
-              {loading ? '...' : 'Ping'}
+              ✓ Send with JSON header
+            </button>
+            <button
+              className="arkzen-btn-ghost flex-1 text-sm"
+              onClick={() => sendPing(false)}
+              disabled={loading}
+            >
+              ✗ Send without JSON header
             </button>
           </div>
           {result.text && (
@@ -189,7 +202,7 @@ const IndexPage = () => {
                   <span className={`text-xs font-medium px-2 py-1 rounded-full ${
                     l.headers_ok ? 'bg-green-100 text-green-700' : 'bg-neutral-100 text-neutral-500'
                   }`}>
-                    {l.headers_ok ? 'ok' : 'stub'}
+                    {l.headers_ok ? 'json ✓' : 'no header'}
                   </span>
                 </div>
               ))}

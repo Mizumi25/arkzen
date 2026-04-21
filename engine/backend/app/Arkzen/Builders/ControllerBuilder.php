@@ -1,7 +1,10 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — CONTROLLER BUILDER v5.7
+// ARKZEN ENGINE — CONTROLLER BUILDER v5.8
+// v5.8: generateCustomMethod() now supports body injection.
+//       @arkzen:endpoint:name ... :end DSL block → base64 body →
+//       decoded and injected into the method instead of stub.
 // FIXED v5.4: Now uses Resource class when resource: true is set
 // FIXED v5.5: Role endpoint generators rewritten for real Sanctum auth.
 // FIXED v5.6: Added 'run' endpoint support for scheduler-test commands
@@ -303,19 +306,45 @@ class {$controllerName} extends Controller
 
     // ─────────────────────────────────────────────
     // CUSTOM METHOD
+    // v7.0: Supports injected PHP body from @arkzen:endpoint:name DSL block.
+    //       $endpoint['body'] is base64-encoded PHP set by parser.ts.
+    //       Falls back to stub if no body provided.
     // ─────────────────────────────────────────────
 
     private static function generateCustomMethod(string $name, string $model, array $endpoint): string
     {
+        $bodyEncoded = $endpoint['body'] ?? '';
+        $body        = $bodyEncoded ? base64_decode($bodyEncoded) : null;
+
+        if ($body && trim($body) !== '') {
+            $methodBody = self::indentBody(trim($body));
+        } else {
+            $methodBody = "        // Custom endpoint: {$name}\n        // Add @arkzen:endpoint:{$name} ... :end block to your tatemono to inject logic.\n        return response()->json(['message' => 'Not implemented']);";
+        }
+
         return "    /**
      * {$endpoint['description']}
      */
     public function {$name}(Request \$request): JsonResponse
     {
-        // Custom endpoint: {$name}
-        // Implement logic here
-        return response()->json(['message' => 'Not implemented']);
+{$methodBody}
     }";
+    }
+
+    // ─────────────────────────────────────────────
+    // INDENT BODY — re-indent injected PHP to 8 spaces (inside method)
+    // ─────────────────────────────────────────────
+
+    private static function indentBody(string $body): string
+    {
+        // Strip outer function signature if user wrote the full method
+        if (preg_match('/public\\s+function\\s+\\w+\\s*\\(.*\\)\\s*(?::\\s*\\w+\\s*)?\\{(.+)\\}/s', $body, $matches)) {
+            $inner = trim($matches[1]);
+        } else {
+            $inner = trim($body);
+        }
+        $lines = explode("\n", $inner);
+        return implode("\n", array_map(fn($l) => '        ' . $l, $lines));
     }
 
     // ─────────────────────────────────────────────

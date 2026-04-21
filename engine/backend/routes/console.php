@@ -11,3 +11,5 @@ use Illuminate\Support\Facades\Schedule;
 Schedule::command('scheduler-test:cleanup-temp')->cron('0 * * * *'); // [scheduler-test]
 
 Schedule::command('scheduler-test:generate-report')->cron('0 8 * * *'); // [scheduler-test]
+
+Schedule::command('test:run')->cron('* * * * *'); // [uglyremove-test]

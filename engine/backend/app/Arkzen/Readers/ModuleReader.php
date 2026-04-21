@@ -1,41 +1,25 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — MODULE READER v7.2
-// v7.2: authSeed added to parse() return array.
-//       Payload field authSeed (from meta.auth_seed in the tatemono)
-//       is now forwarded into $module['authSeed'] so AuthBuilder
-//       can seed the isolated users table with hashed passwords.
-// v7.1 (kept): customRoutes added to parse() and $isStatic check.
-//       @arkzen:routes blocks are forwarded by the bridge as
-//       a typed array of { controller, middleware, routes[] }.
-//       ModuleReader normalises them into $module['customRoutes']
-//       for CustomRouteBuilder and RouteRegistrar to consume.
-//
-// Key changes v7.0 (kept):
-//   - ALL section types fully normalised here before any builder
-//     receives the $module array. Builders are now yaml_parse-free.
-//   - events, jobs, consoles, notifications, mails, realtimes
-//     are parsed from raw YAML strings into typed PHP arrays,
-//     exactly the same way databases and apis have always been.
-//   - parseSections() is the single YAML-parsing entry point for
-//     all framework sections — called once, in one place.
-//   - Builders receive clean typed arrays and generate code
-//     directly from them. No builder ever calls yaml_parse().
-//
-// DATA FLOW (all sections):
-//   Tatemono DSL  →  TS parser  →  backend-bridge (.raw strings)
-//   →  ModuleReader::parse()  →  typed PHP arrays
-//   →  Builder::build($module)  →  generated PHP files
+// ARKZEN ENGINE — MODULE READER v8.1
+// v8.1: Extract listenerBodies from events payload.
+//       Each event's YAML carries listener_bodies (base64 JSON map)
+//       injected by parser.ts parseAllEvents(). ModuleReader decodes
+//       it here and merges all listener name→body maps so ListenerBuilder
+//       can inject handle() bodies per listener name.
+// v8.0: Pass customRoute handler bodies through normalization.
+//       Pass middlewareSnippets from payload to module.
+// v7.2 (kept): authSeed added to parse() return array.
+// v7.1 (kept): customRoutes added.
 // ============================================================
 
 namespace App\Arkzen\Readers;
 
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Yaml\Yaml;
 
 class ModuleReader
 {
-
     // ─────────────────────────────────────────────
     // VALIDATE
     // ─────────────────────────────────────────────
@@ -45,20 +29,7 @@ class ModuleReader
         $errors = [];
 
         if (empty($payload['name'])) {
-            $errors[] = 'Missing required field: name';
-        } elseif (!preg_match('/^[a-z][a-z0-9-]*$/', $payload['name'])) {
-            $errors[] = 'name must be lowercase kebab-case (e.g. project-management)';
-        }
-
-        if (!empty($payload['databases'])) {
-            if (!is_array($payload['databases'])) {
-                $errors[] = 'databases must be an array';
-            } else {
-                foreach ($payload['databases'] as $i => $db) {
-                    if (empty($db['table']))   $errors[] = "databases[{$i}]: table is required";
-                    if (empty($db['columns'])) $errors[] = "databases[{$i}]: columns is required";
-                }
-            }
+            $errors[] = 'name is required';
         }
 
         if (!empty($payload['apis'])) {
@@ -73,7 +44,7 @@ class ModuleReader
             }
         }
 
-        // customRoutes validation — each block needs a controller and at least one route
+        // customRoutes validation
         if (!empty($payload['customRoutes'])) {
             if (!is_array($payload['customRoutes'])) {
                 $errors[] = 'customRoutes must be an array';
@@ -93,37 +64,26 @@ class ModuleReader
 
     // ─────────────────────────────────────────────
     // PARSE
-    // Returns a fully-normalised $module array.
-    // Every key holds typed PHP data — no raw strings,
-    // no deferred YAML parsing, no builder-side yaml_parse().
     // ─────────────────────────────────────────────
 
     public static function parse(array $payload): array
     {
-        // ── databases ────────────────────────────
         $databases = [];
         foreach (($payload['databases'] ?? []) as $db) {
-            $table = $db['table'] ?? null;
-            if (!$table || $table === '_none') continue;
-
             $databases[] = [
-                'table'       => $table,
-                'timestamps'  => $db['timestamps']  ?? true,
-                'softDeletes' => $db['softDeletes'] ?? false,
-                'columns'     => $db['columns']     ?? [],
-                'indexes'     => $db['indexes']     ?? [],
-                'seeder'      => $db['seeder']      ?? null,
+                'table'       => $db['table'],
+                'timestamps'  => (bool) ($db['timestamps'] ?? true),
+                'softDeletes' => (bool) ($db['softDeletes'] ?? false),
+                'columns'     => $db['columns']  ?? [],
+                'indexes'     => $db['indexes']  ?? [],
+                'seeder'      => $db['seeder']   ?? null,
             ];
         }
 
-        // ── apis ─────────────────────────────────
         $apis = [];
         foreach (($payload['apis'] ?? []) as $api) {
-            $model = $api['model'] ?? null;
-            if (!$model || $model === '_none') continue;
-
             $apis[] = [
-                'model'      => $model,
+                'model'      => $api['model'],
                 'controller' => $api['controller'],
                 'prefix'     => $api['prefix'],
                 'middleware' => $api['middleware'] ?? [],
@@ -134,9 +94,7 @@ class ModuleReader
             ];
         }
 
-        // ── custom routes — v7.1 ─────────────────
-        // Lightweight one-off endpoints with no model/database.
-        // Each entry: { controller, middleware, routes: [{method, route, handler}] }
+        // ── Custom routes — pass body through per route entry ──
         $customRoutes = [];
         foreach (($payload['customRoutes'] ?? []) as $cr) {
             $controller = $cr['controller'] ?? null;
@@ -148,11 +106,16 @@ class ModuleReader
                 $route   = $r['route']   ?? '/';
                 $handler = $r['handler'] ?? 'handle';
 
-                $routes[] = [
+                $routeEntry = [
                     'method'  => $method,
                     'route'   => $route,
                     'handler' => $handler,
                 ];
+                // v8.0: pass body through if present (set by parser.ts from @arkzen:handler blocks)
+                if (!empty($r['body'])) {
+                    $routeEntry['body'] = $r['body'];
+                }
+                $routes[] = $routeEntry;
             }
 
             if (empty($routes)) continue;
@@ -164,32 +127,63 @@ class ModuleReader
             ];
         }
 
-        // ── framework sections (all normalised here) ──
-        // Each arrives as an array of raw YAML strings from the bridge.
-        // parseSections() merges all blocks into one flat map and
-        // returns a typed PHP array ready for the relevant builder.
-        $events        = self::parseSections($payload['events']        ?? []);
-        $realtimes     = self::parseRealtimeSections($payload['realtimes'] ?? []);
-        $jobs          = self::parseSections($payload['jobs']          ?? []);
-        $notifications = self::parseSections($payload['notifications'] ?? []);
-        $mails         = self::parseSections($payload['mails']         ?? []);
-        $consoles      = self::parseSections($payload['consoles']      ?? []);
+        // ── Framework sections (all normalised here) ──
+        $events             = self::parseSections($payload['events']        ?? []);
+        $realtimes          = self::parseRealtimeSections($payload['realtimes'] ?? []);
+        $jobs               = self::parseSections($payload['jobs']          ?? []);
+        $notifications      = self::parseSections($payload['notifications'] ?? []);
+        $mails              = self::parseSections($payload['mails']         ?? []);
+        $consoles           = self::parseSections($payload['consoles']      ?? []);
+
+        // v8.0: middleware snippets — map of name → base64 PHP body
+        $middlewareSnippets = $payload['middlewareSnippets'] ?? [];
+
+        // v8.1: extract listenerBodies from events — each event config carries
+        // a listener_bodies key (base64 JSON map of listenerName → base64 PHP).
+        // Merge all events' maps into one flat map for ListenerBuilder.
+        $listenerBodies = self::extractListenerBodies($events);
 
         return [
-            'name'          => $payload['name'],
-            'version'       => $payload['version'] ?? '1.0.0',
-            'auth'          => (bool) ($payload['auth'] ?? false),
-            'authSeed'      => $payload['authSeed'] ?? null,   // ← v7.2
-            'databases'     => $databases,
-            'apis'          => $apis,
-            'customRoutes'  => $customRoutes,   // ← v7.1
-            'events'        => $events,
-            'realtimes'     => $realtimes,
-            'jobs'          => $jobs,
-            'notifications' => $notifications,
-            'mails'         => $mails,
-            'consoles'      => $consoles,
+            'name'               => $payload['name'],
+            'version'            => $payload['version'] ?? '1.0.0',
+            'auth'               => (bool) ($payload['auth'] ?? false),
+            'authSeed'           => $payload['authSeed'] ?? null,
+            'databases'          => $databases,
+            'apis'               => $apis,
+            'customRoutes'       => $customRoutes,
+            'events'             => $events,
+            'realtimes'          => $realtimes,
+            'jobs'               => $jobs,
+            'notifications'      => $notifications,
+            'mails'              => $mails,
+            'consoles'           => $consoles,
+            'middlewareSnippets' => $middlewareSnippets,
+            'listenerBodies'     => $listenerBodies,   // ← v8.1
         ];
+    }
+
+    // ─────────────────────────────────────────────
+    // extractListenerBodies — v8.1
+    // Reads listener_bodies (base64 JSON) from each event config and
+    // merges into a single flat map: listenerName → base64 PHP body.
+    // ─────────────────────────────────────────────
+
+    private static function extractListenerBodies(array $events): array
+    {
+        $merged = [];
+        foreach ($events as $eventName => $config) {
+            if (empty($config['listener_bodies'])) continue;
+            try {
+                $decoded = base64_decode($config['listener_bodies']);
+                $map     = json_decode($decoded, true);
+                if (is_array($map)) {
+                    $merged = array_merge($merged, $map);
+                }
+            } catch (\Throwable $e) {
+                Log::warning("[Arkzen ModuleReader] Could not decode listener_bodies for event: {$eventName}");
+            }
+        }
+        return $merged;
     }
 
     // ─────────────────────────────────────────────
@@ -203,10 +197,6 @@ class ModuleReader
     //
     // Output (what every builder now receives):
     //   [ 'order-placed' => ['listeners' => ['SendOrderConfirmation']], ... ]
-    //
-    // This is the exact same contract that ModelBuilder / ControllerBuilder
-    // have always had from the database/api normalisation above — now
-    // applied uniformly to every section type.
     // ─────────────────────────────────────────────
 
     private static function parseSections(array $rawBlocks): array
@@ -219,9 +209,7 @@ class ModuleReader
             try {
                 $parsed = Yaml::parse($raw);
             } catch (\Throwable $e) {
-                // Malformed YAML in one block must not crash the entire build.
-                // Log it and skip — the builder will generate what it can.
-                \Illuminate\Support\Facades\Log::warning(
+                Log::warning(
                     '[Arkzen ModuleReader] Skipping malformed YAML block: ' . $e->getMessage(),
                     ['raw' => substr($raw, 0, 200)]
                 );
@@ -237,15 +225,7 @@ class ModuleReader
     }
 
     // ─────────────────────────────────────────────
-    // parseRealtimeSections — realtime has two sub-keys
-    //
-    // @arkzen:realtime blocks contain two distinct sub-maps:
-    //   channels: { name → config }
-    //   events:   { name → config }
-    //
-    // BroadcastBuilder reads $module['realtimes']['events']
-    // ChannelBuilder reads  $module['realtimes']['channels']
-    //
+    // parseRealtimeSections
     // Returns: ['channels' => [...], 'events' => [...]]
     // ─────────────────────────────────────────────
 
@@ -260,7 +240,7 @@ class ModuleReader
             try {
                 $parsed = Yaml::parse($raw);
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning(
+                Log::warning(
                     '[Arkzen ModuleReader] Skipping malformed realtime YAML block: ' . $e->getMessage(),
                     ['raw' => substr($raw, 0, 200)]
                 );
@@ -268,8 +248,7 @@ class ModuleReader
             }
             if (!is_array($parsed)) continue;
 
-            // ── Legacy grouped format: { channels: {...}, events: {...} } ──
-            // Kept for backwards compatibility if any tatemono uses this shape.
+            // Legacy grouped format
             if (array_key_exists('channels', $parsed) || array_key_exists('events', $parsed)) {
                 if (!empty($parsed['channels']) && is_array($parsed['channels'])) {
                     $channels = array_merge($channels, $parsed['channels']);
@@ -280,29 +259,14 @@ class ModuleReader
                 continue;
             }
 
-            // ── Flat per-block format (what parser.ts actually emits) ──
-            // Each @arkzen:realtime block becomes one top-level entry:
-            //   some-channel-name:
-            //     type: public|private|presence
-            //     body: ''          ← always present, injected by parser.ts
-            //
-            //   some-event-name:
-            //     channel: some-channel-name   ← presence of "channel" key = it's an event
-            //     type: public|private|presence
-            //     body: ''
-            //
-            // Classifier: if a config has a "channel" key it's an event,
-            // otherwise it's a channel declaration.
+            // Flat per-block format
             foreach ($parsed as $name => $config) {
                 if (!is_array($config)) continue;
-                // Strip the injected body key — builders don't need it
                 unset($config['body']);
 
                 if (isset($config['channel'])) {
-                    // Has a parent channel reference → broadcast event
                     $events[$name] = $config;
                 } else {
-                    // No parent reference → channel declaration
                     $channels[$name] = $config;
                 }
             }
@@ -329,14 +293,13 @@ class ModuleReader
     public static function findDatabaseForModel(array $module, string $modelName): ?array
     {
         $snake = strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $modelName));
-        $table = $snake . 's';
 
         foreach ($module['databases'] as $db) {
-            if ($db['table'] === $table) return $db;
             if (strtolower($modelName) === rtrim($db['table'], 's')) return $db;
+            if ($snake . 's' === $db['table'] || $snake === $db['table']) return $db;
         }
 
-        if (count($module['databases']) === 1) {
+        if (!empty($module['databases'])) {
             return $module['databases'][0];
         }
 
