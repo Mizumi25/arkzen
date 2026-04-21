@@ -238,19 +238,19 @@ function rewriteNamespaces(src) {
     //   use App\Http\Controllers\AuthController as AuthTestController;
     // Without this, the regex fails to match and the scoped class path survives
     // into the exported project, causing "class does not exist" errors.
-    .replace(new RegExp(`use App\\\\Models\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,                  'g'), 'use App\\Models\\$1$2;')
-    .replace(new RegExp(`use App\\\\Http\\\\Controllers\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,     'g'), 'use App\\Http\\Controllers\\$1$2;')
-    .replace(new RegExp(`use App\\\\Http\\\\Requests\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,        'g'), 'use App\\Http\\Requests\\$1$2;')
-    .replace(new RegExp(`use App\\\\Http\\\\Resources\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,       'g'), 'use App\\Http\\Resources\\$1$2;')
-    .replace(new RegExp(`use App\\\\Http\\\\Middleware\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,      'g'), 'use App\\Http\\Middleware\\$1$2;')
-    .replace(new RegExp(`use App\\\\Policies\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,                'g'), 'use App\\Policies\\$1$2;')
-    .replace(new RegExp(`use App\\\\Jobs\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,                    'g'), 'use App\\Jobs\\$1$2;')
-    .replace(new RegExp(`use App\\\\Events\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,                  'g'), 'use App\\Events\\$1$2;')
-    .replace(new RegExp(`use App\\\\Listeners\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,               'g'), 'use App\\Listeners\\$1$2;')
-    .replace(new RegExp(`use App\\\\Mail\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,                    'g'), 'use App\\Mail\\$1$2;')
-    .replace(new RegExp(`use App\\\\Notifications\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,           'g'), 'use App\\Notifications\\$1$2;')
-    .replace(new RegExp(`use App\\\\Console\\\\Commands\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,     'g'), 'use App\\Console\\Commands\\$1$2;')
-    .replace(new RegExp(`use Database\\\\Factories\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\\\s+as\\\\s+[A-Za-z0-9_]+)?;`,          'g'), 'use Database\\Factories\\$1$2;')
+    .replace(new RegExp(`use App\\\\Models\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,                  'g'), 'use App\\Models\\$1$2;')
+    .replace(new RegExp(`use App\\\\Http\\\\Controllers\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,     'g'), 'use App\\Http\\Controllers\\$1$2;')
+    .replace(new RegExp(`use App\\\\Http\\\\Requests\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,        'g'), 'use App\\Http\\Requests\\$1$2;')
+    .replace(new RegExp(`use App\\\\Http\\\\Resources\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,       'g'), 'use App\\Http\\Resources\\$1$2;')
+    .replace(new RegExp(`use App\\\\Http\\\\Middleware\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,      'g'), 'use App\\Http\\Middleware\\$1$2;')
+    .replace(new RegExp(`use App\\\\Policies\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,                'g'), 'use App\\Policies\\$1$2;')
+    .replace(new RegExp(`use App\\\\Jobs\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,                    'g'), 'use App\\Jobs\\$1$2;')
+    .replace(new RegExp(`use App\\\\Events\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,                  'g'), 'use App\\Events\\$1$2;')
+    .replace(new RegExp(`use App\\\\Listeners\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,               'g'), 'use App\\Listeners\\$1$2;')
+    .replace(new RegExp(`use App\\\\Mail\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,                    'g'), 'use App\\Mail\\$1$2;')
+    .replace(new RegExp(`use App\\\\Notifications\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,           'g'), 'use App\\Notifications\\$1$2;')
+    .replace(new RegExp(`use App\\\\Console\\\\Commands\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,     'g'), 'use App\\Console\\Commands\\$1$2;')
+    .replace(new RegExp(`use Database\\\\Factories\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,          'g'), 'use Database\\Factories\\$1$2;')
 
     // ── use statements — flat one-level (Arkzen\Class) ───────────────
     .replace(/use App\\Models\\Arkzen\\([A-Za-z0-9_]+)(\s+as\s+[A-Za-z0-9_]+)?;/g,                    'use App\\Models\\$1$2;')
