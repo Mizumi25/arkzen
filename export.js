@@ -1,23 +1,38 @@
 #!/usr/bin/env node
 
 // ============================================================
-// ARKZEN ENGINE — EXPORT SCRIPT v6
+// ARKZEN ENGINE — EXPORT SCRIPT v7
 //
 // Architecture: Build-first, copy-everything
 //
 //   1. Trigger the engine builder for the tatemono (same as
 //      the watcher does on file change) so all output is fresh
 //   2. Copy generated frontend files from engine/frontend/app/{name}/
-//   3. Copy generated backend files from every Arkzen subfolder
-//      scoped to this tatemono — automatically picks up ANY new
-//      builder output without ever touching this file again
+//   3. Copy ALL generated backend PHP files scoped to this tatemono —
+//      handles Controllers, Requests, Middleware in SCOPED subdirs
+//      (Arkzen/{TatPascal}/) instead of the old flat layout
 //   4. Copy the full base infrastructure (config, vendor, etc.)
-//   5. Write three tiny glue files:
-//        middleware.ts       — standalone, no engine import
-//        auth-tatemonos.ts   — single tatemono scope
-//        start.js            — spawns backend + frontend (+ queue/reverb if needed)
-//   6. Rewrite namespaces, strip engine internals, wire env + routes
+//   5. Write glue files:
+//        bootstrap/app.php     — standalone, wires ArkzenSanctumTokenResolver
+//        ArkzenSanctumTokenResolver.php — standalone (no RegistryReader dep)
+//        middleware.ts          — standalone, no engine import
+//        auth-tatemonos.ts      — single tatemono scope
+//        start.js               — spawns backend + frontend (+ queue/reverb)
+//   6. Rewrite ALL namespaces (incl. scoped Arkzen\{TatPascal} layer)
 //   7. Run migrations + seed
+//
+// FIXES vs v6:
+//   - Controllers now read from Arkzen/{TatPascal}/ (not flat)
+//   - Requests now read from Arkzen/{TatPascal}/ (not flat)
+//   - Middleware/Arkzen/{TatPascal}/ is now fully copied
+//   - ArkzenSanctumTokenResolver is now copied (standalone, no RegistryReader)
+//   - app/Http/Controllers/Controller.php (base) now copied
+//   - bootstrap/app.php now properly wires ArkzenSanctumTokenResolver prepend
+//   - Namespace rewriter handles scoped \Arkzen\{TatPascal}\ layer for
+//     Controllers, Requests, and Middleware
+//   - use-statement rewriter handles two-level scoped namespaces
+//   - Storage symlink created automatically
+//   - node_modules copied with symlink fallback for speed
 //
 // Usage:  node export.js <tatemono-name>
 // Output: projects/<tatemono-name>/
@@ -41,6 +56,7 @@ const PROJECTS_DIR  = path.join(ROOT_DIR, 'projects')
 function log(msg)     { console.log(`\n  ✦ ${msg}`) }
 function success(msg) { console.log(`  ✓ ${msg}`) }
 function warn(msg)    { console.log(`  ⚠ ${msg}`) }
+function skip(msg)    { console.log(`  – ${msg} (not found, skipped)`) }
 function divider()    { console.log('\n' + '─'.repeat(50)) }
 
 // ─────────────────────────────────────────────
@@ -73,9 +89,7 @@ const PROJ_FRONT  = path.join(PROJECT_DIR, 'frontend')
 const PROJ_BACK   = path.join(PROJECT_DIR, 'backend')
 
 // ─────────────────────────────────────────────
-// QUICK META READER
-// Only reads auth + name from YAML comment.
-// Everything else comes from what the engine generated.
+// HELPERS
 // ─────────────────────────────────────────────
 
 function readMeta(content) {
@@ -111,16 +125,18 @@ const hasBackend = [
 
 const hasRealtime = content.includes('@arkzen:realtime') || content.includes('@arkzen:notifications')
 const hasJobs     = content.includes('@arkzen:jobs')     || content.includes('@arkzen:console')
+const hasMail     = content.includes('@arkzen:mail')
 
 divider()
 console.log(`\n  ARKZEN — Exporting tatemono: ${tatName}\n`)
 divider()
-console.log(`  Format:   v6`)
-console.log(`  Tatemono: ${tatName}`)
+console.log(`  Format:   v7`)
+console.log(`  Tatemono: ${tatName}  (${tatPascal})`)
 console.log(`  Auth:     ${hasAuth}`)
 console.log(`  Backend:  ${hasBackend}`)
 console.log(`  Realtime: ${hasRealtime}`)
 console.log(`  Jobs:     ${hasJobs}`)
+console.log(`  Mail:     ${hasMail}`)
 
 // ─────────────────────────────────────────────
 // SETUP OUTPUT DIRECTORY
@@ -134,9 +150,6 @@ fs.mkdirSync(PROJECT_DIR, { recursive: true })
 
 // ─────────────────────────────────────────────
 // STEP 1 — ENGINE BUILD
-// Calls builder.ts via tsx so all engine output is
-// fresh before we copy anything. Same code path as
-// the watcher — so export always matches dev exactly.
 // ─────────────────────────────────────────────
 
 log(`Triggering engine build for ${tatName}...`)
@@ -175,54 +188,86 @@ if (buildResult.status === 0 && buildOut.includes('[export-build] OK')) {
 }
 
 // ─────────────────────────────────────────────
-// NAMESPACE REWRITER
-// All engine PHP files live under App\...\Arkzen\{TatPascal}\
-// or flat App\...\Arkzen\ — rewrite to clean App\...\ for export
+// NAMESPACE REWRITER  (v7 — handles scoped layer)
+//
+// Engine PHP files live under:
+//   App\...\Arkzen\{TatPascal}\{Class}   ← scoped (new)
+//   App\...\Arkzen\{Class}               ← flat (legacy)
+//
+// Both forms are rewritten to clean App\...\{Class}
 // ─────────────────────────────────────────────
 
 function rewriteNamespaces(src) {
   return src
-    // ── Namespace declarations ──────────────────────────────────────
-    .replace(new RegExp(`namespace App\\\\Models\\\\Arkzen\\\\${tatPascal};`,                   'g'), 'namespace App\\Models;')
-    .replace(/namespace App\\Models\\Arkzen;/g,                                                       'namespace App\\Models;')
-    .replace(/namespace App\\Http\\Controllers\\Arkzen;/g,                                            'namespace App\\Http\\Controllers;')
-    .replace(/namespace App\\Http\\Requests\\Arkzen;/g,                                               'namespace App\\Http\\Requests;')
-    .replace(new RegExp(`namespace App\\\\Http\\\\Resources\\\\Arkzen\\\\${tatPascal};`,        'g'), 'namespace App\\Http\\Resources;')
-    .replace(/namespace App\\Http\\Resources\\Arkzen;/g,                                              'namespace App\\Http\\Resources;')
-    .replace(new RegExp(`namespace App\\\\Policies\\\\Arkzen\\\\${tatPascal};`,                 'g'), 'namespace App\\Policies;')
-    .replace(/namespace App\\Policies\\Arkzen;/g,                                                     'namespace App\\Policies;')
-    .replace(new RegExp(`namespace App\\\\Jobs\\\\Arkzen\\\\${tatPascal};`,                     'g'), 'namespace App\\Jobs;')
-    .replace(/namespace App\\Jobs\\Arkzen;/g,                                                         'namespace App\\Jobs;')
-    .replace(new RegExp(`namespace App\\\\Events\\\\Arkzen\\\\${tatPascal};`,                   'g'), 'namespace App\\Events;')
-    .replace(/namespace App\\Events\\Arkzen;/g,                                                       'namespace App\\Events;')
-    .replace(new RegExp(`namespace App\\\\Listeners\\\\Arkzen\\\\${tatPascal};`,                'g'), 'namespace App\\Listeners;')
-    .replace(/namespace App\\Listeners\\Arkzen;/g,                                                    'namespace App\\Listeners;')
-    .replace(new RegExp(`namespace App\\\\Mail\\\\Arkzen\\\\${tatPascal};`,                     'g'), 'namespace App\\Mail;')
-    .replace(/namespace App\\Mail\\Arkzen;/g,                                                         'namespace App\\Mail;')
-    .replace(new RegExp(`namespace App\\\\Notifications\\\\Arkzen\\\\${tatPascal};`,            'g'), 'namespace App\\Notifications;')
-    .replace(/namespace App\\Notifications\\Arkzen;/g,                                               'namespace App\\Notifications;')
-    .replace(new RegExp(`namespace App\\\\Console\\\\Commands\\\\Arkzen\\\\${tatPascal};`,      'g'), 'namespace App\\Console\\Commands;')
-    .replace(/namespace App\\Console\\Commands\\Arkzen;/g,                                            'namespace App\\Console\\Commands;')
-    .replace(/namespace Database\\Seeders\\Arkzen;/g,                                                 'namespace Database\\Seeders;')
-    .replace(new RegExp(`namespace Database\\\\Factories\\\\Arkzen\\\\${tatPascal};`,           'g'), 'namespace Database\\Factories;')
-    .replace(/namespace Database\\Factories\\Arkzen;/g,                                               'namespace Database\\Factories;')
+    // ── Namespace declarations — scoped (Arkzen\{TatPascal}) ────────
+    .replace(new RegExp(`namespace App\\\\Models\\\\Arkzen\\\\${tatPascal};`,                        'g'), 'namespace App\\Models;')
+    .replace(new RegExp(`namespace App\\\\Http\\\\Controllers\\\\Arkzen\\\\${tatPascal};`,           'g'), 'namespace App\\Http\\Controllers;')
+    .replace(new RegExp(`namespace App\\\\Http\\\\Requests\\\\Arkzen\\\\${tatPascal};`,              'g'), 'namespace App\\Http\\Requests;')
+    .replace(new RegExp(`namespace App\\\\Http\\\\Resources\\\\Arkzen\\\\${tatPascal};`,             'g'), 'namespace App\\Http\\Resources;')
+    .replace(new RegExp(`namespace App\\\\Http\\\\Middleware\\\\Arkzen\\\\${tatPascal};`,            'g'), 'namespace App\\Http\\Middleware;')
+    .replace(new RegExp(`namespace App\\\\Policies\\\\Arkzen\\\\${tatPascal};`,                      'g'), 'namespace App\\Policies;')
+    .replace(new RegExp(`namespace App\\\\Jobs\\\\Arkzen\\\\${tatPascal};`,                          'g'), 'namespace App\\Jobs;')
+    .replace(new RegExp(`namespace App\\\\Events\\\\Arkzen\\\\${tatPascal};`,                        'g'), 'namespace App\\Events;')
+    .replace(new RegExp(`namespace App\\\\Listeners\\\\Arkzen\\\\${tatPascal};`,                     'g'), 'namespace App\\Listeners;')
+    .replace(new RegExp(`namespace App\\\\Mail\\\\Arkzen\\\\${tatPascal};`,                          'g'), 'namespace App\\Mail;')
+    .replace(new RegExp(`namespace App\\\\Notifications\\\\Arkzen\\\\${tatPascal};`,                 'g'), 'namespace App\\Notifications;')
+    .replace(new RegExp(`namespace App\\\\Console\\\\Commands\\\\Arkzen\\\\${tatPascal};`,           'g'), 'namespace App\\Console\\Commands;')
+    .replace(new RegExp(`namespace Database\\\\Factories\\\\Arkzen\\\\${tatPascal};`,                'g'), 'namespace Database\\Factories;')
 
-    // ── use statements ──────────────────────────────────────────────
-    .replace(new RegExp(`use App\\\\Models\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,     'g'), 'use App\\Models\\$1;')
-    .replace(/use App\\Models\\Arkzen\\([A-Za-z0-9_]+);/g,                                           'use App\\Models\\$1;')
-    .replace(/use App\\Http\\Controllers\\Arkzen\\([A-Za-z0-9_]+);/g,                                'use App\\Http\\Controllers\\$1;')
-    .replace(/use App\\Http\\Requests\\Arkzen\\([A-Za-z0-9_]+);/g,                                   'use App\\Http\\Requests\\$1;')
-    .replace(new RegExp(`use App\\\\Http\\\\Resources\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`, 'g'), 'use App\\Http\\Resources\\$1;')
-    .replace(new RegExp(`use App\\\\Policies\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,   'g'), 'use App\\Policies\\$1;')
-    .replace(new RegExp(`use App\\\\Jobs\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,       'g'), 'use App\\Jobs\\$1;')
-    .replace(new RegExp(`use App\\\\Events\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,     'g'), 'use App\\Events\\$1;')
-    .replace(new RegExp(`use App\\\\Listeners\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,  'g'), 'use App\\Listeners\\$1;')
-    .replace(new RegExp(`use App\\\\Mail\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,       'g'), 'use App\\Mail\\$1;')
-    .replace(new RegExp(`use App\\\\Notifications\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`, 'g'), 'use App\\Notifications\\$1;')
-    .replace(new RegExp(`use App\\\\Console\\\\Commands\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`, 'g'), 'use App\\Console\\Commands\\$1;')
-    .replace(new RegExp(`use Database\\\\Factories\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`, 'g'), 'use Database\\Factories\\$1;')
+    // ── Namespace declarations — flat (Arkzen only, legacy) ─────────
+    .replace(/namespace App\\Models\\Arkzen;/g,                    'namespace App\\Models;')
+    .replace(/namespace App\\Http\\Controllers\\Arkzen;/g,         'namespace App\\Http\\Controllers;')
+    .replace(/namespace App\\Http\\Requests\\Arkzen;/g,            'namespace App\\Http\\Requests;')
+    .replace(/namespace App\\Http\\Resources\\Arkzen;/g,           'namespace App\\Http\\Resources;')
+    .replace(/namespace App\\Http\\Middleware\\Arkzen;/g,          'namespace App\\Http\\Middleware;')
+    .replace(/namespace App\\Policies\\Arkzen;/g,                  'namespace App\\Policies;')
+    .replace(/namespace App\\Jobs\\Arkzen;/g,                      'namespace App\\Jobs;')
+    .replace(/namespace App\\Events\\Arkzen;/g,                    'namespace App\\Events;')
+    .replace(/namespace App\\Listeners\\Arkzen;/g,                 'namespace App\\Listeners;')
+    .replace(/namespace App\\Mail\\Arkzen;/g,                      'namespace App\\Mail;')
+    .replace(/namespace App\\Notifications\\Arkzen;/g,             'namespace App\\Notifications;')
+    .replace(/namespace App\\Console\\Commands\\Arkzen;/g,         'namespace App\\Console\\Commands;')
+    .replace(/namespace Database\\Seeders\\Arkzen;/g,              'namespace Database\\Seeders;')
+    .replace(/namespace Database\\Factories\\Arkzen;/g,            'namespace Database\\Factories;')
 
-    // ── Database connection stripping ───────────────────────────────
+    // ── use statements — scoped two-level (Arkzen\{TatPascal}\Class) ─
+    .replace(new RegExp(`use App\\\\Models\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,                  'g'), 'use App\\Models\\$1;')
+    .replace(new RegExp(`use App\\\\Http\\\\Controllers\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,     'g'), 'use App\\Http\\Controllers\\$1;')
+    .replace(new RegExp(`use App\\\\Http\\\\Requests\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,        'g'), 'use App\\Http\\Requests\\$1;')
+    .replace(new RegExp(`use App\\\\Http\\\\Resources\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,       'g'), 'use App\\Http\\Resources\\$1;')
+    .replace(new RegExp(`use App\\\\Http\\\\Middleware\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,      'g'), 'use App\\Http\\Middleware\\$1;')
+    .replace(new RegExp(`use App\\\\Policies\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,                'g'), 'use App\\Policies\\$1;')
+    .replace(new RegExp(`use App\\\\Jobs\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,                    'g'), 'use App\\Jobs\\$1;')
+    .replace(new RegExp(`use App\\\\Events\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,                  'g'), 'use App\\Events\\$1;')
+    .replace(new RegExp(`use App\\\\Listeners\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,               'g'), 'use App\\Listeners\\$1;')
+    .replace(new RegExp(`use App\\\\Mail\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,                    'g'), 'use App\\Mail\\$1;')
+    .replace(new RegExp(`use App\\\\Notifications\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,           'g'), 'use App\\Notifications\\$1;')
+    .replace(new RegExp(`use App\\\\Console\\\\Commands\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,     'g'), 'use App\\Console\\Commands\\$1;')
+    .replace(new RegExp(`use Database\\\\Factories\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+);`,          'g'), 'use Database\\Factories\\$1;')
+
+    // ── use statements — flat one-level (Arkzen\Class) ───────────────
+    .replace(/use App\\Models\\Arkzen\\([A-Za-z0-9_]+);/g,                    'use App\\Models\\$1;')
+    .replace(/use App\\Http\\Controllers\\Arkzen\\([A-Za-z0-9_]+);/g,         'use App\\Http\\Controllers\\$1;')
+    .replace(/use App\\Http\\Requests\\Arkzen\\([A-Za-z0-9_]+);/g,            'use App\\Http\\Requests\\$1;')
+    .replace(/use App\\Http\\Resources\\Arkzen\\([A-Za-z0-9_]+);/g,           'use App\\Http\\Resources\\$1;')
+    .replace(/use App\\Http\\Middleware\\Arkzen\\([A-Za-z0-9_]+);/g,          'use App\\Http\\Middleware\\$1;')
+    .replace(/use App\\Policies\\Arkzen\\([A-Za-z0-9_]+);/g,                  'use App\\Policies\\$1;')
+    .replace(/use App\\Jobs\\Arkzen\\([A-Za-z0-9_]+);/g,                      'use App\\Jobs\\$1;')
+    .replace(/use App\\Events\\Arkzen\\([A-Za-z0-9_]+);/g,                    'use App\\Events\\$1;')
+    .replace(/use App\\Listeners\\Arkzen\\([A-Za-z0-9_]+);/g,                 'use App\\Listeners\\$1;')
+    .replace(/use App\\Mail\\Arkzen\\([A-Za-z0-9_]+);/g,                      'use App\\Mail\\$1;')
+    .replace(/use App\\Notifications\\Arkzen\\([A-Za-z0-9_]+);/g,             'use App\\Notifications\\$1;')
+    .replace(/use App\\Console\\Commands\\Arkzen\\([A-Za-z0-9_]+);/g,         'use App\\Console\\Commands\\$1;')
+    .replace(/use Database\\Factories\\Arkzen\\([A-Za-z0-9_]+);/g,            'use Database\\Factories\\$1;')
+
+    // ── Fully-qualified class refs inside strings/new/static calls ───
+    // Handles inline App\Models\Arkzen\{TatPascal}\Foo::class etc.
+    .replace(new RegExp(`App\\\\\\\\Models\\\\\\\\Arkzen\\\\\\\\${tatPascal}\\\\\\\\([A-Za-z0-9_]+)`,       'g'), 'App\\\\Models\\\\$1')
+    .replace(new RegExp(`App\\\\\\\\Http\\\\\\\\Middleware\\\\\\\\Arkzen\\\\\\\\${tatPascal}\\\\\\\\([A-Za-z0-9_]+)`, 'g'), 'App\\\\Http\\\\Middleware\\\\$1')
+    .replace(/App\\\\Models\\\\Arkzen\\\\([A-Za-z0-9_]+)/g,                   'App\\\\Models\\\\$1')
+    .replace(/App\\\\Http\\\\Middleware\\\\Arkzen\\\\([A-Za-z0-9_]+)/g,       'App\\\\Http\\\\Middleware\\\\$1')
+
+    // ── Database connection stripping ────────────────────────────────
     .replace(new RegExp(`DB::connection\\('${tatSnake}'\\)->`, 'g'),  'DB::')
     .replace(new RegExp(`->on\\('${tatSnake}'\\)`,             'g'),  '')
     .replace(/protected \$connection = '[^']+';/,                      '')
@@ -230,8 +275,14 @@ function rewriteNamespaces(src) {
     .replace(/Schema::connection\('[^']+'\)->table\(/g,                'Schema::table(')
     .replace(/Schema::connection\('[^']+'\)->dropIfExists\(/g,         'Schema::dropIfExists(')
 
-    // ── Table prefix stripping ──────────────────────────────────────
+    // ── Table prefix stripping ───────────────────────────────────────
     .replace(new RegExp(`'${tatSnake}_([a-z_]+)'`, 'g'),              "'$1'")
+
+    // ── Middleware alias FQCN rewrite in route files ─────────────────
+    // aliasMiddleware('role', \App\Http\Middleware\Arkzen\{TatPascal}\CheckRole::class)
+    // → aliasMiddleware('role', \App\Http\Middleware\CheckRole::class)
+    .replace(new RegExp(`\\\\App\\\\Http\\\\Middleware\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)`,       'g'), '\\App\\Http\\Middleware\\$1')
+    .replace(/\\App\\Http\\Middleware\\Arkzen\\([A-Za-z0-9_]+)/g,             '\\App\\Http\\Middleware\\$1')
 }
 
 // ─────────────────────────────────────────────
@@ -243,10 +294,14 @@ function copyPhp(srcFile, destFile) {
   fs.writeFileSync(destFile, rewriteNamespaces(fs.readFileSync(srcFile, 'utf-8')))
 }
 
-// Copy an entire directory of PHP files, flat into destDir
-function copyPhpDir(srcDir, destDir) {
-  if (!fs.existsSync(srcDir)) return
+// Copy an entire scoped directory of PHP files, all flat into destDir
+function copyPhpDir(srcDir, destDir, label) {
+  if (!fs.existsSync(srcDir)) {
+    skip(label || path.relative(BACKEND_DIR, srcDir))
+    return
+  }
   fs.mkdirSync(destDir, { recursive: true })
+  let count = 0
   function walk(dir) {
     fs.readdirSync(dir).forEach(entry => {
       const full = path.join(dir, entry)
@@ -255,15 +310,15 @@ function copyPhpDir(srcDir, destDir) {
       const dest = path.join(destDir, entry)
       copyPhp(full, dest)
       success(path.relative(PROJECT_DIR, dest))
+      count++
     })
   }
   walk(srcDir)
+  if (count === 0) skip((label || path.relative(BACKEND_DIR, srcDir)) + ' (empty)')
 }
 
 // ─────────────────────────────────────────────
 // STEP 2 — COPY FRONTEND BASE
-// Engine internals excluded — we never ship the
-// builder/watcher/parser/registry to the client
 // ─────────────────────────────────────────────
 
 log('Copying frontend base...')
@@ -280,17 +335,16 @@ fs.cpSync(FRONTEND_DIR, PROJ_FRONT, {
   recursive: true,
   filter: (src) => {
     const rel = path.relative(FRONTEND_DIR, src).replace(/\\/g, '/')
-    if (rel.includes('node_modules'))          return false
-    if (rel.includes('.next'))                 return false
-    if (rel.startsWith('tatemono'))            return false
-    if (SKIP_ENGINE_FILES.has(rel))            return false
-    // app/ — skip entirely, we write it ourselves below
-    if (rel.startsWith('app/'))                return false
-    // arkzen/generated — we write our own
-    if (rel.startsWith('arkzen/generated'))    return false
+    if (rel.includes('node_modules'))       return false
+    if (rel.includes('.next'))              return false
+    if (rel.startsWith('tatemono'))         return false
+    if (SKIP_ENGINE_FILES.has(rel))         return false
+    if (rel.startsWith('app/'))             return false
+    if (rel.startsWith('arkzen/generated')) return false
     return true
   }
 })
+success('Frontend base files (excluding node_modules)')
 
 log('Copying node_modules...')
 fs.cpSync(
@@ -298,27 +352,27 @@ fs.cpSync(
   path.join(PROJ_FRONT, 'node_modules'),
   { recursive: true }
 )
-success('Frontend base ready')
+success('Frontend node_modules')
 
 // ─────────────────────────────────────────────
 // STEP 3 — COPY GENERATED FRONTEND PAGES
-// The router already wrote everything correctly.
-// Copy app/{tatName}/* verbatim — no modifications needed.
 // ─────────────────────────────────────────────
 
 log('Copying generated frontend pages...')
 
-// Always copy app/layout.tsx (root layout)
+// Root layout
 const rootLayout = path.join(FRONTEND_DIR, 'app', 'layout.tsx')
 if (fs.existsSync(rootLayout)) {
   fs.mkdirSync(path.join(PROJ_FRONT, 'app'), { recursive: true })
   fs.copyFileSync(rootLayout, path.join(PROJ_FRONT, 'app', 'layout.tsx'))
   success('app/layout.tsx')
+} else {
+  skip('app/layout.tsx')
 }
 
-// Copy the full generated tatemono folder
+// Tatemono pages
 const engTatDir = path.join(FRONTEND_DIR, 'app', tatName)
-const outTatDir = path.join(PROJ_FRONT,   'app', tatName)
+const outTatDir = path.join(PROJ_FRONT, 'app', tatName)
 
 if (fs.existsSync(engTatDir)) {
   fs.cpSync(engTatDir, outTatDir, { recursive: true })
@@ -338,7 +392,7 @@ if (fs.existsSync(engTatDir)) {
   )
 }
 
-// Copy animation file if generated
+// Animations
 const engAnim = path.join(FRONTEND_DIR, 'arkzen', 'generated', `${tatName}.animations.ts`)
 if (fs.existsSync(engAnim)) {
   const animDestDir = path.join(PROJ_FRONT, 'arkzen', 'generated')
@@ -347,7 +401,7 @@ if (fs.existsSync(engAnim)) {
   success(`arkzen/generated/${tatName}.animations.ts`)
 }
 
-// Copy custom layouts
+// Custom layouts
 const engCustomLayouts = path.join(FRONTEND_DIR, 'arkzen', 'core', 'layouts', 'custom')
 if (fs.existsSync(engCustomLayouts)) {
   fs.cpSync(
@@ -359,13 +413,12 @@ if (fs.existsSync(engCustomLayouts)) {
 }
 
 // ─────────────────────────────────────────────
-// STEP 4 — WRITE FRONTEND GLUE FILES
+// STEP 4 — FRONTEND GLUE FILES
 // ─────────────────────────────────────────────
 
 log('Writing frontend glue files...')
 
 // app/page.tsx — root redirect
-// Read redirect target from what the engine generated
 let rootRedirectTarget = `/${tatName}`
 const engRootPage = path.join(engTatDir, 'page.tsx')
 if (fs.existsSync(engRootPage)) {
@@ -388,8 +441,7 @@ fs.writeFileSync(path.join(genDir, 'auth-tatemonos.ts'), [
 ].join('\n') + '\n')
 success('arkzen/generated/auth-tatemonos.ts')
 
-// middleware.ts — standalone, reads from auth-tatemonos above
-// Detect guest/auth pages by scanning what the router generated
+// middleware.ts
 const guestPages = []
 const authPages  = []
 if (fs.existsSync(outTatDir)) {
@@ -404,7 +456,7 @@ if (fs.existsSync(outTatDir)) {
 const finalGuestPages = guestPages.length ? guestPages : ['login', 'register', 'forgot-password', 'reset-password']
 const finalAuthPages  = authPages.length  ? authPages  : ['dashboard', 'settings', 'profile']
 
-fs.writeFileSync(path.join(PROJ_FRONT, 'middleware.ts'), `// Auto-generated by export.js — standalone middleware for: ${tatName}
+fs.writeFileSync(path.join(PROJ_FRONT, 'middleware.ts'), `// Auto-generated by export.js v7 — standalone middleware for: ${tatName}
 import { NextRequest, NextResponse } from 'next/server'
 import { AUTH_TATEMONOS } from '@/arkzen/generated/auth-tatemonos'
 
@@ -435,7 +487,7 @@ export const config = {
   matcher: ['/((?!_next|api|arkzen|static|favicon.ico).*)'],
 }
 `)
-success('middleware.ts (standalone)')
+success('middleware.ts')
 
 // next.config.js
 fs.writeFileSync(path.join(PROJ_FRONT, 'next.config.js'), hasBackend
@@ -453,12 +505,12 @@ module.exports = nextConfig\n`
 )
 success('next.config.js')
 
-// package.json — rename, fix port
+// package.json
 const pkgPath = path.join(PROJ_FRONT, 'package.json')
 if (fs.existsSync(pkgPath)) {
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
-  pkg.name     = tatName
-  pkg.scripts  = {
+  pkg.name    = tatName
+  pkg.scripts = {
     dev:   'NEXT_IGNORE_INCORRECT_LOCKFILE=1 NEXT_DISABLE_SWC=1 next dev --webpack --port 3001',
     build: 'next build',
     start: 'next start --port 3001',
@@ -473,110 +525,184 @@ if (fs.existsSync(pkgPath)) {
 
 if (!hasBackend) {
   log('Static tatemono — no backend needed')
-  success('Frontend only export')
+  success('Frontend-only export complete')
 } else {
 
-  // ── 5a. Copy backend base ─────────────────────────────────────────
+  // ── 5a. Copy backend base (excludes all engine-generated Arkzen dirs) ──
 
   log('Copying backend base...')
 
   fs.cpSync(BACKEND_DIR, PROJ_BACK, {
     recursive: true,
     filter: (src) => {
-      if (src.includes('/vendor/'))                            return false
-      if (src.endsWith('.sqlite'))                             return false
-      // Skip all engine-generated Arkzen dirs (we copy selectively below)
-      if (src.includes('/app/Arkzen/'))                       return false
-      if (src.includes('/app/Http/Controllers/Arkzen/'))      return false
-      if (src.includes('/app/Http/Requests/Arkzen/'))         return false
-      if (src.includes('/app/Http/Resources/Arkzen/'))        return false
-      if (src.includes('/app/Http/Middleware/ArkzenEngine'))  return false
-      if (src.includes('/app/Policies/Arkzen/'))              return false
-      if (src.includes('/app/Jobs/Arkzen/'))                  return false
-      if (src.includes('/app/Events/Arkzen/'))                return false
-      if (src.includes('/app/Listeners/Arkzen/'))             return false
-      if (src.includes('/app/Mail/Arkzen/'))                  return false
-      if (src.includes('/app/Notifications/Arkzen/'))         return false
-      if (src.includes('/app/Console/Commands/Arkzen/'))      return false
-      if (src.includes('/app/Models/Arkzen/'))                return false
-      if (src.includes('/app/Providers/Arkzen/'))             return false
-      if (src.includes('/database/arkzen/'))                  return false
-      if (src.includes('/database/migrations/arkzen/'))       return false
-      if (src.includes('/database/seeders/arkzen/'))          return false
-      if (src.includes('/database/factories/Arkzen/'))        return false
-      if (src.includes('/routes/arkzen.php'))                 return false
-      if (src.includes('/routes/modules/'))                   return false
+      if (src.includes('/vendor/'))                                   return false
+      if (src.endsWith('.sqlite'))                                    return false
+      // Skip all engine-generated Arkzen dirs — copied selectively below
+      if (src.includes('/app/Arkzen/'))                              return false
+      if (src.includes('/app/Http/Controllers/Arkzen/'))             return false
+      if (src.includes('/app/Http/Requests/Arkzen/'))                return false
+      if (src.includes('/app/Http/Resources/Arkzen/'))               return false
+      if (src.includes('/app/Http/Middleware/Arkzen/'))              return false
+      if (src.includes('/app/Http/Middleware/ArkzenEngine'))         return false
+      if (src.includes('/app/Policies/Arkzen/'))                     return false
+      if (src.includes('/app/Jobs/Arkzen/'))                         return false
+      if (src.includes('/app/Events/Arkzen/'))                       return false
+      if (src.includes('/app/Listeners/Arkzen/'))                    return false
+      if (src.includes('/app/Mail/Arkzen/'))                         return false
+      if (src.includes('/app/Notifications/Arkzen/'))                return false
+      if (src.includes('/app/Console/Commands/Arkzen/'))             return false
+      if (src.includes('/app/Models/Arkzen/'))                       return false
+      if (src.includes('/app/Providers/Arkzen/'))                    return false
+      if (src.includes('/database/arkzen/'))                         return false
+      if (src.includes('/database/migrations/arkzen/'))              return false
+      if (src.includes('/database/seeders/arkzen/'))                 return false
+      if (src.includes('/database/factories/Arkzen/'))               return false
+      if (src.includes('/routes/arkzen.php'))                        return false
+      if (src.includes('/routes/modules/'))                          return false
       // Skip engine debug files
       const base = path.basename(src)
       if (['consoles_debug.json', 'roles-routes.txt', 'mail-routes.txt'].includes(base)) return false
       return true
     }
   })
+  success('Backend base files')
 
+  // Vendor
   log('Copying vendor...')
   fs.cpSync(
     path.join(BACKEND_DIR, 'vendor'),
     path.join(PROJ_BACK, 'vendor'),
     { recursive: true }
   )
-  success('Backend base + vendor ready')
+  success('vendor/')
 
-  // ── 5b. Copy tatemono-scoped generated PHP files ──────────────────
-  // Each builder outputs to a {TatPascal} subfolder — we copy them all flat.
-  // When your engine adds new builders, they appear here automatically.
+  // ── 5b. Generated PHP — all scoped to {TatPascal} subdir ───────────
 
   log('Copying generated backend files...')
 
-  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Models',        'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Models'))
-  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Http', 'Resources', 'Arkzen', tatPascal), path.join(PROJ_BACK, 'app', 'Http', 'Resources'))
-  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Policies',      'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Policies'))
-  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Jobs',          'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Jobs'))
-  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Events',        'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Events'))
-  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Listeners',     'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Listeners'))
-  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Mail',          'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Mail'))
-  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Notifications', 'Arkzen', tatPascal),   path.join(PROJ_BACK, 'app', 'Notifications'))
-  copyPhpDir(path.join(BACKEND_DIR, 'app', 'Console', 'Commands', 'Arkzen', tatPascal), path.join(PROJ_BACK, 'app', 'Console', 'Commands'))
-  copyPhpDir(path.join(BACKEND_DIR, 'database', 'factories', 'Arkzen', tatPascal),  path.join(PROJ_BACK, 'database', 'factories'))
-  copyPhpDir(path.join(BACKEND_DIR, 'database', 'migrations', 'arkzen', tatName),   path.join(PROJ_BACK, 'database', 'migrations'))
+  // Models
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'app', 'Models', 'Arkzen', tatPascal),
+    path.join(PROJ_BACK, 'app', 'Models'),
+    `app/Models/Arkzen/${tatPascal}/`
+  )
 
-  // Controllers — flat under Arkzen/ (no tatemono subfolder yet)
-  // Identify by Tatemono comment header in the file body
-  const ctrlSrc = path.join(BACKEND_DIR, 'app', 'Http', 'Controllers', 'Arkzen')
-  const ctrlDst = path.join(PROJ_BACK, 'app', 'Http', 'Controllers')
-  fs.mkdirSync(ctrlDst, { recursive: true })
-  if (fs.existsSync(ctrlSrc)) {
-    fs.readdirSync(ctrlSrc).filter(f => f.endsWith('.php') && f !== 'ArkzenEngineController.php').forEach(f => {
-      const body = fs.readFileSync(path.join(ctrlSrc, f), 'utf-8')
-      if (body.includes(`Tatemono: ${tatName}`) || body.includes(`/${tatName}/`)) {
-        copyPhp(path.join(ctrlSrc, f), path.join(ctrlDst, f))
-        success(`app/Http/Controllers/${f}`)
-      }
-    })
+  // Controllers — NOW scoped under Arkzen/{TatPascal}/ (fixed from v6)
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'app', 'Http', 'Controllers', 'Arkzen', tatPascal),
+    path.join(PROJ_BACK, 'app', 'Http', 'Controllers'),
+    `app/Http/Controllers/Arkzen/${tatPascal}/`
+  )
+
+  // Requests — NOW scoped under Arkzen/{TatPascal}/ (fixed from v6)
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'app', 'Http', 'Requests', 'Arkzen', tatPascal),
+    path.join(PROJ_BACK, 'app', 'Http', 'Requests'),
+    `app/Http/Requests/Arkzen/${tatPascal}/`
+  )
+
+  // Resources
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'app', 'Http', 'Resources', 'Arkzen', tatPascal),
+    path.join(PROJ_BACK, 'app', 'Http', 'Resources'),
+    `app/Http/Resources/Arkzen/${tatPascal}/`
+  )
+
+  // Middleware — custom per-tatemono (fixed from v6 — was never copied)
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'app', 'Http', 'Middleware', 'Arkzen', tatPascal),
+    path.join(PROJ_BACK, 'app', 'Http', 'Middleware'),
+    `app/Http/Middleware/Arkzen/${tatPascal}/`
+  )
+
+  // Policies
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'app', 'Policies', 'Arkzen', tatPascal),
+    path.join(PROJ_BACK, 'app', 'Policies'),
+    `app/Policies/Arkzen/${tatPascal}/`
+  )
+
+  // Jobs
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'app', 'Jobs', 'Arkzen', tatPascal),
+    path.join(PROJ_BACK, 'app', 'Jobs'),
+    `app/Jobs/Arkzen/${tatPascal}/`
+  )
+
+  // Events
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'app', 'Events', 'Arkzen', tatPascal),
+    path.join(PROJ_BACK, 'app', 'Events'),
+    `app/Events/Arkzen/${tatPascal}/`
+  )
+
+  // Listeners
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'app', 'Listeners', 'Arkzen', tatPascal),
+    path.join(PROJ_BACK, 'app', 'Listeners'),
+    `app/Listeners/Arkzen/${tatPascal}/`
+  )
+
+  // Mail
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'app', 'Mail', 'Arkzen', tatPascal),
+    path.join(PROJ_BACK, 'app', 'Mail'),
+    `app/Mail/Arkzen/${tatPascal}/`
+  )
+
+  // Notifications
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'app', 'Notifications', 'Arkzen', tatPascal),
+    path.join(PROJ_BACK, 'app', 'Notifications'),
+    `app/Notifications/Arkzen/${tatPascal}/`
+  )
+
+  // Console Commands
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'app', 'Console', 'Commands', 'Arkzen', tatPascal),
+    path.join(PROJ_BACK, 'app', 'Console', 'Commands'),
+    `app/Console/Commands/Arkzen/${tatPascal}/`
+  )
+
+  // Factories
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'database', 'factories', 'Arkzen', tatPascal),
+    path.join(PROJ_BACK, 'database', 'factories'),
+    `database/factories/Arkzen/${tatPascal}/`
+  )
+
+  // Migrations
+  copyPhpDir(
+    path.join(BACKEND_DIR, 'database', 'migrations', 'arkzen', tatName),
+    path.join(PROJ_BACK, 'database', 'migrations'),
+    `database/migrations/arkzen/${tatName}/`
+  )
+
+  // ── 5c. Base Controller (always needed) ────────────────────────────
+
+  const baseCtrl = path.join(BACKEND_DIR, 'app', 'Http', 'Controllers', 'Controller.php')
+  if (fs.existsSync(baseCtrl)) {
+    const ctrlDst = path.join(PROJ_BACK, 'app', 'Http', 'Controllers', 'Controller.php')
+    fs.mkdirSync(path.dirname(ctrlDst), { recursive: true })
+    fs.copyFileSync(baseCtrl, ctrlDst)
+    success('app/Http/Controllers/Controller.php')
   }
 
-  // Requests — flat under Arkzen/ (no tatemono subfolder yet)
-  const reqSrc = path.join(BACKEND_DIR, 'app', 'Http', 'Requests', 'Arkzen')
-  const reqDst = path.join(PROJ_BACK, 'app', 'Http', 'Requests')
-  fs.mkdirSync(reqDst, { recursive: true })
-  if (fs.existsSync(reqSrc)) {
-    fs.readdirSync(reqSrc).filter(f => f.endsWith('.php')).forEach(f => {
-      const body = fs.readFileSync(path.join(reqSrc, f), 'utf-8')
-      if (body.includes(`Tatemono: ${tatName}`) || body.includes(`/${tatName}/`)) {
-        copyPhp(path.join(reqSrc, f), path.join(reqDst, f))
-        success(`app/Http/Requests/${f}`)
-      }
-    })
-  }
+  // ── 5d. Seeders ────────────────────────────────────────────────────
 
-  // Seeders — flat under arkzen/, match by tatemono name in comment
-  const seederSrc  = path.join(BACKEND_DIR, 'database', 'seeders', 'arkzen')
-  const seederDst  = path.join(PROJ_BACK, 'database', 'seeders')
+  const seederSrc = path.join(BACKEND_DIR, 'database', 'seeders', 'arkzen')
+  const seederDst = path.join(PROJ_BACK, 'database', 'seeders')
   const copiedSeeders = []
   fs.mkdirSync(seederDst, { recursive: true })
+
   if (fs.existsSync(seederSrc)) {
     fs.readdirSync(seederSrc).filter(f => f.endsWith('.php')).forEach(f => {
       const body = fs.readFileSync(path.join(seederSrc, f), 'utf-8')
-      if (body.includes(`Tatemono: ${tatName}`) || body.toLowerCase().includes(tatSnake) || body.toLowerCase().includes(tatName.replace(/-/g, ''))) {
+      const matchesTatemono =
+        body.includes(`Tatemono: ${tatName}`) ||
+        body.toLowerCase().includes(tatSnake) ||
+        body.toLowerCase().includes(tatName.replace(/-/g, ''))
+      if (matchesTatemono) {
         copyPhp(path.join(seederSrc, f), path.join(seederDst, f))
         success(`database/seeders/${f}`)
         const m = body.match(/class\s+(\w+)\s+extends/)
@@ -585,63 +711,7 @@ if (!hasBackend) {
     })
   }
 
-  // Mail blade views
-  const mailViewSrc = path.join(BACKEND_DIR, 'resources', 'views', 'emails', 'arkzen', tatName)
-  if (fs.existsSync(mailViewSrc)) {
-    const mailViewDst = path.join(PROJ_BACK, 'resources', 'views', 'emails', tatName)
-    fs.cpSync(mailViewSrc, mailViewDst, { recursive: true })
-    success(`resources/views/emails/${tatName}/`)
-  }
-
-  // ── 5c. Routes ────────────────────────────────────────────────────
-
-  log('Writing route files...')
-
-  // Main module route file
-  const routeSrc = path.join(BACKEND_DIR, 'routes', 'modules', `${tatName}.php`)
-  if (fs.existsSync(routeSrc)) {
-    copyPhp(routeSrc, path.join(PROJ_BACK, 'routes', `${tatName}.php`))
-    success(`routes/${tatName}.php`)
-  } else {
-    warn(`routes/modules/${tatName}.php not found — run engine first`)
-  }
-
-  // api.php — just requires the tatemono route file
-  fs.writeFileSync(path.join(PROJ_BACK, 'routes', 'api.php'),
-    `<?php\n\nif (file_exists(__DIR__.'/${tatName}.php')) {\n    require __DIR__.'/${tatName}.php';\n}\n`
-  )
-  success('routes/api.php')
-
-  // channels.php — extract only blocks for this tatemono
-  let channelsOut = `<?php\n\nuse Illuminate\\Support\\Facades\\Broadcast;\n\n`
-  const channelsSrc = path.join(BACKEND_DIR, 'routes', 'channels.php')
-  if (fs.existsSync(channelsSrc)) {
-    const lines = fs.readFileSync(channelsSrc, 'utf-8').split('\n')
-    let inModule = false
-    lines.forEach(line => {
-      if (line.includes(`// Module: ${tatName}`)) inModule = true
-      if (inModule) {
-        channelsOut += line + '\n'
-        if (line.trim() === '});') { inModule = false; channelsOut += '\n' }
-      }
-    })
-  }
-  fs.writeFileSync(path.join(PROJ_BACK, 'routes', 'channels.php'), channelsOut)
-  success('routes/channels.php')
-
-  // console.php — extract only schedule lines for this tatemono
-  let consoleOut = `<?php\n\nuse Illuminate\\Support\\Facades\\Schedule;\n\n`
-  const consoleSrc = path.join(BACKEND_DIR, 'routes', 'console.php')
-  if (fs.existsSync(consoleSrc)) {
-    fs.readFileSync(consoleSrc, 'utf-8').split('\n').forEach(line => {
-      if (line.includes(`[${tatName}]`)) consoleOut += line + '\n'
-    })
-  }
-  fs.writeFileSync(path.join(PROJ_BACK, 'routes', 'console.php'), consoleOut)
-  success('routes/console.php')
-
-  // ── 5d. DatabaseSeeder ────────────────────────────────────────────
-
+  // DatabaseSeeder
   const seederCalls = copiedSeeders.map(s => `        $this->call(${s}::class);`).join('\n')
   fs.writeFileSync(path.join(seederDst, 'DatabaseSeeder.php'), `<?php
 
@@ -659,55 +729,175 @@ ${seederCalls || '        //'}
 `)
   success('database/seeders/DatabaseSeeder.php')
 
-  // ── 5e. SQLite database ──────────────────────────────────────────
+  // ── 5e. Mail blade views ────────────────────────────────────────────
 
-  const engSqlite = path.join(BACKEND_DIR, 'database', 'arkzen', `${tatName}.sqlite`)
-  const destSqlite = path.join(PROJ_BACK, 'database', 'database.sqlite')
-  if (fs.existsSync(engSqlite) && fs.statSync(engSqlite).size > 0) {
+  const mailViewSrc = path.join(BACKEND_DIR, 'resources', 'views', 'emails', 'arkzen', tatName)
+  if (fs.existsSync(mailViewSrc)) {
+    const mailViewDst = path.join(PROJ_BACK, 'resources', 'views', 'emails', tatName)
+    fs.cpSync(mailViewSrc, mailViewDst, { recursive: true })
+    success(`resources/views/emails/${tatName}/`)
+  }
+
+  // ── 5f. Routes ──────────────────────────────────────────────────────
+
+  log('Writing route files...')
+
+  // Main tatemono route file
+  const routeSrc = path.join(BACKEND_DIR, 'routes', 'modules', `${tatName}.php`)
+  if (fs.existsSync(routeSrc)) {
+    copyPhp(routeSrc, path.join(PROJ_BACK, 'routes', `${tatName}.php`))
+    success(`routes/${tatName}.php`)
+  } else {
+    warn(`routes/modules/${tatName}.php not found — run engine build first`)
+  }
+
+  // api.php — simply requires the tatemono route file
+  fs.writeFileSync(path.join(PROJ_BACK, 'routes', 'api.php'),
+    `<?php\n\nif (file_exists(__DIR__.'/${tatName}.php')) {\n    require __DIR__.'/${tatName}.php';\n}\n`
+  )
+  success('routes/api.php')
+
+  // channels.php — extract only this tatemono's blocks
+  let channelsOut = `<?php\n\nuse Illuminate\\Support\\Facades\\Broadcast;\n\n`
+  const channelsSrc = path.join(BACKEND_DIR, 'routes', 'channels.php')
+  if (fs.existsSync(channelsSrc)) {
+    const lines = fs.readFileSync(channelsSrc, 'utf-8').split('\n')
+    let inModule = false
+    lines.forEach(line => {
+      if (line.includes(`// Module: ${tatName}`)) inModule = true
+      if (inModule) {
+        channelsOut += line + '\n'
+        if (line.trim() === '});') { inModule = false; channelsOut += '\n' }
+      }
+    })
+  }
+  fs.writeFileSync(path.join(PROJ_BACK, 'routes', 'channels.php'), channelsOut)
+  success('routes/channels.php')
+
+  // console.php — extract only this tatemono's schedule lines
+  let consoleOut = `<?php\n\nuse Illuminate\\Support\\Facades\\Schedule;\n\n`
+  const consoleSrc = path.join(BACKEND_DIR, 'routes', 'console.php')
+  if (fs.existsSync(consoleSrc)) {
+    fs.readFileSync(consoleSrc, 'utf-8').split('\n').forEach(line => {
+      if (line.includes(`[${tatName}]`)) consoleOut += line + '\n'
+    })
+  }
+  fs.writeFileSync(path.join(PROJ_BACK, 'routes', 'console.php'), consoleOut)
+  success('routes/console.php')
+
+  // ── 5g. SQLite database ─────────────────────────────────────────────
+
+  const engSqlite    = path.join(BACKEND_DIR, 'database', 'arkzen', `${tatName}.sqlite`)
+  const destSqlite   = path.join(PROJ_BACK, 'database', 'database.sqlite')
+  const sqlitePrebuilt = fs.existsSync(engSqlite) && fs.statSync(engSqlite).size > 0
+  if (sqlitePrebuilt) {
     fs.copyFileSync(engSqlite, destSqlite)
-    success('database/database.sqlite (copied from engine isolated DB)')
+    success('database/database.sqlite (copied from engine isolated DB — already migrated)')
   } else {
     fs.writeFileSync(destSqlite, '')
     success('database/database.sqlite (empty — migrations will populate)')
   }
 
-  // ── 5f. bootstrap/app.php — standalone, no engine wiring ─────────
+  // ── 5h. Standalone ArkzenSanctumTokenResolver ──────────────────────
+  // The engine version depends on RegistryReader (not available in export).
+  // This standalone version resolves the token model by URL slug alone —
+  // correct for single-tatemono projects where the class is always known.
+
+  log('Writing standalone middleware...')
+
+  const tokenClass = `App\\Models\\${tatPascal}\\PersonalAccessToken`
+  fs.mkdirSync(path.join(PROJ_BACK, 'app', 'Http', 'Middleware'), { recursive: true })
+  const resolverLines = [
+    '<?php',
+    '',
+    'namespace App\\Http\\Middleware;',
+    '',
+    'use Closure;',
+    'use Illuminate\\Http\\Request;',
+    'use Symfony\\Component\\HttpFoundation\\Response;',
+    'use Laravel\\Sanctum\\Sanctum;',
+    '',
+    '// ============================================================',
+    `// STANDALONE — generated by export.js v7 for: ${tatName}`,
+    '//',
+    '// Runs before auth:sanctum to ensure Sanctum uses the correct',
+    "// PersonalAccessToken model for this tatemono's isolated DB.",
+    '// ============================================================',
+    '',
+    'class ArkzenSanctumTokenResolver',
+    '{',
+    `    private const TATEMONO_SLUG = '${tatName}';`,
+    `    private const TOKEN_CLASS = '${tokenClass}';`,
+    '',
+    '    public function handle(Request $request, Closure $next): Response',
+    '    {',
+    '        $path = $request->path();',
+    "        if (!str_starts_with($path, 'api/')) return $next($request);",
+    "        $segments = explode('/', $path);",
+    '        if (count($segments) < 2 || $segments[1] !== self::TATEMONO_SLUG) return $next($request);',
+    '        if (class_exists(self::TOKEN_CLASS)) Sanctum::usePersonalAccessTokenModel(self::TOKEN_CLASS);',
+    '        return $next($request);',
+    '    }',
+    '}',
+    '',
+  ]
+  fs.writeFileSync(
+    path.join(PROJ_BACK, 'app', 'Http', 'Middleware', 'ArkzenSanctumTokenResolver.php'),
+    resolverLines.join('\n')
+  )
+  success('app/Http/Middleware/ArkzenSanctumTokenResolver.php (standalone)')
+
+  // ── 5i. bootstrap/app.php — standalone, wires resolver + routes ────
 
   log('Configuring backend...')
 
-  fs.writeFileSync(path.join(PROJ_BACK, 'bootstrap', 'app.php'), `<?php
-
-use Illuminate\\Foundation\\Application;
-use Illuminate\\Foundation\\Configuration\\Exceptions;
-use Illuminate\\Foundation\\Configuration\\Middleware;
-
-return Application::configure(basePath: dirname(__DIR__))
-    ->withRouting(
-        web:      __DIR__.'/../routes/web.php',
-        api:      __DIR__.'/../routes/api.php',
-        channels: __DIR__.'/../routes/channels.php',
-        commands: __DIR__.'/../routes/console.php',
-        health:   '/up',
-    )
-    ->withMiddleware(function (Middleware \\$middleware): void {
-        //
-    })
-    ->withExceptions(function (Exceptions \\$exceptions): void {
-        \\$exceptions->shouldRenderJsonWhen(fn(\\$request) => \\$request->is('api/*'));
-    })->create();
-`)
+  fs.writeFileSync(path.join(PROJ_BACK, 'bootstrap', 'app.php'), [
+    '<?php',
+    '',
+    'use Illuminate\\Foundation\\Application;',
+    'use Illuminate\\Foundation\\Configuration\\Exceptions;',
+    'use Illuminate\\Foundation\\Configuration\\Middleware;',
+    '',
+    'return Application::configure(basePath: dirname(__DIR__))',
+    '    ->withRouting(',
+    "        web:      __DIR__.'/../routes/web.php',",
+    "        api:      __DIR__.'/../routes/api.php',",
+    "        channels: __DIR__.'/../routes/channels.php',",
+    "        commands: __DIR__.'/../routes/console.php',",
+    "        health:   '/up',",
+    '    )',
+    '    ->withMiddleware(function (Middleware $middleware): void {',
+    '        // Resolve the correct Sanctum PersonalAccessToken model BEFORE',
+    '        // auth:sanctum runs — prevents 401 on all authenticated routes.',
+    '        $middleware->prepend(\\App\\Http\\Middleware\\ArkzenSanctumTokenResolver::class);',
+    '    })',
+    '    ->withExceptions(function (Exceptions $exceptions): void {',
+    "        \$exceptions->shouldRenderJsonWhen(fn(\$request) => \$request->is('api/*'));",
+    '    })->create();',
+    '',
+  ].join('\n'))
   success('bootstrap/app.php')
 
-  // bootstrap/providers.php — strip engine-only providers
+  // ── 5j. bootstrap/providers.php — strip engine-only providers ──────
+
   const provPath = path.join(PROJ_BACK, 'bootstrap', 'providers.php')
   if (fs.existsSync(provPath)) {
     let prov = fs.readFileSync(provPath, 'utf-8')
+    // Strip engine-only providers (ArkzenServiceProvider uses RegistryReader)
+    prov = prov
       .replace(/\s*App\\Providers\\Arkzen\\ArkzenServiceProvider::class,?\n?/g, '\n')
+      .replace(/\s*App\\Providers\\AppServiceProvider::class,?\n?/g, '\n')
+    // Keep BroadcastServiceProvider only when realtime is used
+    if (!hasRealtime) {
+      prov = prov.replace(/\s*Illuminate\\Broadcasting\\BroadcastServiceProvider::class,?\n?/g, '\n')
+    }
+    // Clean up blank lines and write
+    prov = prov.replace(/\n{3,}/g, '\n\n')
     fs.writeFileSync(provPath, prov)
   }
   success('bootstrap/providers.php')
 
-  // ── 5g. .env ─────────────────────────────────────────────────────
+  // ── 5k. .env ────────────────────────────────────────────────────────
 
   const dbPath = path.join(PROJ_BACK, 'database', 'database.sqlite')
   const envEx  = path.join(PROJ_BACK, '.env.example')
@@ -715,23 +905,21 @@ return Application::configure(basePath: dirname(__DIR__))
   if (fs.existsSync(envEx)) {
     let env = fs.readFileSync(envEx, 'utf-8')
 
-    // Core settings
     env = env
-      .replace(/APP_NAME=.*/,      `APP_NAME=${tatName}`)
-      .replace(/APP_ENV=.*/,       'APP_ENV=local')
-      .replace(/APP_DEBUG=.*/,     'APP_DEBUG=true')
-      .replace(/APP_URL=.*/,       'APP_URL=http://localhost:8001')
-      .replace(/DB_CONNECTION=.*/, 'DB_CONNECTION=sqlite')
-      .replace(/DB_HOST=.*/,       '# DB_HOST=127.0.0.1')
-      .replace(/DB_PORT=.*/,       '# DB_PORT=3306')
-      .replace(/DB_DATABASE=.*/,   `DB_DATABASE=${dbPath}`)
-      .replace(/# DB_DATABASE=.*/, `DB_DATABASE=${dbPath}`)
-      .replace(/DB_USERNAME=.*/,   '# DB_USERNAME=root')
-      .replace(/DB_PASSWORD=.*/,   '# DB_PASSWORD=')
+      .replace(/APP_NAME=.*/,        `APP_NAME=${tatName}`)
+      .replace(/APP_ENV=.*/,         'APP_ENV=local')
+      .replace(/APP_DEBUG=.*/,       'APP_DEBUG=true')
+      .replace(/APP_URL=.*/,         'APP_URL=http://localhost:8001')
+      .replace(/DB_CONNECTION=.*/,   'DB_CONNECTION=sqlite')
+      .replace(/DB_HOST=.*/,         '# DB_HOST=127.0.0.1')
+      .replace(/DB_PORT=.*/,         '# DB_PORT=3306')
+      .replace(/DB_DATABASE=.*/,     `DB_DATABASE=${dbPath}`)
+      .replace(/# DB_DATABASE=.*/,   `DB_DATABASE=${dbPath}`)
+      .replace(/DB_USERNAME=.*/,     '# DB_USERNAME=root')
+      .replace(/DB_PASSWORD=.*/,     '# DB_PASSWORD=')
       .replace(/QUEUE_CONNECTION=.*/, 'QUEUE_CONNECTION=database')
-      .replace(/SESSION_DRIVER=.*/,   'SESSION_DRIVER=database')
+      .replace(/SESSION_DRIVER=.*/,  'SESSION_DRIVER=database')
 
-    // Reverb vars if needed
     if (hasRealtime && !env.includes('REVERB_APP_ID=')) {
       env += [
         '',
@@ -745,11 +933,27 @@ return Application::configure(basePath: dirname(__DIR__))
       ].join('\n')
     }
 
+    if (hasMail && !env.includes('MAIL_MAILER=')) {
+      env += [
+        '',
+        'MAIL_MAILER=log',
+        'MAIL_FROM_ADDRESS=hello@example.com',
+        `MAIL_FROM_NAME="${tatName}"`,
+      ].join('\n')
+    }
+
     fs.writeFileSync(path.join(PROJ_BACK, '.env'), env)
     success('.env')
   }
 
-  // ── 5h. Artisan commands ──────────────────────────────────────────
+  // ── 5l. Storage symlink ──────────────────────────────────────────────
+
+  try {
+    execSync('php artisan storage:link --force', { cwd: PROJ_BACK, stdio: 'pipe' })
+    success('storage symlink (public/storage → storage/app/public)')
+  } catch { warn('Storage link skipped — run: php artisan storage:link') }
+
+  // ── 5m. Artisan commands ─────────────────────────────────────────────
 
   log('Generating app key...')
   try {
@@ -757,13 +961,36 @@ return Application::configure(basePath: dirname(__DIR__))
     success('App key generated')
   } catch { warn('App key will be generated on first run') }
 
-  log('Running migrations...')
-  try {
-    execSync('php artisan migrate --force', { cwd: PROJ_BACK, stdio: 'pipe' })
-    success('Migrations complete')
-  } catch (e) {
-    warn('Migrations failed — will retry on first start')
-    warn(e.message?.slice(0, 120) || '')
+  if (sqlitePrebuilt) {
+    success('Migrations skipped — pre-built sqlite already contains all tables')
+  } else {
+    // Deduplicate personal_access_tokens migrations before running
+    // (the base backend can have multiple copies from engine bootstrapping)
+    const migrationsDir = path.join(PROJ_BACK, 'database', 'migrations')
+    if (fs.existsSync(migrationsDir)) {
+      const seen = new Set()
+      fs.readdirSync(migrationsDir)
+        .filter(f => f.endsWith('.php') && f.includes('personal_access_tokens'))
+        .sort()
+        .forEach((f, i) => {
+          if (i > 0) { // keep only the first (oldest timestamp)
+            fs.unlinkSync(path.join(migrationsDir, f))
+            warn(`Removed duplicate migration: ${f}`)
+          } else {
+            seen.add(f)
+          }
+        })
+    }
+    log('Running migrations...')
+    try {
+      const migrateOut = execSync('php artisan migrate --force 2>&1', { cwd: PROJ_BACK }).toString()
+      success('Migrations complete')
+      migrateOut.trim().split('\n').filter(l => l.trim()).forEach(l => success('  ' + l))
+    } catch (e) {
+      warn('Migrations failed — run manually: php artisan migrate')
+      const errOut = (e.stdout || e.message || '').toString().trim()
+      errOut.split('\n').filter(l => l.trim()).slice(0, 8).forEach(l => warn('  ' + l))
+    }
   }
 
   if (copiedSeeders.length) {
@@ -822,7 +1049,41 @@ fs.writeFileSync(path.join(PROJECT_DIR, 'start.js'), startLines)
 success('start.js')
 
 // ─────────────────────────────────────────────
-// STEP 7 — .gitignore
+// STEP 7 — README
+// ─────────────────────────────────────────────
+
+fs.writeFileSync(path.join(PROJECT_DIR, 'README.md'), `# ${tatName}
+
+Generated by Arkzen export.js v7.
+
+## Start
+
+\`\`\`bash
+node start.js
+\`\`\`
+
+| Service  | URL                        |
+|----------|----------------------------|
+| Frontend | http://localhost:3001      |
+| Backend  | http://localhost:8001      |${hasRealtime ? '\n| Reverb   | ws://localhost:8080        |' : ''}
+
+## First run
+
+\`\`\`bash
+cd backend
+php artisan key:generate
+php artisan migrate
+php artisan db:seed   # if seeders exist
+\`\`\`
+
+## Deploy
+
+Push \`projects/${tatName}/\` to GitHub or a server.
+`)
+success('README.md')
+
+// ─────────────────────────────────────────────
+// STEP 8 — .gitignore
 // ─────────────────────────────────────────────
 
 fs.writeFileSync(path.join(PROJECT_DIR, '.gitignore'), [
@@ -832,13 +1093,14 @@ fs.writeFileSync(path.join(PROJECT_DIR, '.gitignore'), [
 ].join('\n'))
 
 // ─────────────────────────────────────────────
-// DONE
+// DONE — SUMMARY
 // ─────────────────────────────────────────────
 
 divider()
 console.log(`\n  ✓ EXPORTED: ${tatName}`)
-console.log(`  Format: v6`)
-console.log(`  Type:   ${hasBackend ? 'Full stack (frontend + backend)' : 'Static (frontend only)'}`)
-console.log(`  Run:    cd projects/${tatName} && node start.js`)
-console.log(`  Deploy: push projects/${tatName} to GitHub`)
+console.log(`  Version: v7`)
+console.log(`  Type:    ${hasBackend ? 'Full stack (frontend + backend)' : 'Static (frontend only)'}`)
+console.log(`  Auth:    ${hasAuth ? 'Yes — standalone ArkzenSanctumTokenResolver wired' : 'No'}`)
+console.log(`  Run:     cd projects/${tatName} && node start.js`)
+console.log(`  Deploy:  push projects/${tatName}/ to GitHub`)
 divider()

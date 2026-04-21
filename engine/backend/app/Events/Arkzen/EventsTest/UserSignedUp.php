@@ -4,7 +4,7 @@
 // ARKZEN GENERATED EVENT — UserSignedUp
 // Tatemono: events-test
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-21T07:14:59.024437Z
+// Generated: 2026-04-21T10:43:41.576486Z
 // ============================================================
 
 namespace App\Events\Arkzen\EventsTest;
