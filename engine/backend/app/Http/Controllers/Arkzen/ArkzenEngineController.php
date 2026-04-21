@@ -24,7 +24,7 @@
 //   Phase 8 now passes $module to ListenerBuilder so it can read
 //   $module['listenerBodies'] for handle() body injection (v3.2).
 //
-// v5.5 (kept): Phase 6.5 calls AuthBuilder::buildAuthChannel().
+// v5.6 (kept): Phase 6.5 calls AuthBuilder::buildAuthChannel().
 // v5.4 (kept): Phase 4.5 CustomRouteBuilder.
 // ============================================================
 
@@ -175,6 +175,7 @@ class ArkzenEngineController extends Controller
             Log::info("[Arkzen] Phase 6.5: Isolated auth for {$name}");
             $this->run("Auth: {$name}",         $steps, $errors, fn() => AuthBuilder::buildForTatemono($module));
             $this->run("Auth channel: {$name}", $steps, $errors, fn() => AuthBuilder::buildAuthChannel($module));
+            $this->run("Auth seed: {$name}",    $steps, $errors, fn() => AuthBuilder::seedUsersForTatemono($module));
         }
 
         // ── PHASE 7: Seeders ──────────────────────

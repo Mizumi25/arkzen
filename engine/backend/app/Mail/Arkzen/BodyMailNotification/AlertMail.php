@@ -5,7 +5,7 @@
 // Tatemono: body-mail-notification
 // Subject: ⚠ Action Required — blade_body injection test
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-21T03:52:53.447799Z
+// Generated: 2026-04-21T05:33:54.874859Z
 // ============================================================
 
 namespace App\Mail\Arkzen\BodyMailNotification;
@@ -20,12 +20,12 @@ class AlertMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public readonly string $message;
+    public readonly string $alert_message;
     public readonly string $action_url;
 
-    public function __construct(string $message, string $action_url)
+    public function __construct(string $alert_message = '', string $action_url = '')
     {
-        $this->message = $message;
+        $this->alert_message = $alert_message;
         $this->action_url = $action_url;
     }
 

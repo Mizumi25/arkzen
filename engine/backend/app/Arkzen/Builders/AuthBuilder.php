@@ -1,12 +1,13 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — AUTH BUILDER v2.12 (PER-TATEMONO)
-// v2.12: Added seedUsers() — seeds the tatemono's isolated users
-//        table from auth_seed.users declared in @arkzen:meta.
-//        Passwords are hashed via Hash::make() so plain-text
-//        passwords in the DSL are never stored raw. Seeding is
-//        idempotent: existing emails are skipped (updateOrInsert).
+// ARKZEN ENGINE — AUTH BUILDER v2.13 (PER-TATEMONO)
+// v2.13: seedUsers() is now public and called as its own run() step
+//        in ArkzenEngineController Phase 6.5 so seed failures surface
+//        as a visible ✗ instead of being swallowed inside buildForTatemono.
+// v2.12 (kept): seedUsers() seeds the tatemono's isolated users table
+//        from auth_seed.users declared in @arkzen:meta. Passwords are
+//        hashed via Hash::make(). Seeding is idempotent (updateOrInsert).
 // v2.11 (kept): Notification infrastructure conditional on
 //        @arkzen:notifications blocks.
 // ============================================================
@@ -43,11 +44,6 @@ class AuthBuilder
         self::generateAuthController($name, $slugNs, $dbConn, $prefix);
         self::injectAuthRoutes($name, $slugNs);
 
-        // ← v2.12: Seed users if auth_seed declared in meta
-        if (!empty($module['authSeed']['users'])) {
-            self::seedUsers($dbConn, $prefix, $module['authSeed']['users']);
-        }
-
         Log::info("[Arkzen Auth] ✓ Isolated auth complete for: {$name}");
     }
 
@@ -65,6 +61,23 @@ class AuthBuilder
     }
 
     // ─────────────────────────────────────────────
+    // SEED USERS — v2.13 PUBLIC ENTRY POINT
+    // Called as its own run() step in ArkzenEngineController
+    // Phase 6.5 so failures are visible in the build log.
+    // ─────────────────────────────────────────────
+
+    public static function seedUsersForTatemono(array $module): void
+    {
+        if (empty($module['authSeed']['users'])) return;
+
+        $name   = $module['name'];
+        $dbConn = ModelBuilder::slugToConnection($name);
+        $prefix = str_replace('-', '_', $name);
+
+        self::seedUsers($dbConn, $prefix, $module['authSeed']['users']);
+    }
+
+    // ─────────────────────────────────────────────
     // SEED USERS — v2.12
     // Seeds the tatemono's isolated users table from
     // auth_seed.users declared in @arkzen:meta.
@@ -73,7 +86,7 @@ class AuthBuilder
     // Passwords are hashed — never stored plain.
     // ─────────────────────────────────────────────
 
-    private static function seedUsers(string $dbConn, string $prefix, array $users): void
+    public static function seedUsers(string $dbConn, string $prefix, array $users): void
     {
         $usersTable = "{$prefix}_users";
 

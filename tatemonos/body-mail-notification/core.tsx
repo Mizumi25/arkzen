@@ -95,6 +95,7 @@ endpoints:
 */
 
 /* @arkzen:endpoint:sendMail
+*/
 $validated = $request->validate([
     'mail' => 'required|string|in:welcome,receipt,alert',
     'to'   => 'required|email',
@@ -106,8 +107,15 @@ $fullClass = "\\App\\Mail\\Arkzen\\BodyMailNotification\\" . $className;
 if (!class_exists($fullClass)) {
     return response()->json(['message' => 'Unknown mail type: ' . $mailKey], 422);
 }
+// Provide default data for each mail type so the constructor is satisfied.
+$mailData = match($mailKey) {
+    'welcome' => ['Test User', 'Arkzen'],
+    'receipt' => ['ORD-001', '$9.99', 'Arkzen Test Item'],
+    'alert'   => ['This is a test alert from Arkzen.', url('/')],
+    default   => [],
+};
 try {
-    \Mail::to($validated['to'])->send(new $fullClass());
+    \Mail::to($validated['to'])->send(new $fullClass(...$mailData));
     $log = \App\Models\Arkzen\BodyMailNotification\SendLog::create([
         'user_id'    => $user?->id,
         'to_email'   => $validated['to'],
@@ -132,6 +140,7 @@ try {
 /* @arkzen:endpoint:sendMail:end */
 
 /* @arkzen:endpoint:notify
+*/
 $validated = $request->validate([
     'notification' => 'required|string|in:action-required,summary',
     'message'      => 'sometimes|string|max:255',
@@ -171,6 +180,13 @@ try {
     return response()->json($log, 201);
 }
 /* @arkzen:endpoint:notify:end */
+
+/* @arkzen:endpoint:clearLog
+*/
+$user = $request->user('sanctum');
+\App\Models\Arkzen\BodyMailNotification\SendLog::where('user_id', $user?->id)->delete();
+return response()->json(['message' => 'Log cleared']);
+/* @arkzen:endpoint:clearLog:end */
 
 /* @arkzen:mail:welcome
 subject: "Welcome to Arkzen — blade_body injection test"
@@ -237,7 +253,7 @@ data:
 /* @arkzen:mail:alert
 subject: "⚠ Action Required — blade_body injection test"
 data:
-  message: string
+  alert_message: string
   action_url: string
 */
 <!DOCTYPE html>
@@ -255,7 +271,7 @@ data:
 <body>
   <div class="card">
     <h1>⚠ Action Required</h1>
-    <p>{{ $message }}</p>
+    <p>{{ $alert_message }}</p>
     <a href="{{ $action_url }}">Take Action</a>
     <p style="margin-top:16px;font-size:12px;color:#9ca3af;">Injected via blade_body — MailBuilder v3.1 test.</p>
   </div>

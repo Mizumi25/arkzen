@@ -13,7 +13,7 @@
 <body>
   <div class="card">
     <h1>⚠ Action Required</h1>
-    <p>{{ $message }}</p>
+    <p>{{ $alert_message }}</p>
     <a href="{{ $action_url }}">Take Action</a>
     <p style="margin-top:16px;font-size:12px;color:#9ca3af;">Injected via blade_body — MailBuilder v3.1 test.</p>
   </div>

@@ -5,7 +5,7 @@
 // Tatemono: mail-test
 // Subject: Welcome to Arkzen
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-21T03:52:55.188703Z
+// Generated: 2026-04-21T05:33:56.904689Z
 // ============================================================
 
 namespace App\Mail\Arkzen\MailTest;
@@ -23,7 +23,7 @@ class WelcomeMailMail extends Mailable
     public readonly string $username;
     public readonly string $app_name;
 
-    public function __construct(string $username, string $app_name)
+    public function __construct(string $username = '', string $app_name = '')
     {
         $this->username = $username;
         $this->app_name = $app_name;

@@ -1,8 +1,12 @@
 <?php
 
 // ============================================================
-// ARKZEN ENGINE — MAIL BUILDER v3.1
-// v3.1: Blade view body injection. HTML/Blade content between */ and :end
+// ARKZEN ENGINE — MAIL BUILDER v3.2
+// v3.2: Constructor data fields now default to '' so mailables can
+//       always be instantiated without arguments (zero-arg safe).
+//       Prevents "Too few arguments" when endpoint body or test
+//       code calls new FooMail() without passing data fields.
+// v3.1 (kept): Blade view body injection. HTML/Blade content between */ and :end
 //       in @arkzen:mail:name block → base64 `blade_body` key →
 //       decoded and written as the Blade view instead of the generic stub.
 // Generates Laravel Mailable classes + Blade view stubs.
@@ -50,6 +54,15 @@ class MailBuilder
         $filePath   = app_path("Mail/Arkzen/{$slugNs}/{$className}.php");
 
         $dataFields    = $config['data'] ?? [];
+
+        // Laravel injects $message (Illuminate\Mail\Message) into all mail views.
+        // If a data field is named 'message' it will collide and cause a type error.
+        // Rename any such field to 'mail_message' at generation time.
+        if (isset($dataFields['message'])) {
+            $dataFields = ['mail_message' => $dataFields['message']] + array_diff_key($dataFields, ['message' => null]);
+            Log::warning("[Arkzen Mail] Reserved Blade variable 'message' renamed to 'mail_message' in {$className}");
+        }
+
         $properties    = self::generateProperties($dataFields);
         $constructArgs = self::generateConstructArgs($dataFields);
         $assigns       = self::generateAssigns($dataFields);
@@ -157,7 +170,7 @@ class {$className} extends Mailable
     {
         if (empty($fields)) return '';
         return implode(', ', array_map(
-            fn($field) => "string \${$field}",
+            fn($field) => "string \${$field} = ''",
             array_keys($fields)
         ));
     }

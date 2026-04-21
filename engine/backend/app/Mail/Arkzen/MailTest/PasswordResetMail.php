@@ -5,7 +5,7 @@
 // Tatemono: mail-test
 // Subject: Reset your password
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-21T03:52:55.189964Z
+// Generated: 2026-04-21T05:33:56.906298Z
 // ============================================================
 
 namespace App\Mail\Arkzen\MailTest;
@@ -23,7 +23,7 @@ class PasswordResetMail extends Mailable
     public readonly string $reset_link;
     public readonly string $expires_in;
 
-    public function __construct(string $reset_link, string $expires_in)
+    public function __construct(string $reset_link = '', string $expires_in = '')
     {
         $this->reset_link = $reset_link;
         $this->expires_in = $expires_in;

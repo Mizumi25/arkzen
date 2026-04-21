@@ -5,7 +5,7 @@
 // Tatemono: body-mail-notification
 // Subject: Your receipt — blade_body injection test
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-21T03:52:53.447197Z
+// Generated: 2026-04-21T05:33:54.874247Z
 // ============================================================
 
 namespace App\Mail\Arkzen\BodyMailNotification;
@@ -24,7 +24,7 @@ class ReceiptMail extends Mailable
     public readonly string $amount;
     public readonly string $item_name;
 
-    public function __construct(string $order_id, string $amount, string $item_name)
+    public function __construct(string $order_id = '', string $amount = '', string $item_name = '')
     {
         $this->order_id = $order_id;
         $this->amount = $amount;
