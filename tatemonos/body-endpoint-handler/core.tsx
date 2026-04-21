@@ -114,6 +114,7 @@ endpoints:
    ─────────────────────────────────────────────────────────────────────────── */
 
 /* @arkzen:endpoint:echo
+*/
 $input   = $request->all();
 $count   = count($input);
 $record  = \App\Models\Arkzen\BodyEndpointHandler\ProbeResult::create([
@@ -134,6 +135,7 @@ return response()->json([
 /* @arkzen:endpoint:echo:end */
 
 /* @arkzen:endpoint:stats
+*/
 $total   = \App\Models\Arkzen\BodyEndpointHandler\ProbeResult::count();
 $passed  = \App\Models\Arkzen\BodyEndpointHandler\ProbeResult::where('ok', true)->count();
 $failed  = \App\Models\Arkzen\BodyEndpointHandler\ProbeResult::where('ok', false)->count();
@@ -173,6 +175,7 @@ routes:
 */
 
 /* @arkzen:handler:ping
+*/
 return response()->json([
     'injected'   => true,
     'builder'    => 'CustomRouteBuilder v2.0',
@@ -184,6 +187,7 @@ return response()->json([
 /* @arkzen:handler:ping:end */
 
 /* @arkzen:handler:recordHandler
+*/
 $validated = $request->validate([
     'probe'   => 'required|string|max:100',
     'payload' => 'nullable|string',
@@ -206,6 +210,7 @@ return response()->json([
 /* @arkzen:handler:recordHandler:end */
 
 /* @arkzen:handler:latest
+*/
 $latest = \App\Models\Arkzen\BodyEndpointHandler\ProbeResult::latest()->take(5)->get();
 return response()->json([
     'injected' => true,

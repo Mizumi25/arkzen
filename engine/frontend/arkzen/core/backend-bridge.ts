@@ -13,6 +13,8 @@
 // v5.3 (kept): authSeed forwarded in build payload from meta.authSeed.
 //       Allows @arkzen:meta auth_seed.users to seed the tatemono's
 //       isolated users table via AuthBuilder with hashed passwords.
+// v5.3: body field forwarded in customRoutes route entries so handler
+//       body injection (@arkzen:handler:name blocks) reaches CustomRouteBuilder.
 // v5.2 (kept): customRoutes added to hasBackend check and payload.
 //       @arkzen:routes blocks now trigger backend build and
 //       are forwarded to Laravel for CustomRouteBuilder.
@@ -97,6 +99,7 @@ export async function triggerBackendBuild(tatemono: ParsedTatemono): Promise<voi
         method:  r.method,
         route:   r.route,
         handler: r.handler,
+        ...(r.body ? { body: r.body } : {}),  // ← v5.3: forward injected handler body
       })),
     })),
 
