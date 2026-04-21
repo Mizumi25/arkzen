@@ -1,9 +1,10 @@
 <?php
 
 // ============================================================
-// ARKZEN GENERATED MIDDLEWARE STUB — RequireJson [MiddlewareTest]
-// Scoped to this tatemono. Declared in the tatemono DSL but
-// not a known built-in. Fill in your logic below.
+// ARKZEN GENERATED MIDDLEWARE — RequireJson [MiddlewareTest]
+// Scoped to this tatemono.
+// No body provided in DSL — fill in handle() logic below.
+// To inject: add @arkzen:middleware:requireJson ... :end block to your tatemono.
 // ============================================================
 
 namespace App\Http\Middleware\Arkzen\MiddlewareTest;
