@@ -103,6 +103,104 @@ function readMeta(content) {
   return result
 }
 
+
+// ─────────────────────────────────────────────
+// AUTH MIGRATION GENERATOR
+// For pure-auth tatemonos, generate standard Laravel migration files
+// so the exported project can migrate from scratch cleanly.
+// ─────────────────────────────────────────────
+
+function generateAuthMigrations(projBack, tatName, content) {
+  const migrationsDir = path.join(projBack, 'database', 'migrations')
+  fs.mkdirSync(migrationsDir, { recursive: true })
+
+  // Parse auth_seed users if present (e.g. roles-test seeds admin/user)
+  const authSeedMatch = content.match(/auth_seed:\s*\n([\s\S]*?)(?=\n\/\*|\n\n\/\*|$)/)
+  let seedUsers = []
+  if (authSeedMatch) {
+    const seedBlock = authSeedMatch[1]
+    const userBlocks = [...seedBlock.matchAll(/- name:\s*(.+)\n\s+email:\s*(.+)\n\s+password:\s*(.+)(?:\n\s+role:\s*(.+))?/g)]
+    seedUsers = userBlocks.map(m => ({
+      name:     m[1].trim(),
+      email:    m[2].trim(),
+      password: m[3].trim(),
+      role:     m[4]?.trim() ?? 'user',
+    }))
+  }
+
+  // users table migration
+  fs.writeFileSync(
+    path.join(migrationsDir, '0001_01_01_000000_create_users_table.php'),
+    `<?php
+
+use Illuminate\\Database\\Migrations\\Migration;
+use Illuminate\\Database\\Schema\\Blueprint;
+use Illuminate\\Support\\Facades\\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('email')->unique();
+            $table->timestamp('email_verified_at')->nullable();
+            $table->string('password');
+            $table->string('role', 20)->default('user');
+            $table->rememberToken();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('users');
+    }
+};
+`
+  )
+  success('database/migrations/0001_01_01_000000_create_users_table.php (auth)')
+
+  // personal_access_tokens migration
+  fs.writeFileSync(
+    path.join(migrationsDir, '0001_01_01_000001_create_personal_access_tokens_table.php'),
+    `<?php
+
+use Illuminate\\Database\\Migrations\\Migration;
+use Illuminate\\Database\\Schema\\Blueprint;
+use Illuminate\\Support\\Facades\\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('personal_access_tokens', function (Blueprint $table) {
+            $table->id();
+            $table->morphs('tokenable');
+            $table->string('name');
+            $table->string('token', 64)->unique();
+            $table->text('abilities')->nullable();
+            $table->timestamp('last_used_at')->nullable();
+            $table->timestamp('expires_at')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('personal_access_tokens');
+    }
+};
+`
+  )
+  success('database/migrations/0001_01_01_000001_create_personal_access_tokens_table.php (auth)')
+
+  return seedUsers
+}
+
+
+
 function toPascal(str) {
   return str.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join('')
 }
@@ -819,12 +917,61 @@ ${seederCalls || '        //'}
   fs.writeFileSync(path.join(PROJ_BACK, 'routes', 'console.php'), consoleOut)
   success('routes/console.php')
 
-  // ── 5g. SQLite database ─────────────────────────────────────────────
+ // ── 5g. SQLite database ─────────────────────────────────────────────
 
   const engSqlite    = path.join(BACKEND_DIR, 'database', 'arkzen', `${tatName}.sqlite`)
   const destSqlite   = path.join(PROJ_BACK, 'database', 'database.sqlite')
-  const sqlitePrebuilt = fs.existsSync(engSqlite) && fs.statSync(engSqlite).size > 0
-  if (sqlitePrebuilt) {
+  
+
+  // Pure-auth tatemonos (auth:true with no @arkzen:database:users block)
+  // have their users/tokens tables created at runtime by AuthBuilder using
+  // prefixed table names (e.g. auth_test_users). The exported project needs
+  // standard unprefixed tables (users, personal_access_tokens) so it can
+  // migrate cleanly from scratch. We always force-fresh for these.
+  const isPureAuth = hasAuth && !content.includes('@arkzen:database:users')
+  
+  const sqlitePrebuilt = !isPureAuth && fs.existsSync(engSqlite) && fs.statSync(engSqlite).size > 0
+
+
+  if (isPureAuth) {
+    // Always start fresh — the engine sqlite has prefixed tables that
+    // don't match the exported User model (which uses 'users' table).
+   
+    fs.writeFileSync(destSqlite, '')
+    success('database/database.sqlite (fresh — pure-auth tatemono, will migrate with standard tables)')
+    log('Generating auth migrations...')
+    const authSeedUsers = generateAuthMigrations(PROJ_BACK, tatName, content)
+    // Stash seed users for use in Step 5d seeder generation below
+    if (authSeedUsers.length) {
+      const seederDst = path.join(PROJ_BACK, 'database', 'seeders')
+      fs.mkdirSync(seederDst, { recursive: true })
+      const seederClassName = toPascal(tatName) + 'AuthSeeder'
+      const userRows = authSeedUsers.map(u =>
+        `        User::firstOrCreate(['email' => '${u.email}'], [\n            'name'     => '${u.name}',\n            'password' => Hash::make('${u.password}'),\n            'role'     => '${u.role}',\n        ]);`
+      ).join('\n')
+      fs.writeFileSync(
+        path.join(seederDst, `${seederClassName}.php`),
+        `<?php
+
+namespace Database\\Seeders;
+
+use Illuminate\\Database\\Seeder;
+use Illuminate\\Support\\Facades\\Hash;
+use App\\Models\\User;
+
+class ${seederClassName} extends Seeder
+{
+    public function run(): void
+    {
+${userRows}
+    }
+}
+`
+      )
+      success(`database/seeders/${seederClassName}.php (auth seed users)`)
+      copiedSeeders.push(seederClassName)
+    }
+  } else if (sqlitePrebuilt) {
     fs.copyFileSync(engSqlite, destSqlite)
     success('database/database.sqlite (copied from engine isolated DB — already migrated)')
   } else {
@@ -892,8 +1039,10 @@ ${seederCalls || '        //'}
 
   if (hasAuth) {
     const tatSnakeForAuth  = tatName.replace(/-/g, '_')
-    const usersTable       = `${tatSnakeForAuth}_users`
-    const tokensTable      = `${tatSnakeForAuth}_personal_access_tokens`
+    // For pure-auth tatemonos, exported models use standard table names.
+    // For tatemonos with explicit @arkzen:database:users, keep prefixed names.
+    const usersTable  = isPureAuth ? 'users'                    : `${tatSnakeForAuth}_users`
+    const tokensTable = isPureAuth ? 'personal_access_tokens'   : `${tatSnakeForAuth}_personal_access_tokens`
     const modelsDir        = path.join(PROJ_BACK, 'app', 'Models')
     const controllersDir   = path.join(PROJ_BACK, 'app', 'Http', 'Controllers')
     fs.mkdirSync(modelsDir,      { recursive: true })
