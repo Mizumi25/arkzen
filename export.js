@@ -1271,16 +1271,16 @@ ${userRows}
       .replace(/DB_PASSWORD=.*/,     '# DB_PASSWORD=')
       .replace(/QUEUE_CONNECTION=.*/, 'QUEUE_CONNECTION=database')
       .replace(/SESSION_DRIVER=.*/,  'SESSION_DRIVER=database')
+      .replace(/BROADCAST_CONNECTION=.*/, hasRealtime ? 'BROADCAST_CONNECTION=reverb' : 'BROADCAST_CONNECTION=log')
 
     if (hasRealtime && !env.includes('REVERB_APP_ID=')) {
       env += [
         '',
-        'BROADCAST_CONNECTION=reverb',
         'REVERB_APP_ID=arkzen',
         'REVERB_APP_KEY=arkzen-key',
         'REVERB_APP_SECRET=arkzen-secret',
         'REVERB_HOST=localhost',
-        'REVERB_PORT=8080',
+        'REVERB_PORT=8081',
         'REVERB_SCHEME=http',
       ].join('\n')
     }
@@ -1296,6 +1296,17 @@ ${userRows}
 
     fs.writeFileSync(path.join(PROJ_BACK, '.env'), env)
     success('.env')
+
+    if (hasRealtime) {
+      const frontEnv = [
+        'NEXT_PUBLIC_REVERB_HOST=localhost',
+        'NEXT_PUBLIC_REVERB_PORT=8081',
+        'NEXT_PUBLIC_REVERB_SCHEME=ws',
+        'NEXT_PUBLIC_REVERB_APP_KEY=arkzen-key',
+      ].join('\n')
+      fs.writeFileSync(path.join(PROJ_FRONT, '.env.local'), frontEnv)
+      success('.env.local (frontend Reverb config)')
+    }
   }
 
   // ── 5l. Storage symlink ──────────────────────────────────────────────
@@ -1394,17 +1405,17 @@ const startLines = [
   ``,
   `console.log('\\n  Starting ${tatName}...')`,
   hasBackend  ? `console.log('  Backend:  http://localhost:8001')` : null,
-  hasRealtime ? `console.log('  Reverb:   ws://localhost:8080')` : null,
+  hasRealtime ? `console.log('  Reverb:   ws://localhost:8081')` : null,
   `console.log('  Frontend: http://localhost:3001\\n')`,
   ``,
   hasBackend  ? `const backend  = run('backend', 'php', ['artisan', 'serve', '--port=8001'], BACK, 'backend')` : null,
-  hasJobs     ? `const queue    = run('queue',   'php', ['artisan', 'queue:work', '--queue=default,heavy', '--sleep=3', '--tries=3'], BACK, 'queue')` : null,
-  hasRealtime ? `const reverb   = run('reverb',  'php', ['artisan', 'reverb:start', '--host=0.0.0.0', '--port=8080', '--debug'], BACK, 'reverb')` : null,
+  (hasJobs || hasRealtime) ? `const queue    = run('queue',   'php', ['artisan', 'queue:work', '--queue=default,heavy', '--sleep=3', '--tries=3'], BACK, 'queue')` : null,
+  hasRealtime ? `const reverb   = run('reverb',  'php', ['artisan', 'reverb:start', '--host=0.0.0.0', '--port=8081', '--debug'], BACK, 'reverb')` : null,
   `const frontend = run('frontend', 'npm', ['run', 'dev'], FRONT, 'frontend')`,
   ``,
   `process.on('SIGINT', () => {`,
   hasBackend  ? `  backend?.kill()` : null,
-  hasJobs     ? `  queue?.kill()` : null,
+  (hasJobs || hasRealtime) ? `  queue?.kill()` : null,
   hasRealtime ? `  reverb?.kill()` : null,
   `  frontend.kill()`,
   `  process.exit(0)`,
@@ -1431,7 +1442,7 @@ node start.js
 | Service  | URL                        |
 |----------|----------------------------|
 | Frontend | http://localhost:3001      |
-| Backend  | http://localhost:8001      |${hasRealtime ? '\n| Reverb   | ws://localhost:8080        |' : ''}
+| Backend  | http://localhost:8001      |${hasRealtime ? '\n| Reverb   | ws://localhost:8081        |' : ''}
 
 ## First run
 
