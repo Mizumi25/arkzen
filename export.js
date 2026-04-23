@@ -305,6 +305,7 @@ if (buildResult.status === 0 && buildOut.includes('[export-build] OK')) {
     .replace(new RegExp(`namespace App\\\\Http\\\\Middleware\\\\Arkzen\\\\${tatPascal};`,            'g'), 'namespace App\\Http\\Middleware;')
     .replace(new RegExp(`namespace App\\\\Policies\\\\Arkzen\\\\${tatPascal};`,                      'g'), 'namespace App\\Policies;')
     .replace(new RegExp(`namespace App\\\\Jobs\\\\Arkzen\\\\${tatPascal};`,                          'g'), 'namespace App\\Jobs;')
+    .replace(new RegExp(`namespace App\\\\Events\\\\Arkzen\\\\${tatPascal}\\\\Broadcast;`,           'g'), 'namespace App\\Events;')  // ← FIX 1: Broadcast sublevel
     .replace(new RegExp(`namespace App\\\\Events\\\\Arkzen\\\\${tatPascal};`,                        'g'), 'namespace App\\Events;')
     .replace(new RegExp(`namespace App\\\\Listeners\\\\Arkzen\\\\${tatPascal};`,                     'g'), 'namespace App\\Listeners;')
     .replace(new RegExp(`namespace App\\\\Mail\\\\Arkzen\\\\${tatPascal};`,                          'g'), 'namespace App\\Mail;')
@@ -336,6 +337,7 @@ if (buildResult.status === 0 && buildOut.includes('[export-build] OK')) {
     .replace(new RegExp(`use App\\\\Http\\\\Middleware\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,      'g'), 'use App\\Http\\Middleware\\$1$2;')
     .replace(new RegExp(`use App\\\\Policies\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,                'g'), 'use App\\Policies\\$1$2;')
     .replace(new RegExp(`use App\\\\Jobs\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,                    'g'), 'use App\\Jobs\\$1$2;')
+    .replace(new RegExp(`use App\\\\Events\\\\Arkzen\\\\${tatPascal}\\\\Broadcast\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,     'g'), 'use App\\Events\\$1$2;')  // ← FIX 2: Broadcast sublevel
     .replace(new RegExp(`use App\\\\Events\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,                  'g'), 'use App\\Events\\$1$2;')
     .replace(new RegExp(`use App\\\\Listeners\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,               'g'), 'use App\\Listeners\\$1$2;')
     .replace(new RegExp(`use App\\\\Mail\\\\Arkzen\\\\${tatPascal}\\\\([A-Za-z0-9_]+)(\\s+as\\s+[A-Za-z0-9_]+)?;`,                    'g'), 'use App\\Mail\\$1$2;')
@@ -361,6 +363,7 @@ if (buildResult.status === 0 && buildOut.includes('[export-build] OK')) {
     // ── Fully-qualified class refs inside strings/new/static calls ───
     .replace(new RegExp(`App\\\\\\\\Models\\\\\\\\Arkzen\\\\\\\\${tatPascal}\\\\\\\\([A-Za-z0-9_]+)`,       'g'), 'App\\\\Models\\\\$1')
     .replace(new RegExp(`App\\\\\\\\Http\\\\\\\\Middleware\\\\\\\\Arkzen\\\\\\\\${tatPascal}\\\\\\\\([A-Za-z0-9_]+)`, 'g'), 'App\\\\Http\\\\Middleware\\\\$1')
+    .replace(new RegExp(`\\\\App\\\\Events\\\\Arkzen\\\\${tatPascal}\\\\Broadcast\\\\([A-Za-z0-9_]+)`, 'g'), '\\App\\Events\\$1')  // ← FIX 3: Broadcast sublevel in broadcast(new ...) calls
     .replace(/App\\\\Models\\\\Arkzen\\\\([A-Za-z0-9_]+)/g,                   'App\\\\Models\\\\$1')
     .replace(/App\\\\Http\\\\Middleware\\\\Arkzen\\\\([A-Za-z0-9_]+)/g,       'App\\\\Http\\\\Middleware\\\\$1')
 
@@ -379,8 +382,6 @@ if (buildResult.status === 0 && buildOut.includes('[export-build] OK')) {
     .replace(new RegExp(`'${tatSnake}_([a-z_]+)'`, 'g'),              "'$1'")
 
     // ── Fix unique/exists validation rules that use connection.table syntax ─────
-    // Engine generates: unique:auth_test.auth_test_users,email
-    // Export needs:      unique:users,email
     .replace(new RegExp(`unique:${tatSnake}\\.${tatSnake}_([a-z_]+),`, 'g'), 'unique:$1,')
     .replace(new RegExp(`exists:${tatSnake}\\.${tatSnake}_([a-z_]+),`, 'g'), 'exists:$1,')
 
