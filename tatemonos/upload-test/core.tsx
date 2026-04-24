@@ -17,6 +17,10 @@ layout:
 /* @arkzen:database:uploaded_files
 table: uploaded_files
 columns:
+  id:
+    type: integer
+    primary: true
+    autoIncrement: true
   user_id:
     type: integer
     nullable: true
