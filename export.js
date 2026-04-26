@@ -152,7 +152,7 @@ if (buildResult.status === 0 && buildOut.includes('[export-build] OK')) {
 }
 
 // ─────────────────────────────────────────────
-// STEP 2 — COPY ENTIRE BACKEND AS-IS
+// STEP 2 — COPY ENTIRE BACKEND AS-IS (ONLY IF NEEDED)
 //
 // We copy everything from engine/backend EXCEPT:
 //   - vendor/          (too large; will composer install)
@@ -160,6 +160,10 @@ if (buildResult.status === 0 && buildOut.includes('[export-build] OK')) {
 //   - engine-internal routes (arkzen.php, routes/modules/)
 //   - ArkzenEngineController (engine-only, not needed in export)
 //   - ArkzenEngineMiddleware (engine-only)
+//
+// SKIP ENTIRE STEP IF FRONTEND-ONLY:
+//   If tatemono has no @arkzen:api/@arkzen:database/@arkzen:jobs/etc.
+//   then it's frontend-only — no backend needed at all.
 //
 // We do NOT touch:
 //   - Namespaces       (keep them exactly as generated)
@@ -169,38 +173,42 @@ if (buildResult.status === 0 && buildOut.includes('[export-build] OK')) {
 //   - File structure   (keep exactly as generated)
 // ─────────────────────────────────────────────
 
-log('Copying backend...')
+if (hasBackend) {
+  log('Copying backend...')
 
-fs.cpSync(BACKEND_DIR, PROJ_BACK, {
-  recursive: true,
-  filter: (src) => {
-    const rel = path.relative(BACKEND_DIR, src).replace(/\\/g, '/')
+  fs.cpSync(BACKEND_DIR, PROJ_BACK, {
+    recursive: true,
+    filter: (src) => {
+      const rel = path.relative(BACKEND_DIR, src).replace(/\\/g, '/')
 
-    // Always skip vendor — will be installed fresh
-    if (rel.startsWith('vendor/') || rel === 'vendor') return false
+      // Always skip vendor — will be installed fresh
+      if (rel.startsWith('vendor/') || rel === 'vendor') return false
 
-    // Skip all sqlite files — we handle the specific one below
-    if (src.endsWith('.sqlite')) return false
+      // Skip all sqlite files — we handle the specific one below
+      if (src.endsWith('.sqlite')) return false
 
-    // Skip engine-internal controller (not needed in standalone)
-    if (rel.includes('Controllers/Arkzen/ArkzenEngineController.php')) return false
+      // Skip engine-internal controller (not needed in standalone)
+      if (rel.includes('Controllers/Arkzen/ArkzenEngineController.php')) return false
 
-    // Skip engine-internal middleware (not needed in standalone)
-    if (rel.includes('Middleware/ArkzenEngineMiddleware.php')) return false
+      // Skip engine-internal middleware (not needed in standalone)
+      if (rel.includes('Middleware/ArkzenEngineMiddleware.php')) return false
 
-    // Skip engine-internal routes
-    if (rel === 'routes/arkzen.php') return false
+      // Skip engine-internal routes
+      if (rel === 'routes/arkzen.php') return false
 
-    // Skip engine module route loader (we'll write a provider instead)
-    if (rel === 'routes/api.php') return false
+      // Skip engine module route loader (we'll write a provider instead)
+      if (rel === 'routes/api.php') return false
 
-    // Skip engine bootstrap/app.php (we write a standalone one below)
-    if (rel === 'bootstrap/app.php') return false
+      // Skip engine bootstrap/app.php (we write a standalone one below)
+      if (rel === 'bootstrap/app.php') return false
 
-    return true
-  }
-})
-success('Backend copied (full structure preserved)')
+      return true
+    }
+  })
+  success('Backend copied (full structure preserved)')
+} else {
+  skip('Backend (frontend-only tatemono)')
+}
 
 // ─────────────────────────────────────────────
 // STEP 3 — COPY FRONTEND AS-IS
@@ -593,17 +601,20 @@ if (fs.existsSync(pkgPath)) {
 // ArkzenServiceProvider depends on RegistryReader which manages
 // ALL tatemonos. Not needed (or useful) in a single-tatemono export.
 // AppServiceProvider is also engine-specific. Strip both.
+// (ONLY FOR BACKEND-ENABLED TATEMONOS)
 // ─────────────────────────────────────────────
 
-const provPath = path.join(PROJ_BACK, 'bootstrap', 'providers.php')
-if (fs.existsSync(provPath)) {
-  let prov = fs.readFileSync(provPath, 'utf-8')
-  prov = prov
-    .replace(/\s*App\\Providers\\Arkzen\\ArkzenServiceProvider::class,?\n?/g, '\n')
-    .replace(/\s*App\\Providers\\AppServiceProvider::class,?\n?/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-  fs.writeFileSync(provPath, prov)
-  success('bootstrap/providers.php (engine-only providers stripped)')
+if (hasBackend) {
+  const provPath = path.join(PROJ_BACK, 'bootstrap', 'providers.php')
+  if (fs.existsSync(provPath)) {
+    let prov = fs.readFileSync(provPath, 'utf-8')
+    prov = prov
+      .replace(/\s*App\\Providers\\Arkzen\\ArkzenServiceProvider::class,?\n?/g, '\n')
+      .replace(/\s*App\\Providers\\AppServiceProvider::class,?\n?/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+    fs.writeFileSync(provPath, prov)
+    success('bootstrap/providers.php (engine-only providers stripped)')
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -611,61 +622,66 @@ if (fs.existsSync(provPath)) {
 //
 // The engine's vendor/ is NOT copied (too large and has absolute paths).
 // Run composer install fresh in the exported project so paths are correct.
+// (ONLY FOR BACKEND-ENABLED TATEMONOS)
 // ─────────────────────────────────────────────
 
-log('Installing Composer dependencies...')
-try {
-  execSync('composer install --no-interaction --prefer-dist --optimize-autoloader --quiet', {
-    cwd: PROJ_BACK, stdio: 'pipe'
-  })
-  success('composer install complete')
-} catch (e) {
-  warn('composer install failed — run manually: cd backend && composer install')
-  const msg = (e.stdout || e.stderr || e.message || '').toString().trim()
-  msg.split('\n').slice(0, 5).forEach(l => l.trim() && warn('  ' + l))
+if (hasBackend) {
+  log('Installing Composer dependencies...')
+  try {
+    execSync('composer install --no-interaction --prefer-dist --optimize-autoloader --quiet', {
+      cwd: PROJ_BACK, stdio: 'pipe'
+    })
+    success('composer install complete')
+  } catch (e) {
+    warn('composer install failed — run manually: cd backend && composer install')
+    const msg = (e.stdout || e.stderr || e.message || '').toString().trim()
+    msg.split('\n').slice(0, 5).forEach(l => l.trim() && warn('  ' + l))
+  }
+
+  // ─────────────────────────────────────────────
+  // STEP 11 — APP KEY + STORAGE LINK
+  // ─────────────────────────────────────────────
+
+  log('Generating app key...')
+  try {
+    execSync('php artisan key:generate --force', { cwd: PROJ_BACK, stdio: 'pipe' })
+    success('App key generated')
+  } catch { warn('App key failed — run: php artisan key:generate') }
+
+  try {
+    execSync('php artisan storage:link --force', { cwd: PROJ_BACK, stdio: 'pipe' })
+    success('Storage symlink created')
+  } catch { warn('Storage link failed — run: php artisan storage:link') }
+
+  // ─────────────────────────────────────────────
+  // STEP 12 — MIGRATIONS
+  //
+  // ALWAYS run migrations. Even though the engine's pre-built sqlite has
+  // tatemono tables, it lacks Laravel system tables (cache, sessions, 
+  // failed_jobs, etc.) created by Laravel's own migrations.
+  // The --step flag allows idempotent runs — existing tables are skipped.
+  // ─────────────────────────────────────────────
+
+  log('Running migrations...')
+  try {
+    const out = execSync('php artisan migrate --force 2>&1', { cwd: PROJ_BACK }).toString()
+    success('Migrations complete')
+    out.trim().split('\n').filter(l => l.trim()).forEach(l => success('  ' + l))
+  } catch (e) {
+    warn('Migrations failed — run manually: php artisan migrate')
+    const msg = (e.stdout || e.message || '').toString().trim()
+    msg.split('\n').slice(0, 8).forEach(l => l.trim() && warn('  ' + l))
+  }
+
+  // Seeders only needed when DB was empty (no else check needed anymore)
+  log('Running seeders...')
+  try {
+    execSync('php artisan db:seed --force', { cwd: PROJ_BACK, stdio: 'pipe' })
+    success('Seeders complete')
+  } catch { warn('Seeders failed (or none exist) — run: php artisan db:seed') }
+} else {
+  skip('Backend setup (frontend-only tatemono)')
 }
-
-// ─────────────────────────────────────────────
-// STEP 11 — APP KEY + STORAGE LINK
-// ─────────────────────────────────────────────
-
-log('Generating app key...')
-try {
-  execSync('php artisan key:generate --force', { cwd: PROJ_BACK, stdio: 'pipe' })
-  success('App key generated')
-} catch { warn('App key failed — run: php artisan key:generate') }
-
-try {
-  execSync('php artisan storage:link --force', { cwd: PROJ_BACK, stdio: 'pipe' })
-  success('Storage symlink created')
-} catch { warn('Storage link failed — run: php artisan storage:link') }
-
-// ─────────────────────────────────────────────
-// STEP 12 — MIGRATIONS
-//
-// ALWAYS run migrations. Even though the engine's pre-built sqlite has
-// tatemono tables, it lacks Laravel system tables (cache, sessions, 
-// failed_jobs, etc.) created by Laravel's own migrations.
-// The --step flag allows idempotent runs — existing tables are skipped.
-// ─────────────────────────────────────────────
-
-log('Running migrations...')
-try {
-  const out = execSync('php artisan migrate --force 2>&1', { cwd: PROJ_BACK }).toString()
-  success('Migrations complete')
-  out.trim().split('\n').filter(l => l.trim()).forEach(l => success('  ' + l))
-} catch (e) {
-  warn('Migrations failed — run manually: php artisan migrate')
-  const msg = (e.stdout || e.message || '').toString().trim()
-  msg.split('\n').slice(0, 8).forEach(l => l.trim() && warn('  ' + l))
-}
-
-// Seeders only needed when DB was empty (no else check needed anymore)
-log('Running seeders...')
-try {
-  execSync('php artisan db:seed --force', { cwd: PROJ_BACK, stdio: 'pipe' })
-  success('Seeders complete')
-} catch { warn('Seeders failed (or none exist) — run: php artisan db:seed') }
 
 // ─────────────────────────────────────────────
 // STEP 13 — WRITE START.JS
@@ -692,20 +708,19 @@ const startLines = [
   ``,
   `console.log('\\n  Starting ${tatName}...')`,
   hasBackend ? `console.log('  Backend:  http://localhost:8001')` : null,
-  `console.log('  Queue:    enabled')`,
-  `console.log('  Reverb:   ws://localhost:8081')`,
+  hasBackend && hasJobs ? `console.log('  Queue:    enabled')` : null,
+  hasBackend && hasRealtime ? `console.log('  Reverb:   ws://localhost:8081')` : null,
   `console.log('  Frontend: http://localhost:3001\\n')`,
   ``,
   hasBackend ? `const backend  = run('backend',  'php', ['artisan', 'serve', '--port=8001'], BACK, 'backend')` : null,
-  `const queue    = run('queue',    'php', ['artisan', 'queue:work', '--queue=default,heavy', '--sleep=3', '--tries=3'], BACK, 'queue')`,
-  `const reverb   = run('reverb',   'php', ['artisan', 'reverb:start', '--host=0.0.0.0', '--port=8081', '--debug'], BACK, 'reverb')`,
+  hasBackend && hasJobs ? `const queue    = run('queue',    'php', ['artisan', 'queue:work', '--queue=default,heavy', '--sleep=3', '--tries=3'], BACK, 'queue')` : null,
+  hasBackend && hasRealtime ? `const reverb   = run('reverb',   'php', ['artisan', 'reverb:start', '--host=0.0.0.0', '--port=8081', '--debug'], BACK, 'reverb')` : null,
   `const frontend = run('frontend', 'npm',  ['run', 'dev'], FRONT, 'frontend')`,
   ``,
+  `const services = [${hasBackend ? ` backend,` : ''}${hasBackend && hasJobs ? ` queue,` : ''}${hasBackend && hasRealtime ? ` reverb,` : ''} frontend].filter(Boolean)`,
+  ``,
   `process.on('SIGINT', () => {`,
-  hasBackend ? `  backend.kill()` : null,
-  `  queue.kill()`,
-  `  reverb.kill()`,
-  `  frontend.kill()`,
+  `  services.forEach(s => s && s.kill())`,
   `  process.exit(0)`,
   `})`,
 ].filter(l => l !== null).join('\n')

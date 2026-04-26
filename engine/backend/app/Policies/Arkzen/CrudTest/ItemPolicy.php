@@ -4,7 +4,7 @@
 // ARKZEN GENERATED POLICY — ItemPolicy
 // Tatemono: crud-test
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-26T13:23:43.887368Z
+// Generated: 2026-04-26T13:40:26.625847Z
 // ============================================================
 
 namespace App\Policies\Arkzen\CrudTest;
