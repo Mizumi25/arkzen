@@ -123,6 +123,7 @@ const DashboardPage = () => {
   const [results, setResults]   = useState<any[]>([])
   const [loading, setLoading]   = useState(false)
   const [dispatching, setDispatching] = useState<string | null>(null)
+  const [isPolling, setIsPolling] = useState(false)
 
   const jobs = [
     { name: 'process-data',       label: 'Process Data',       desc: 'Normal job, succeeds in ~2s', queue: 'default', color: 'bg-blue-500' },
@@ -143,16 +144,26 @@ const DashboardPage = () => {
 
   useEffect(() => { loadResults() }, [])
 
+  // Auto-poll results every 500ms while dispatching
+  useEffect(() => {
+    if (!isPolling) return
+    const interval = setInterval(loadResults, 500)
+    return () => clearInterval(interval)
+  }, [isPolling])
+
   const dispatch = async (jobName: string) => {
     setDispatching(jobName)
+    setIsPolling(true)
     try {
       await arkzenFetch('/api/job-test/dispatch', {
         method: 'POST',
         body: JSON.stringify({ job: jobName })
       })
-      setTimeout(loadResults, 2000) // allow time for job to process
+      // Continue polling for 10 seconds to see job complete
+      setTimeout(() => setIsPolling(false), 10000)
     } catch (e) {
       console.error(e)
+      setIsPolling(false)
     } finally {
       setDispatching(null)
     }

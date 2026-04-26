@@ -87,8 +87,9 @@ const PROJ_BACK   = path.join(PROJECT_DIR, 'backend')
 // ─────────────────────────────────────────────
 
 const content     = fs.readFileSync(tatPath, 'utf-8')
+const hasBackend  = content.includes('@arkzen:api') || content.includes('@arkzen:database:') || content.includes('@arkzen:jobs:') || content.includes('@arkzen:events:') || content.includes('@arkzen:realtime:') || content.includes('@arkzen:notifications:') || content.includes('@arkzen:mail:') || content.includes('@arkzen:console:') || content.includes('@arkzen:routes') || content.includes('@arkzen:store:')
 const hasRealtime = content.includes('@arkzen:realtime') || content.includes('@arkzen:notifications')
-const hasJobs     = content.includes('@arkzen:jobs')
+const hasJobs     = content.includes('@arkzen:jobs') || content.includes('@arkzen:events')
 const tatSnake    = tatName.replace(/-/g, '_')   // ← ADDED
 
 divider()
@@ -96,6 +97,7 @@ console.log(`\n  ARKZEN — Exporting tatemono: ${tatName}\n`)
 divider()
 console.log(`  Version:  v8 (copy-everything, engine‑style routing)`)
 console.log(`  Tatemono: ${tatName}`)
+console.log(`  Backend:  ${hasBackend}`)
 console.log(`  Realtime: ${hasRealtime}`)
 console.log(`  Jobs:     ${hasJobs}`)
 
@@ -290,6 +292,61 @@ if (fs.existsSync(engSqlite) && fs.statSync(engSqlite).size > 0) {
   fs.writeFileSync(destSqlite, '')
   warn(`database/arkzen/${tatName}.sqlite not found in engine — created empty, will migrate`)
 }
+
+// ─────────────────────────────────────────────
+// STEP 4b — COPY TATEMONO'S ASSETS
+//
+// If the tatemono has an assets/ folder, copy it to the exported
+// project's public/assets/ folder, categorized by file type.
+// ─────────────────────────────────────────────
+
+log('Checking for tatemono assets...')
+
+const srcAssetsPath = path.join(TATEMONOS_DIR, tatName, 'assets')
+if (fs.existsSync(srcAssetsPath)) {
+  try {
+    const destAssetsDir = path.join(PROJ_FRONT, 'public', 'assets', tatName)
+    fs.mkdirSync(destAssetsDir, { recursive: true })
+
+    // Read source assets and categorize by file type
+    const FILE_TYPE_MAP = {
+      images: ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp', '.tiff'],
+      videos: ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.flv', '.m4v', '.mpg', '.mpeg'],
+      audio: ['.mp3', '.wav', '.ogg', '.aac', '.flac', '.m4a', '.wma'],
+      documents: ['.pdf', '.doc', '.docx', '.txt', '.xlsx', '.xls', '.csv', '.ppt', '.pptx'],
+      fonts: ['.woff', '.woff2', '.ttf', '.otf', '.eot', '.fnt'],
+      archives: ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'],
+      data: ['.json', '.xml', '.yaml', '.yml', '.toml', '.csv'],
+      code: ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.go', '.rs', '.cpp', '.c', '.h'],
+    }
+
+    const getFileType = (filename) => {
+      const ext = path.extname(filename).toLowerCase()
+      for (const [type, exts] of Object.entries(FILE_TYPE_MAP)) {
+        if (exts.includes(ext)) return type
+      }
+      return 'other'
+    }
+
+    const srcFiles = fs.readdirSync(srcAssetsPath)
+    for (const file of srcFiles) {
+      const srcFile = path.join(srcAssetsPath, file)
+      if (!fs.statSync(srcFile).isDirectory() && !file.startsWith('.')) {
+        const fileType = getFileType(file)
+        const typeDir = path.join(destAssetsDir, fileType)
+        fs.mkdirSync(typeDir, { recursive: true })
+        fs.copyFileSync(srcFile, path.join(typeDir, file))
+      }
+    }
+    success(`Assets copied: /public/assets/${tatName}/`)
+  } catch (err) {
+    warn(`Could not copy assets: ${err.message}`)
+  }
+} else {
+  success('No assets folder found (optional)')
+}
+
+
 
 // ─────────────────────────────────────────────
 // STEP 5 — WRITE STANDALONE BOOTSTRAP/APP.PHP
@@ -586,33 +643,29 @@ try {
 // ─────────────────────────────────────────────
 // STEP 12 — MIGRATIONS
 //
-// Only run if sqlite was empty (engine sqlite already has all tables).
+// ALWAYS run migrations. Even though the engine's pre-built sqlite has
+// tatemono tables, it lacks Laravel system tables (cache, sessions, 
+// failed_jobs, etc.) created by Laravel's own migrations.
+// The --step flag allows idempotent runs — existing tables are skipped.
 // ─────────────────────────────────────────────
 
-const sqliteWasPrebuilt = fs.existsSync(engSqlite) && fs.statSync(engSqlite).size > 0
-
-if (sqliteWasPrebuilt) {
-  log('Skipping migrations — pre-built sqlite already contains all tables')
-  success('All tables already present in copied sqlite')
-} else {
-  log('Running migrations...')
-  try {
-    const out = execSync('php artisan migrate --force 2>&1', { cwd: PROJ_BACK }).toString()
-    success('Migrations complete')
-    out.trim().split('\n').filter(l => l.trim()).forEach(l => success('  ' + l))
-  } catch (e) {
-    warn('Migrations failed — run manually: php artisan migrate')
-    const msg = (e.stdout || e.message || '').toString().trim()
-    msg.split('\n').slice(0, 8).forEach(l => l.trim() && warn('  ' + l))
-  }
-
-  // Seeders only needed when DB was empty
-  log('Running seeders...')
-  try {
-    execSync('php artisan db:seed --force', { cwd: PROJ_BACK, stdio: 'pipe' })
-    success('Seeders complete')
-  } catch { warn('Seeders failed (or none exist) — run: php artisan db:seed') }
+log('Running migrations...')
+try {
+  const out = execSync('php artisan migrate --force 2>&1', { cwd: PROJ_BACK }).toString()
+  success('Migrations complete')
+  out.trim().split('\n').filter(l => l.trim()).forEach(l => success('  ' + l))
+} catch (e) {
+  warn('Migrations failed — run manually: php artisan migrate')
+  const msg = (e.stdout || e.message || '').toString().trim()
+  msg.split('\n').slice(0, 8).forEach(l => l.trim() && warn('  ' + l))
 }
+
+// Seeders only needed when DB was empty (no else check needed anymore)
+log('Running seeders...')
+try {
+  execSync('php artisan db:seed --force', { cwd: PROJ_BACK, stdio: 'pipe' })
+  success('Seeders complete')
+} catch { warn('Seeders failed (or none exist) — run: php artisan db:seed') }
 
 // ─────────────────────────────────────────────
 // STEP 13 — WRITE START.JS
@@ -638,23 +691,20 @@ const startLines = [
   `}`,
   ``,
   `console.log('\\n  Starting ${tatName}...')`,
-  `console.log('  Backend:  http://localhost:8001')`,
-  hasRealtime ? `console.log('  Reverb:   ws://localhost:8081')` : null,
+  hasBackend ? `console.log('  Backend:  http://localhost:8001')` : null,
+  `console.log('  Queue:    enabled')`,
+  `console.log('  Reverb:   ws://localhost:8081')`,
   `console.log('  Frontend: http://localhost:3001\\n')`,
   ``,
-  `const backend  = run('backend',  'php', ['artisan', 'serve', '--port=8001'], BACK, 'backend')`,
-  (hasJobs || hasRealtime)
-    ? `const queue    = run('queue',    'php', ['artisan', 'queue:work', '--queue=default,heavy', '--sleep=3', '--tries=3'], BACK, 'queue')`
-    : null,
-  hasRealtime
-    ? `const reverb   = run('reverb',   'php', ['artisan', 'reverb:start', '--host=0.0.0.0', '--port=8081', '--debug'], BACK, 'reverb')`
-    : null,
+  hasBackend ? `const backend  = run('backend',  'php', ['artisan', 'serve', '--port=8001'], BACK, 'backend')` : null,
+  `const queue    = run('queue',    'php', ['artisan', 'queue:work', '--queue=default,heavy', '--sleep=3', '--tries=3'], BACK, 'queue')`,
+  `const reverb   = run('reverb',   'php', ['artisan', 'reverb:start', '--host=0.0.0.0', '--port=8081', '--debug'], BACK, 'reverb')`,
   `const frontend = run('frontend', 'npm',  ['run', 'dev'], FRONT, 'frontend')`,
   ``,
   `process.on('SIGINT', () => {`,
-  `  backend.kill()`,
-  (hasJobs || hasRealtime) ? `  queue.kill()`   : null,
-  hasRealtime               ? `  reverb.kill()`  : null,
+  hasBackend ? `  backend.kill()` : null,
+  `  queue.kill()`,
+  `  reverb.kill()`,
   `  frontend.kill()`,
   `  process.exit(0)`,
   `})`,
@@ -679,8 +729,9 @@ node start.js
 
 | Service  | URL                    |
 |----------|------------------------|
-| Frontend | http://localhost:3001  |
-| Backend  | http://localhost:8001  |${hasRealtime ? '\n| Reverb   | ws://localhost:8081    |' : ''}
+| Frontend | http://localhost:3001  |${hasBackend ? '\n| Backend  | http://localhost:8001  |' : ''}
+| Queue    | Background jobs        |
+| Reverb   | ws://localhost:8081    |
 
 ## Manual setup (if needed)
 
@@ -704,6 +755,26 @@ fs.writeFileSync(path.join(PROJECT_DIR, '.gitignore'), [
 ].join('\n'))
 
 // ─────────────────────────────────────────────
+// GENERATE SITEMAP FOR EXPORTED PROJECT
+// ─────────────────────────────────────────────
+
+try {
+  const sitemapPath = path.join(PROJECTS_DIR, tatName, 'frontend', 'arkzen', 'core', 'sitemap.ts')
+  if (fs.existsSync(sitemapPath)) {
+    // Dynamically require the sitemap module
+    delete require.cache[require.resolve(sitemapPath)]
+    const sitemapModule = require(sitemapPath)
+    if (sitemapModule.writeSitemap) {
+      const publicDir = path.join(PROJECTS_DIR, tatName, 'frontend', 'public')
+      sitemapModule.writeSitemap(publicDir)
+      console.log(`\n  ✓ Sitemap generated: projects/${tatName}/frontend/public/sitemap.xml`)
+    }
+  }
+} catch (err) {
+  // Silently skip if sitemap generation fails (it's not critical for export)
+}
+
+// ─────────────────────────────────────────────
 // DONE
 // ─────────────────────────────────────────────
 
@@ -712,4 +783,5 @@ console.log(`\n  ✓ EXPORTED: ${tatName}`)
 console.log(`  Version: v8 (copy-everything, engine‑style routing)`)
 console.log(`  DB:      database/arkzen/${tatName}.sqlite`)
 console.log(`  Run:     cd projects/${tatName} && node start.js`)
+console.log(`  SEO:     Visit /public/sitemap.xml and submit to Google Console`)
 divider()

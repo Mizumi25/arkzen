@@ -23,6 +23,7 @@ export interface ArkzenMeta {
   description: string
   auth: boolean
   dependencies: string[]
+  favicon?: string
   authSeed?: {
     users: ArkzenAuthSeedUser[]
   }
@@ -259,6 +260,13 @@ export interface ArkzenLayout {
   end: number
 }
 
+export interface ArkzenStyle {
+  name?: string  // undefined for global @arkzen:style, defined for @arkzen:style:name
+  raw: string
+  start: number
+  end: number
+}
+
 export interface ParsedTatemono {
   filePath: string
   fileName: string
@@ -281,6 +289,7 @@ export interface ParsedTatemono {
   mails:              ArkzenMail[]
   consoles:           ArkzenConsole[]
   components:         ArkzenSection[]
+  styles:             ArkzenStyle[]  // ← v6.4: CSS + CSS Modules support
   middlewareSnippets: ArkzenMiddlewareSnippets  // ← v5.3
 
   animation?: ArkzenSection

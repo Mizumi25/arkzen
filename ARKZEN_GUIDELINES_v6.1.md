@@ -350,6 +350,7 @@ name: pos-system
 version: 1.0.0
 description: Full point-of-sale system
 auth: false
+favicon: /assets/pos-system/images/favicon.ico
 dependencies: []
 */
 ```
@@ -359,7 +360,32 @@ dependencies: []
 - `version` — optional. Defaults to 1.0.0.
 - `description` — optional. Human-readable description.
 - `auth` — required. `true` or `false`. See Section 4.
+- `favicon` — optional. URL to favicon file (typically from assets folder or external CDN).
 - `dependencies` — optional. Always empty — Tatemonos are isolated.
+
+**Favicon Usage:**
+
+The favicon appears in the browser tab, bookmarks, and address bar. Specify a URL to any image format:
+
+```tsx
+/* @arkzen:meta
+name: my-app
+auth: false
+favicon: /assets/my-app/images/favicon.ico
+*/
+```
+
+**Or use an absolute URL:**
+
+```tsx
+/* @arkzen:meta
+name: my-app
+auth: false
+favicon: https://cdn.example.com/logos/favicon.png
+*/
+```
+
+The favicon is automatically injected into the tatemono's route segment via Next.js metadata, so /{tatemono-name} and all sub-routes will display the favicon.
 
 **NOTE: `layout` field does NOT exist in meta. Layout is declared per-page.**
 
@@ -389,7 +415,144 @@ layout:
 
 ---
 
-## SECTION 7 — @arkzen:database (REPEAT — identifier optional)
+## SECTION 6B — ASSETS FOLDER (optional)
+
+Each Tatemono can have its own `assets/` folder containing images, videos, PDFs, fonts, and any other static files. Assets are automatically distributed during generation.
+
+### Folder Structure
+
+```
+tatemonos/portfolio-test/
+├── core.tsx
+└── assets/                        (optional)
+    ├── hero-image.png
+    ├── logo.svg
+    ├── demo-video.mp4
+    ├── guide.pdf
+    └── custom-font.woff2
+```
+
+### Generated Output
+
+Arkzen automatically categorizes files by type and organizes them in the engine's public folder:
+
+```
+engine/frontend/public/assets/portfolio-test/
+├── images/
+│   ├── hero-image.png
+│   └── logo.svg
+├── videos/
+│   └── demo-video.mp4
+├── documents/
+│   └── guide.pdf
+└── fonts/
+    └── custom-font.woff2
+```
+
+**File Type Categories:**
+
+| Category | Extensions |
+|----------|-----------|
+| `images` | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`, `.ico`, `.bmp`, `.tiff` |
+| `videos` | `.mp4`, `.webm`, `.mov`, `.avi`, `.mkv`, `.flv`, `.m4v`, `.mpg`, `.mpeg` |
+| `audio` | `.mp3`, `.wav`, `.ogg`, `.aac`, `.flac`, `.m4a`, `.wma` |
+| `documents` | `.pdf`, `.doc`, `.docx`, `.txt`, `.xlsx`, `.xls`, `.csv`, `.ppt`, `.pptx` |
+| `fonts` | `.woff`, `.woff2`, `.ttf`, `.otf`, `.eot`, `.fnt` |
+| `archives` | `.zip`, `.rar`, `.7z`, `.tar`, `.gz`, `.bz2` |
+| `data` | `.json`, `.xml`, `.yaml`, `.yml`, `.toml` |
+| `code` | `.js`, `.ts`, `.jsx`, `.tsx`, `.py`, `.java`, `.go`, `.rs`, etc. |
+| `other` | Any unlisted extension |
+
+### Using Assets in core.tsx
+
+Reference assets with absolute paths from the public folder:
+
+```tsx
+/* @arkzen:page:index */
+/* @arkzen:page:layout:guest */
+const IndexPage = () => {
+  return (
+    <div className="arkzen-container">
+      {/* Image from assets */}
+      <img src="/assets/portfolio-test/images/hero-image.png" alt="Hero" className="w-full mb-8" />
+      
+      {/* Video from assets */}
+      <video src="/assets/portfolio-test/videos/demo-video.mp4" controls className="w-full mb-8" />
+      
+      {/* PDF embed */}
+      <embed src="/assets/portfolio-test/documents/guide.pdf" className="w-full h-96" />
+      
+      {/* Custom font via CSS or style prop */}
+      <h1 style={{ fontFamily: 'CustomFont' }}>Styled Text</h1>
+    </div>
+  )
+}
+/* @arkzen:page:index:end */
+```
+
+### Rules
+
+```
+1. Assets folder is optional — not required if your Tatemono has no media
+2. Assets are auto-categorized by file extension during generation
+3. All files are copied as-is — no compression or optimization
+4. Reference assets using absolute paths: /assets/{tatemono-name}/{category}/{filename}
+5. Assets work the same way in engine development and in exported projects
+6. Assets are NOT shared between Tatemonos — each gets its own isolated folder
+7. Keep individual asset files under 50MB for optimal performance
+8. Supported file types: see table above (any extension can go to 'other' if unlisted)
+9. Hidden files (starting with .) are ignored
+10. Directories inside assets/ are flattened — only files at root level are categorized
+```
+
+### Example: assets/ folder structure
+
+```
+tatemonos/auth-test/
+├── core.tsx
+└── assets/
+    ├── favicon.ico              → /assets/auth-test/images/favicon.ico (config via @arkzen:meta)
+    ├── landing-hero.png         → /assets/auth-test/images/landing-hero.png
+    ├── app-logo.svg             → /assets/auth-test/images/app-logo.svg
+    ├── tutorial-video.mp4       → /assets/auth-test/videos/tutorial-video.mp4
+    ├── terms-of-service.pdf     → /assets/auth-test/documents/terms-of-service.pdf
+    ├── roboto-bold.woff2        → /assets/auth-test/fonts/roboto-bold.woff2
+    ├── config-data.json         → /assets/auth-test/data/config-data.json
+    └── setup-guide.md           → /assets/auth-test/documents/setup-guide.md
+```
+
+### Using Favicon from Assets
+
+Store favicon in the assets folder and reference it in @arkzen:meta:
+
+```tsx
+/* @arkzen:meta
+name: auth-test
+auth: true
+favicon: /assets/auth-test/images/favicon.ico
+*/
+```
+
+The favicon is automatically injected into /{tatemono-name} and all sub-routes.
+
+### Exporting with Assets
+
+When you export a Tatemono, its assets are automatically copied to the exported project:
+
+```bash
+node export.js portfolio-test
+# Output: projects/portfolio-test/frontend/public/assets/portfolio-test/
+#   ├── images/
+#   ├── videos/
+#   ├── documents/
+#   └── ...
+```
+
+The exported project works exactly like the engine version — assets are already in place and ready to serve.
+
+---
+
+## SECTION 8 — @arkzen:database (REPEAT — identifier optional)
 
 Declare one block per table. Each has a unique identifier.
 
@@ -457,7 +620,7 @@ seeder:
 
 ---
 
-## SECTION 8 — @arkzen:api (REPEAT — identifier optional)
+## SECTION 9 — @arkzen:api (REPEAT — identifier optional)
 
 One block per model/controller pair.
 
@@ -613,7 +776,7 @@ return response()->json(['message' => 'Reset complete']);
 
 ---
 
-## SECTION 10 — @arkzen:middleware (optional, REPEAT — named :end block)
+## SECTION 11 — @arkzen:middleware (optional, REPEAT — named :end block)
 
 Middleware is declared as **named** blocks. The YAML config (currently reserved for future options) goes in the opening comment. The `handle()` method body goes between the comment close `*/` and the `:end` marker.
 
@@ -678,7 +841,7 @@ role:admin       → generates scoped CheckRole middleware (special case)
 
 ---
 
-## SECTION 11 — @arkzen:store (REPEAT — identifier required)
+## SECTION 12 — @arkzen:store (REPEAT — identifier required)
 
 ```tsx
 /* @arkzen:store:pos */
@@ -702,7 +865,7 @@ const usePosStore = create<PosState>((set) => ({
 
 ---
 
-## SECTION 12 — @arkzen:jobs, @arkzen:console, @arkzen:events, @arkzen:realtime, @arkzen:notifications, @arkzen:mail
+## SECTION 13 — @arkzen:jobs, @arkzen:console, @arkzen:events, @arkzen:realtime, @arkzen:notifications, @arkzen:mail
 
 ### @arkzen:jobs — Named :end blocks WITH PHP handle() body
 
@@ -973,7 +1136,7 @@ data:     map of field → type — these become constructor args + public prope
 
 ---
 
-## SECTION 14 — LAYOUT SYSTEM
+## SECTION 15 — LAYOUT SYSTEM
 
 ### Two Base Layouts
 
@@ -1022,7 +1185,7 @@ Then reference in pages:
 
 ---
 
-## SECTION 15 — @arkzen:components (REPEAT — identifier required)
+## SECTION 16 — @arkzen:components (REPEAT — identifier required)
 
 All imports MUST go here. Custom components for this system go here.
 Split by logical grouping — one block per section of the system.
@@ -1094,7 +1257,7 @@ Icons (always):
 
 ---
 
-## SECTION 16 — @arkzen:page (REPEAT — name required)
+## SECTION 17 — @arkzen:page (REPEAT — name required)
 
 Each page is its own route: `/{tatemono-name}/{page-name}`
 Special case: page named `index` → `/{tatemono-name}` (no subfolder)
@@ -1154,7 +1317,7 @@ arkzen-btn            → default button
 
 ---
 
-## SECTION 17 — @arkzen:animation (optional, once)
+## SECTION 18 — @arkzen:animation (optional, once)
 
 ```tsx
 /* @arkzen:animation */
@@ -1183,7 +1346,7 @@ export const pageVariants = {
 
 ---
 
-## SECTION 18 — @arkzen:error (optional — 404 and 500 handlers)
+## SECTION 19 — @arkzen:error (optional — 404 and 500 handlers)
 
 Use these to define Next.js segment-scoped error pages for the tatemono. They generate `not-found.tsx` and `error.tsx` inside the tatemono's route segment.
 
@@ -1225,7 +1388,7 @@ const ServerErrorPage = ({ reset }: { reset: () => void }) => (
 
 ---
 
-## SECTION 18B — COMPLETE DSL BODY INJECTION REFERENCE (v6.1)
+## SECTION 20 — COMPLETE DSL BODY INJECTION REFERENCE (v6.1)
 
 This is the authoritative table of every block that supports PHP or HTML body injection. When a block supports injection, the PHP/HTML goes **between `*/` and the `:end` marker**. The opening `/* @arkzen:... */` comment carries YAML config only.
 
@@ -1252,7 +1415,7 @@ This is the authoritative table of every block that supports PHP or HTML body in
 
 ---
 
-## SECTION 19 — NEVER DO (Complete Rules List)
+## SECTION 21 — NEVER DO (Complete Rules List)
 
 ```
 1.  Never generate incomplete sections
@@ -1299,11 +1462,14 @@ This is the authoritative table of every block that supports PHP or HTML body in
 42. Never inject a body into @arkzen:realtime — channel config is YAML only
 43. Never write @arkzen:endpoint:name without first declaring the endpoint key inside an @arkzen:api block
 44. Never write @arkzen:handler:name without first declaring the handler in an @arkzen:routes block
+45. Never put a favicon URL in @arkzen:config — favicon goes in @arkzen:meta only
+46. Never use favicon in the root layout directly — each tatemono has its own favicon via metadata injection
+47. Never reference favicon without a full URL or absolute path — use /assets/{name}/images/filename or https://cdn.example.com/path
 ```
 
 ---
 
-## SECTION 20 — VALIDATION
+## SECTION 22 — VALIDATION
 
 Before submitting, run:
 ```bash
@@ -1322,7 +1488,7 @@ Output example:
 
 ---
 
-## SECTION 21 — EXPORT SYSTEM
+## SECTION 23 — EXPORT SYSTEM
 
 ### How Export Works
 
@@ -1363,7 +1529,7 @@ Production:    edit projects/<n>/backend/.env after export for server-specific v
 
 ---
 
-## SECTION 22 — GENERATION PROMPT TEMPLATE
+## SECTION 24 — GENERATION PROMPT TEMPLATE
 
 ```
 ARKZEN GUIDELINES: [paste this document or reference v6.1]
@@ -1397,12 +1563,129 @@ Icons from lucide-react only. No emoji in UI.
 
 ---
 
-## SECTION 23 — COMPLETE STRUCTURE REFERENCE v6.1
+## SECTION 24 — @arkzen:style & CSS MODULES (v6.4)
+
+### Global CSS with Variables
+
+Use `/* @arkzen:style */` (no identifier) for global CSS with CSS variables that are available to all components in the tatemono.
+
+**Format:**
+```tsx
+/* @arkzen:style */
+:root {
+  --primary: #3b82f6;
+  --secondary: #10b981;
+  --border-radius: 8px;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.6;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+/* @arkzen:style:end */
+```
+
+### CSS Modules for Components
+
+Use `/* @arkzen:style:ComponentName */` (with identifier) for CSS Modules scoped to a specific component. The identifier must match your component name exactly.
+
+**Format:**
+```tsx
+/* @arkzen:style:HeroSection */
+.hero {
+  height: 500px;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.hero:hover {
+  box-shadow: 0 4px 6px 0 rgba(0, 0, 0, 0.1);
+}
+
+.heroTitle {
+  font-size: 3rem;
+  font-weight: bold;
+  color: white;
+  margin: 0;
+}
+
+.heroSubtitle {
+  font-size: 1.25rem;
+  color: rgba(255, 255, 255, 0.9);
+  margin-top: 1rem;
+}
+/* @arkzen:style:HeroSection:end */
+```
+
+### Using CSS Modules in Components
+
+The CSS Module is automatically imported in your component. Use the `styles` object to reference class names:
+
+```tsx
+/* @arkzen:components:shared */
+const HeroSection = () => {
+  return (
+    <div className={styles.hero}>
+      <div>
+        <h1 className={styles.heroTitle}>Welcome</h1>
+        <p className={styles.heroSubtitle}>Get started today</p>
+      </div>
+    </div>
+  )
+}
+/* @arkzen:components:shared:end */
+```
+
+### CSS Style Rules
+
+```
+1. CSS Modules are automatically scoped — no class name collisions
+2. Global CSS variables are available in all CSS files and Tailwind
+3. Component names in @arkzen:style:name must match exactly (HeroSection == HeroSection)
+4. No conflicts with Tailwind — CSS Modules take precedence in scoped components
+5. Global CSS is imported in tatemono layout.tsx — available on all pages
+6. Multiple @arkzen:style blocks not allowed — write ONE global block per tatemono
+7. Multiple @arkzen:style:name blocks ARE allowed — one per component as needed
+8. Keep CSS variable names lowercase with hyphens (--primary, not --PRIMARY)
+9. Always wrap dark mode styles in media queries or Tailwind's dark: prefix
+10. Use :root for CSS variables — they are inheritable to all elements
+```
+
+**Generated folder structure:**
+```
+app/<tatemono-name>/
+├── styles/
+│   ├── global.css              (from @arkzen:style)
+│   ├── HeroSection.module.css  (from @arkzen:style:HeroSection)
+│   └── CustomCard.module.css   (from @arkzen:style:CustomCard)
+├── layout.tsx                  (imports global.css automatically)
+├── page.tsx
+└── components/
+    ├── HeroSection.tsx         (imports HeroSection.module.css)
+    └── CustomCard.tsx          (imports CustomCard.module.css)
+```
+
+---
+
+## SECTION 25 — COMPLETE STRUCTURE REFERENCE v6.1
 
 ```
 tatemonos/<n>/core.tsx
 │
-├── /* @arkzen:meta              → identity, auth: true|false
+├── /* @arkzen:meta              → identity, auth: true|false, favicon: optional
 ├── /* @arkzen:config            → OPTIONAL component overrides + layout config
 │
 ├── /* @arkzen:database          → table definition (no identifier = single table)
@@ -1490,9 +1773,27 @@ tatemonos/<n>/core.tsx
     └── /* @arkzen:animation:end */
 ```
 
+**Optional Assets Folder:**
+
+Alongside core.tsx, create an `assets/` folder for tatemono-specific media:
+
+```
+tatemonos/<n>/
+├── core.tsx
+└── assets/                      (OPTIONAL)
+    ├── favicon.ico              → favicon for browser tab
+    ├── logo.svg                 → company/tatemono logo
+    ├── hero-image.png           → hero section images
+    ├── demo-video.mp4           → video assets
+    ├── guide.pdf                → documentation
+    └── custom-font.woff2        → web fonts
+```
+
+Assets are auto-categorized and distributed to `/public/assets/{name}/{type}/` during generation. Reference in pages with `/assets/{name}/{type}/{filename}`.
+
 ---
 
-## SECTION 24 — THE 12 VALIDATED SYSTEM BLUEPRINTS (Reference)
+## SECTION 26 — THE 12 VALIDATED SYSTEM BLUEPRINTS (Reference)
 
 These are the 12 proven, fully working Tatemono types. Use these as generation references.
 
@@ -1513,7 +1814,7 @@ These are the 12 proven, fully working Tatemono types. Use these as generation r
 
 ---
 
-## SECTION 25 — COMPLETE EXAMPLE: auth:false Tatemono (v6.1 Design Standard)
+## SECTION 27 — COMPLETE EXAMPLE: auth:false Tatemono (v6.1 Design Standard)
 
 ```tsx
 /* @arkzen:meta
@@ -1521,6 +1822,7 @@ name: inventory-management
 version: 3.0.0
 description: Full inventory management with stock tracking
 auth: false
+favicon: /assets/inventory-management/images/favicon.ico
 dependencies: []
 */
 

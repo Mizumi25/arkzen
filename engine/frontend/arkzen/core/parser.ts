@@ -35,6 +35,7 @@ import type {
   ArkzenSection,
   ArkzenPage,
   ArkzenLayout,
+  ArkzenStyle,
   ArkzenErrorHandler,
   ArkzenErrorHandlerType,
 } from '../types'
@@ -231,6 +232,7 @@ function parseMeta(content: string): ArkzenMeta {
     description:  String(parsed.description ?? ''),
     auth:         Boolean(parsed.auth ?? false),
     dependencies: (parsed.dependencies as string[]) ?? [],
+    favicon:      parsed.favicon ? String(parsed.favicon) : undefined,
     authSeed:     parsed.auth_seed
       ? {
           users: ((parsed.auth_seed as any).users ?? []).map((u: any) => ({
@@ -808,6 +810,71 @@ function parseAllMails(content: string): ArkzenSection[] {
 }
 
 // ─────────────────────────────────────────────
+// PARSE ALL STYLES — v6.4
+// Parses both @arkzen:style (global) and @arkzen:style:name (CSS Modules).
+// Global style: no name, CSS is written directly between */ and :end
+// Component styles: have name, CSS Module content between */ and :end
+// ─────────────────────────────────────────────
+
+function parseAllStyles(content: string): ArkzenStyle[] {
+  const results: ArkzenStyle[] = []
+
+  // ── First pass: @arkzen:style (no name) ──────────────────────────────
+  const globalMarker = `/* @arkzen:style`
+  const globalIdx = content.indexOf(globalMarker)
+  if (globalIdx !== -1) {
+    const afterMarker = content.slice(globalIdx + globalMarker.length)
+    // Check if next char is space/newline (not ':' which would be @arkzen:style:name)
+    if (afterMarker[0] && /[\s*]/.test(afterMarker[0])) {
+      const openCommentEnd = content.indexOf('*/', globalIdx)
+      if (openCommentEnd !== -1) {
+        const endMarker = `/* @arkzen:style:end */`
+        const endIdx = content.indexOf(endMarker, openCommentEnd)
+        if (endIdx !== -1) {
+          const raw = content.slice(openCommentEnd + 2, endIdx).trim()
+          results.push({ raw, start: globalIdx, end: endIdx + endMarker.length })
+        }
+      }
+    }
+  }
+
+  // ── Second pass: @arkzen:style:name ──────────────────────────────────
+  const namedPattern = `/* @arkzen:style:`
+  let searchFrom = 0
+
+  while (true) {
+    const openIdx = content.indexOf(namedPattern, searchFrom)
+    if (openIdx === -1) break
+
+    const afterOpen = content.slice(openIdx + namedPattern.length)
+    const identMatch = afterOpen.match(/^([a-zA-Z0-9_-]+)/)
+    if (!identMatch) { searchFrom = openIdx + namedPattern.length; continue }
+
+    const identifier = identMatch[1]
+    if (identifier === 'end') { searchFrom = openIdx + namedPattern.length; continue }
+
+    const openCommentEnd = content.indexOf('*/', openIdx)
+    if (openCommentEnd === -1) break
+
+    const closeMarker = `/* @arkzen:style:${identifier}:end */`
+    const closeIdx = content.indexOf(closeMarker, openCommentEnd)
+    if (closeIdx === -1) { searchFrom = openCommentEnd + 2; continue }
+
+    const raw = content.slice(openCommentEnd + 2, closeIdx).trim()
+    results.push({
+      name: identifier,
+      raw,
+      start: openIdx,
+      end: closeIdx + closeMarker.length,
+    })
+
+    searchFrom = closeIdx + closeMarker.length
+  }
+
+  return results
+}
+
+// ─────────────────────────────────────────────
 // PARSE ALL NAMED CODE (generic fallback for sections without :name pattern)
 // ─────────────────────────────────────────────
 
@@ -1283,6 +1350,7 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   const pages        = parseAllPages(content)
   const layouts      = parseAllLayouts(content)
   const components   = parseAllComponents(content)
+  const styles       = parseAllStyles(content)  // ← v6.4: CSS + CSS Modules
   const errorHandlers = parseAllErrorHandlers(content)
 
   // v6.3: parse endpoint bodies BEFORE apis so we can attach them
@@ -1343,6 +1411,7 @@ export function parseTatemono(filePath: string): ParsedTatemono {
     pages,
     layouts,
     components,
+    styles,  // ← v6.4
     errorHandlers,
     stores,
     realtimes,
@@ -1368,6 +1437,7 @@ export function parseTatemono(filePath: string): ParsedTatemono {
   if (notifications.length)  console.log(`[Arkzen Parser]   Notifications (${notifications.length}): ${notifications.length} block(s)`)
   if (mails.length)          console.log(`[Arkzen Parser]   Mail (${mails.length}): ${mails.length} block(s)`)
   if (consoles.length)       console.log(`[Arkzen Parser]   Console (${consoles.length}): ${consoles.length} block(s)`)
+  if (styles.length)         console.log(`[Arkzen Parser]   Styles (${styles.length}): ${styles.filter(s => !s.name).length} global + ${styles.filter(s => s.name).length} module(s)`)
   if (Object.keys(middlewareSnippets).length > 0)
     console.log(`[Arkzen Parser]   Middleware snippets: ${Object.keys(middlewareSnippets).join(', ')}`)
 

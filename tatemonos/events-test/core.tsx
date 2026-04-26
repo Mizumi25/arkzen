@@ -139,13 +139,16 @@ const IndexPage = () => {
   const [log, setLog]           = useState<EventLogEntry[]>([])
   const [firing, setFiring]     = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
+  const pollingRef = React.useRef<NodeJS.Timeout | null>(null)
 
   const loadLog = async () => {
     try {
       const res = await arkzenFetch('/api/events-test/log')
       const d   = await res.json()
       setLog(d.data ?? [])
-    } catch {}
+    } catch (e) {
+      console.error('Failed to load log:', e)
+    }
   }
 
   useEffect(() => { loadLog() }, [])
@@ -157,10 +160,25 @@ const IndexPage = () => {
         method: 'POST',
         body:   JSON.stringify({ event: eventKey, payload }),
       })
-      setTimeout(loadLog, 600)
-      setTimeout(loadLog, 1500)
-      setTimeout(loadLog, 3000)
-    } catch {} finally { setFiring(null) }
+      // Start aggressive polling immediately
+      if (pollingRef.current) clearInterval(pollingRef.current)
+      
+      // Poll immediately and every 500ms
+      loadLog()
+      pollingRef.current = setInterval(loadLog, 500)
+      
+      // Stop after 15 seconds
+      setTimeout(() => {
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current)
+          pollingRef.current = null
+        }
+      }, 15000)
+    } catch (e) {
+      console.error('Fire failed:', e)
+    } finally { 
+      setFiring(null) 
+    }
   }
 
   const clearLog = async () => {

@@ -3,11 +3,15 @@
 // - Pages named "index" are placed directly in tatemono folder (app/name/page.tsx)
 // - Other pages go into subfolders (app/name/dashboard/page.tsx)
 // - Imports are adjusted accordingly (same folder vs parent folder)
+// - Generates sitemap.xml and robots.txt for SEO
 // ============================================================
 
 import * as fs from 'fs'
 import * as path from 'path'
 import type { ParsedTatemono, ArkzenPage, ArkzenErrorHandler } from '../types'
+import { writeSitemap } from './sitemap'
+import { getRegistry } from './registry'
+import { copyAssetsToPublic, cleanOldAssets } from './assets'
 
 const APP_DIR   = path.resolve(process.cwd(), 'app')
 const PAGES_DIR = path.resolve(process.cwd(), 'pages')
@@ -50,32 +54,90 @@ function extractComponentName(pageName: string, raw: string): string {
 }
 
 // ─────────────────────────────────────────────
-// GENERATE COMPONENTS FILE
+// GENERATE INDIVIDUAL COMPONENT FILES
 // ─────────────────────────────────────────────
 
-function generateComponentsFile(tatemono: ParsedTatemono): string {
-  const allComponents = tatemono.components
-    .map(s => s.raw.replace(/'use client'[;]?\n?/, '').trim())
-    .join('\n\n')
+function generateIndividualComponentFiles(tatemono: ParsedTatemono, baseDir: string): void {
+  if (tatemono.components.length === 0) return
 
-  const pageExports = tatemono.pages.map(page => {
-    const componentName = extractComponentName(page.name, page.raw)
-    const raw = page.raw.trim()
-    return raw.replace(`const ${componentName}`, `export const ${componentName}`)
-  }).join('\n\n')
+  const componentsDir = path.join(baseDir, 'components')
+  fs.mkdirSync(componentsDir, { recursive: true })
 
-  return `'use client'
+  // Build a map of component names that have CSS Modules
+  const stylesByComponent = new Map<string, string>()
+  for (const style of tatemono.styles.filter(s => s.name)) {
+    stylesByComponent.set(style.name, style.name)
+  }
+
+  for (const component of tatemono.components) {
+    // Extract component name(s) from the raw code
+    // Look for const Component = or export const Component =
+    const componentMatches = component.raw.match(/(?:export\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*[=:(]/g)
+    
+    if (componentMatches) {
+      for (const match of componentMatches) {
+        const name = match.match(/const\s+([A-Za-z_$][A-Za-z0-9_$]*)/)?.[1]
+        if (name) {
+          const fileName = `${name}.tsx`
+          const filePath = path.join(componentsDir, fileName)
+          
+          // Check if this component has a CSS Module
+          const cssImport = stylesByComponent.has(name)
+            ? `import styles from '../styles/${name}.module.css'\n`
+            : ''
+          
+          const content = `'use client'
 // ============================================================
-// ARKZEN GENERATED COMPONENTS — ${tatemono.meta.name}
+// ARKZEN GENERATED COMPONENT — ${name}
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: ${new Date().toISOString()}
 // ============================================================
 
-${allComponents}
-
-// ─── Page Components ───────────────────────────────────────
-${pageExports}
+${cssImport}${component.raw.trim()}
 `
+          fs.writeFileSync(filePath, content, 'utf-8')
+          console.log(`[Arkzen Router] ✓ Component: ${fileName}`)
+        }
+      }
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+// GENERATE COMPONENTS INDEX FILE (for easy imports)
+// ─────────────────────────────────────────────
+
+function generateComponentsIndex(tatemono: ParsedTatemono, baseDir: string): void {
+  if (tatemono.components.length === 0) return
+
+  const componentsDir = path.join(baseDir, 'components')
+  const indexPath = path.join(componentsDir, 'index.ts')
+
+  const exports: string[] = []
+  for (const component of tatemono.components) {
+    const componentMatches = component.raw.match(/(?:export\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*[=:(]/g)
+    if (componentMatches) {
+      for (const match of componentMatches) {
+        const name = match.match(/const\s+([A-Za-z_$][A-Za-z0-9_$]*)/)?.[1]
+        if (name) {
+          exports.push(`export { ${name} } from './${name}'`)
+        }
+      }
+    }
+  }
+
+  if (exports.length > 0) {
+    const content = `// ============================================================
+// ARKZEN GENERATED COMPONENTS INDEX — ${tatemono.meta.name}
+// DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
+// Generated: ${new Date().toISOString()}
+// ============================================================
+
+${exports.join('\n')}
+`
+    fs.writeFileSync(indexPath, content, 'utf-8')
+    console.log(`[Arkzen Router] ✓ Components index: index.ts`)
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -217,7 +279,7 @@ function generateNotFoundFile(tatemono: ParsedTatemono, handler: ArkzenErrorHand
 // ============================================================
 
 import React from 'react'
-import { ErrorScreen } from './_components'
+import { ErrorScreen } from './components'
 
 ${raw}
 
@@ -239,7 +301,7 @@ function generateErrorFile(tatemono: ParsedTatemono, handler: ArkzenErrorHandler
 // ============================================================
 
 import React from 'react'
-import { ErrorScreen } from './_components'
+import { ErrorScreen } from './components'
 
 ${raw}
 
@@ -286,6 +348,74 @@ function generateErrorHandlers(tatemono: ParsedTatemono, tatemonoDir: string): v
   }
   if (has404) {
     generateCatchAllRoute(tatemono, tatemonoDir)
+  }
+}
+
+// ─────────────────────────────────────────────
+// GENERATE TATEMONO LAYOUT WITH FAVICON
+// ─────────────────────────────────────────────
+
+function generateTatemonoLayout(tatemono: ParsedTatemono, tatemonoDir: string): void {
+  const hasGlobalStyle = tatemono.styles.some(s => !s.name)
+  const hasFavicon = !!tatemono.meta.favicon
+
+  if (!hasFavicon && !hasGlobalStyle) return // Nothing to add to layout
+
+  const globalImport = hasGlobalStyle ? `import './styles/global.css'\n` : ''
+  
+  const metadataCode = hasFavicon ? `export const metadata: Metadata = {
+  icons: {
+    icon: '${tatemono.meta.favicon}',
+  },
+}` : ''
+
+  const metadataImport = hasFavicon ? `import type { Metadata } from 'next'\n` : ''
+
+  const content = `${metadataImport}${globalImport}
+${hasFavicon ? metadataCode + '\n\n' : ''}export default function ${toPascalCase(tatemono.meta.name)}Layout({ children }: { children: React.ReactNode }) {
+  return <>{children}</>
+}
+`
+  
+  fs.writeFileSync(path.join(tatemonoDir, 'layout.tsx'), content, 'utf-8')
+  if (hasGlobalStyle) console.log(`[Arkzen Router] ✓ Global style imported in layout`)
+  if (hasFavicon) console.log(`[Arkzen Router] ✓ Favicon configured: ${tatemono.meta.favicon}`)
+}
+
+// ─────────────────────────────────────────────
+// GENERATE CSS STYLES — v6.4
+// Generates global.css for @arkzen:style and CSS Modules for named styles
+// ─────────────────────────────────────────────
+
+function generateGlobalStyleFile(tatemono: ParsedTatemono, tatemonoDir: string): void {
+  const globalStyles = tatemono.styles.filter(s => !s.name)
+  if (globalStyles.length === 0) return
+
+  const stylesFolder = path.join(tatemonoDir, 'styles')
+  if (!fs.existsSync(stylesFolder)) {
+    fs.mkdirSync(stylesFolder, { recursive: true })
+  }
+
+  const globalStyle = globalStyles[0]
+  const content = globalStyle.raw
+
+  fs.writeFileSync(path.join(stylesFolder, 'global.css'), content, 'utf-8')
+  console.log(`[Arkzen Router] ✓ Global style: styles/global.css`)
+}
+
+function generateCSSModuleFiles(tatemono: ParsedTatemono, tatemonoDir: string): void {
+  const namedStyles = tatemono.styles.filter(s => s.name)
+  if (namedStyles.length === 0) return
+
+  const stylesFolder = path.join(tatemonoDir, 'styles')
+  if (!fs.existsSync(stylesFolder)) {
+    fs.mkdirSync(stylesFolder, { recursive: true })
+  }
+
+  for (const style of namedStyles) {
+    const filename = `${style.name}.module.css`
+    fs.writeFileSync(path.join(stylesFolder, filename), style.raw, 'utf-8')
+    console.log(`[Arkzen Router] ✓ Style module: styles/${filename}`)
   }
 }
 
@@ -367,17 +497,23 @@ export function registerPage(tatemono: ParsedTatemono): void {
   // Generate custom layouts
   generateCustomLayouts(tatemono, '')
 
-  // Generate merged components file (shared across all pages)
-  const componentsContent = generateComponentsFile(tatemono)
-
   if (routerType === 'app') {
     const tatemonoDir = path.join(APP_DIR, tatemono.meta.name)
     fs.mkdirSync(tatemonoDir, { recursive: true })
-    // Write shared _components.tsx at the root of the tatemono folder
-    fs.writeFileSync(path.join(tatemonoDir, '_components.tsx'), componentsContent, 'utf-8')
+    
+    // Generate individual component files + index
+    generateIndividualComponentFiles(tatemono, tatemonoDir)
+    generateComponentsIndex(tatemono, tatemonoDir)
 
     // v6: generate segment-scoped Next.js error handler files + catch‑all for 404
     generateErrorHandlers(tatemono, tatemonoDir)
+
+    // Generate layout.tsx with favicon if specified in meta
+    generateTatemonoLayout(tatemono, tatemonoDir)
+
+    // v6.4: generate CSS styles (global + CSS Modules)
+    generateGlobalStyleFile(tatemono, tatemonoDir)
+    generateCSSModuleFiles(tatemono, tatemonoDir)
 
     // v5.1: auto-generate root redirect when no index page is declared
     const rootRedirect = generateRootRedirect(tatemono)
@@ -393,14 +529,14 @@ export function registerPage(tatemono: ParsedTatemono): void {
       if (page.name === 'index') {
         // Index page: write page.tsx directly in tatemonoDir (overwrites the redirect)
         const pagePath = path.join(tatemonoDir, 'page.tsx')
-        const pageContent = generatePageFile(tatemono, page, animFnName, './_components')
+        const pageContent = generatePageFile(tatemono, page, animFnName, './components')
         fs.writeFileSync(pagePath, pageContent, 'utf-8')
         console.log(`[Arkzen Router] ✓ /${tatemono.meta.name} [${page.layout}]`)
       } else {
         // Other pages: create subfolder and write page.tsx inside
         const pageDir = path.join(tatemonoDir, page.name)
         fs.mkdirSync(pageDir, { recursive: true })
-        const pageContent = generatePageFile(tatemono, page, animFnName, '../_components')
+        const pageContent = generatePageFile(tatemono, page, animFnName, '../components')
         fs.writeFileSync(path.join(pageDir, 'page.tsx'), pageContent, 'utf-8')
         console.log(`[Arkzen Router] ✓ /${tatemono.meta.name}/${page.name} [${page.layout}]`)
       }
@@ -409,10 +545,17 @@ export function registerPage(tatemono: ParsedTatemono): void {
     // Pages router (similar logic)
     const tatemonoDir = path.join(PAGES_DIR, tatemono.meta.name)
     fs.mkdirSync(tatemonoDir, { recursive: true })
-    fs.writeFileSync(path.join(tatemonoDir, '_components.tsx'), componentsContent, 'utf-8')
+    
+    // Generate individual component files + index
+    generateIndividualComponentFiles(tatemono, tatemonoDir)
+    generateComponentsIndex(tatemono, tatemonoDir)
 
     // v6: generate segment-scoped error handler files + catch‑all for 404
     generateErrorHandlers(tatemono, tatemonoDir)
+
+    // v6.4: generate CSS styles (global + CSS Modules)
+    generateGlobalStyleFile(tatemono, tatemonoDir)
+    generateCSSModuleFiles(tatemono, tatemonoDir)
 
     // v5.1: auto-generate root redirect when no index page is declared
     const rootRedirectPages = generateRootRedirect(tatemono)
@@ -427,13 +570,13 @@ export function registerPage(tatemono: ParsedTatemono): void {
     for (const page of tatemono.pages) {
       if (page.name === 'index') {
         const pagePath = path.join(tatemonoDir, 'index.tsx')
-        const pageContent = generatePageFile(tatemono, page, animFnName, './_components')
+        const pageContent = generatePageFile(tatemono, page, animFnName, './components')
         fs.writeFileSync(pagePath, pageContent, 'utf-8')
         console.log(`[Arkzen Router] ✓ /${tatemono.meta.name} [${page.layout}]`)
       } else {
         const pageDir = path.join(tatemonoDir, page.name)
         fs.mkdirSync(pageDir, { recursive: true })
-        const pageContent = generatePageFile(tatemono, page, animFnName, '../_components')
+        const pageContent = generatePageFile(tatemono, page, animFnName, '../components')
         fs.writeFileSync(path.join(pageDir, 'index.tsx'), pageContent, 'utf-8')
         console.log(`[Arkzen Router] ✓ /${tatemono.meta.name}/${page.name} [${page.layout}]`)
       }
@@ -441,6 +584,52 @@ export function registerPage(tatemono: ParsedTatemono): void {
   }
 
   console.log(`[Arkzen Router] ✓ All pages registered for: ${tatemono.meta.name}`)
+
+  // Distribute assets from tatemono's assets/ folder
+  try {
+    const tatemonosDir = path.resolve(process.cwd(), '..', '..', 'tatemonos')
+    const assetsPath = path.join(tatemonosDir, tatemono.meta.name, 'assets')
+    const publicDir = path.resolve(process.cwd(), 'public')
+    
+    // Clean old assets first (in case files were removed from tatemono)
+    cleanOldAssets(tatemono.meta.name, publicDir)
+    
+    // Copy new assets
+    const hasAssets = copyAssetsToPublic(tatemono.meta.name, assetsPath, publicDir)
+    if (!hasAssets) {
+      // No assets folder or it's empty — that's fine, just log it
+      console.log(`[Arkzen Assets] No assets folder for ${tatemono.meta.name}`)
+    }
+  } catch (e) {
+    console.log(`[Arkzen Assets] ⚠ Asset distribution skipped: ${e}`)
+  }
+
+  // Generate sitemap and robots.txt after all pages registered
+  try {
+    const registry = getRegistry()
+    writeSitemap(registry)
+    writeRobotsTxt()
+  } catch (e) {
+    console.log(`[Arkzen Router] ⚠ Sitemap generation skipped`)
+  }
+}
+
+// ─────────────────────────────────────────────
+// WRITE ROBOTS.TXT
+// ─────────────────────────────────────────────
+
+function writeRobotsTxt(): void {
+  const publicDir = path.resolve(process.cwd(), 'public')
+  fs.mkdirSync(publicDir, { recursive: true })
+
+  const robotsPath = path.join(publicDir, 'robots.txt')
+  const content = `User-agent: *
+Allow: /
+
+Sitemap: ${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/sitemap.xml
+`
+  fs.writeFileSync(robotsPath, content, 'utf-8')
+  console.log(`[Arkzen Router] ✓ robots.txt generated`)
 }
 
 // ─────────────────────────────────────────────
