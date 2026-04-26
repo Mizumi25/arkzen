@@ -89,6 +89,174 @@ listeners: [LogExportActivity, CleanupTempFiles]
 */
 /* @arkzen:events:data-exported:end */
 
+/* @arkzen:listeners:SendWelcomeEmail */
+class SendWelcomeEmail implements ShouldQueue {
+  use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+  public $timeout = 30;
+
+  public function handle($event) {
+    $start = microtime(true);
+    
+    \DB::table('event_log')->insert([
+      'event_name' => 'UserSignedUp',
+      'listener_name' => 'SendWelcomeEmail',
+      'status' => 'completed',
+      'payload' => json_encode($event->payload ?? []),
+      'duration_ms' => intval((microtime(true) - $start) * 1000),
+      'created_at' => now(),
+      'updated_at' => now(),
+    ]);
+  }
+}
+/* @arkzen:listeners:SendWelcomeEmail:end */
+
+/* @arkzen:listeners:UpdateUserStats */
+class UpdateUserStats implements ShouldQueue {
+  use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+  public $timeout = 30;
+
+  public function handle($event) {
+    $start = microtime(true);
+    
+    \DB::table('event_log')->insert([
+      'event_name' => 'UserSignedUp',
+      'listener_name' => 'UpdateUserStats',
+      'status' => 'completed',
+      'payload' => json_encode($event->payload ?? []),
+      'duration_ms' => intval((microtime(true) - $start) * 1000),
+      'created_at' => now(),
+      'updated_at' => now(),
+    ]);
+  }
+}
+/* @arkzen:listeners:UpdateUserStats:end */
+
+/* @arkzen:listeners:NotifyAdmins */
+class NotifyAdmins implements ShouldQueue {
+  use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+  public $timeout = 30;
+
+  public function handle($event) {
+    $start = microtime(true);
+    
+    \DB::table('event_log')->insert([
+      'event_name' => 'UserSignedUp',
+      'listener_name' => 'NotifyAdmins',
+      'status' => 'completed',
+      'payload' => json_encode($event->payload ?? []),
+      'duration_ms' => intval((microtime(true) - $start) * 1000),
+      'created_at' => now(),
+      'updated_at' => now(),
+    ]);
+  }
+}
+/* @arkzen:listeners:NotifyAdmins:end */
+
+/* @arkzen:listeners:ProcessPayment */
+class ProcessPayment implements ShouldQueue {
+  use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+  public $timeout = 30;
+
+  public function handle($event) {
+    $start = microtime(true);
+    
+    \DB::table('event_log')->insert([
+      'event_name' => 'OrderPlaced',
+      'listener_name' => 'ProcessPayment',
+      'status' => 'completed',
+      'payload' => json_encode($event->payload ?? []),
+      'duration_ms' => intval((microtime(true) - $start) * 1000),
+      'created_at' => now(),
+      'updated_at' => now(),
+    ]);
+  }
+}
+/* @arkzen:listeners:ProcessPayment:end */
+
+/* @arkzen:listeners:UpdateInventory */
+class UpdateInventory implements ShouldQueue {
+  use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+  public $timeout = 30;
+
+  public function handle($event) {
+    $start = microtime(true);
+    
+    \DB::table('event_log')->insert([
+      'event_name' => 'OrderPlaced',
+      'listener_name' => 'UpdateInventory',
+      'status' => 'completed',
+      'payload' => json_encode($event->payload ?? []),
+      'duration_ms' => intval((microtime(true) - $start) * 1000),
+      'created_at' => now(),
+      'updated_at' => now(),
+    ]);
+  }
+}
+/* @arkzen:listeners:UpdateInventory:end */
+
+/* @arkzen:listeners:SendOrderConfirmation */
+class SendOrderConfirmation implements ShouldQueue {
+  use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+  public $timeout = 30;
+
+  public function handle($event) {
+    $start = microtime(true);
+    
+    \DB::table('event_log')->insert([
+      'event_name' => 'OrderPlaced',
+      'listener_name' => 'SendOrderConfirmation',
+      'status' => 'completed',
+      'payload' => json_encode($event->payload ?? []),
+      'duration_ms' => intval((microtime(true) - $start) * 1000),
+      'created_at' => now(),
+      'updated_at' => now(),
+    ]);
+  }
+}
+/* @arkzen:listeners:SendOrderConfirmation:end */
+
+/* @arkzen:listeners:LogExportActivity */
+class LogExportActivity implements ShouldQueue {
+  use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+  public $timeout = 30;
+
+  public function handle($event) {
+    $start = microtime(true);
+    
+    \DB::table('event_log')->insert([
+      'event_name' => 'DataExported',
+      'listener_name' => 'LogExportActivity',
+      'status' => 'completed',
+      'payload' => json_encode($event->payload ?? []),
+      'duration_ms' => intval((microtime(true) - $start) * 1000),
+      'created_at' => now(),
+      'updated_at' => now(),
+    ]);
+  }
+}
+/* @arkzen:listeners:LogExportActivity:end */
+
+/* @arkzen:listeners:CleanupTempFiles */
+class CleanupTempFiles implements ShouldQueue {
+  use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+  public $timeout = 30;
+
+  public function handle($event) {
+    $start = microtime(true);
+    
+    \DB::table('event_log')->insert([
+      'event_name' => 'DataExported',
+      'listener_name' => 'CleanupTempFiles',
+      'status' => 'completed',
+      'payload' => json_encode($event->payload ?? []),
+      'duration_ms' => intval((microtime(true) - $start) * 1000),
+      'created_at' => now(),
+      'updated_at' => now(),
+    ]);
+  }
+}
+/* @arkzen:listeners:CleanupTempFiles:end */
+
 /* @arkzen:components:shared */
 
 'use client'
