@@ -63,43 +63,70 @@ function generateIndividualComponentFiles(tatemono: ParsedTatemono, baseDir: str
   const componentsDir = path.join(baseDir, 'components')
   fs.mkdirSync(componentsDir, { recursive: true })
 
-  // Build a map of component names that have CSS Modules
+  // Write ONE _components.tsx with ALL utilities, types, helpers
+  const componentsFile = path.join(componentsDir, '_components.tsx')
+  const componentsContent = `'use client'
+// ============================================================
+// ARKZEN GENERATED SHARED UTILITIES — ${tatemono.meta.name}
+// All utilities, types, constants from @arkzen:components
+// DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
+// Generated: ${new Date().toISOString()}
+// ============================================================
+
+${tatemono.components.map(c => c.raw.trim()).join('\n\n')}
+`
+  fs.writeFileSync(componentsFile, componentsContent, 'utf-8')
+  console.log(`[Arkzen Router] ✓ Utilities: _components.tsx`)
+
+  // Build a map of component names that have CSS Modules (from named styles)
   const stylesByComponent = new Map<string, string>()
   for (const style of tatemono.styles.filter(s => s.name)) {
     stylesByComponent.set(style.name, style.name)
   }
 
+  // Extract PascalCase component names from components block
+  const extractedComponents = new Set<string>()
   for (const component of tatemono.components) {
-    // Extract component name(s) from the raw code
-    // Look for const Component = or export const Component =
-    const componentMatches = component.raw.match(/(?:export\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*[=:(]/g)
+    const componentMatches = component.raw.match(/(?:export\s+)?const\s+([A-Z][A-Za-z0-9_$]*)\s*[=:(]/g) || []
+    for (const match of componentMatches) {
+      const name = match.match(/const\s+([A-Z][A-Za-z0-9_$]*)/)?.[1]
+      if (name) extractedComponents.add(name)
+    }
+  }
+
+  // Generate individual component files that import from _components
+  for (const compName of extractedComponents) {
+    const fileName = `${compName}.tsx`
+    const filePath = path.join(componentsDir, fileName)
     
-    if (componentMatches) {
-      for (const match of componentMatches) {
-        const name = match.match(/const\s+([A-Za-z_$][A-Za-z0-9_$]*)/)?.[1]
-        if (name) {
-          const fileName = `${name}.tsx`
-          const filePath = path.join(componentsDir, fileName)
-          
-          // Check if this component has a CSS Module
-          const cssImport = stylesByComponent.has(name)
-            ? `import styles from '../styles/${name}.module.css'\n`
-            : ''
-          
-          const content = `'use client'
+    const cssImport = stylesByComponent.has(compName)
+      ? `import styles from '../styles/${compName}.module.css'\n`
+      : ''
+    
+    const content = `'use client'
 // ============================================================
-// ARKZEN GENERATED COMPONENT — ${name}
+// ARKZEN GENERATED COMPONENT — ${compName}
+// Re-exported from _components.tsx
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: ${new Date().toISOString()}
 // ============================================================
 
-${cssImport}${component.raw.trim()}
+${cssImport}export { ${compName} } from './_components'
 `
-          fs.writeFileSync(filePath, content, 'utf-8')
-          console.log(`[Arkzen Router] ✓ Component: ${fileName}`)
-        }
+    fs.writeFileSync(filePath, content, 'utf-8')
+    console.log(`[Arkzen Router] ✓ Component: ${fileName}`)
+  }
+
+  // Clean up old loose files
+  try {
+    const files = fs.readdirSync(componentsDir)
+    for (const file of files) {
+      if (file.endsWith('.tsx') && !file.startsWith('_') && !extractedComponents.has(file.replace('.tsx', ''))) {
+        fs.unlinkSync(path.join(componentsDir, file))
       }
     }
+  } catch (e) {
+    // ignore
   }
 }
 
@@ -113,31 +140,17 @@ function generateComponentsIndex(tatemono: ParsedTatemono, baseDir: string): voi
   const componentsDir = path.join(baseDir, 'components')
   const indexPath = path.join(componentsDir, 'index.ts')
 
-  const exports: string[] = []
-  for (const component of tatemono.components) {
-    const componentMatches = component.raw.match(/(?:export\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*[=:(]/g)
-    if (componentMatches) {
-      for (const match of componentMatches) {
-        const name = match.match(/const\s+([A-Za-z_$][A-Za-z0-9_$]*)/)?.[1]
-        if (name) {
-          exports.push(`export { ${name} } from './${name}'`)
-        }
-      }
-    }
-  }
-
-  if (exports.length > 0) {
-    const content = `// ============================================================
+  // Export everything from _components (utilities, types, components)
+  const content = `// ============================================================
 // ARKZEN GENERATED COMPONENTS INDEX — ${tatemono.meta.name}
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
 // Generated: ${new Date().toISOString()}
 // ============================================================
 
-${exports.join('\n')}
+export * from './_components'
 `
-    fs.writeFileSync(indexPath, content, 'utf-8')
-    console.log(`[Arkzen Router] ✓ Components index: index.ts`)
-  }
+  fs.writeFileSync(indexPath, content, 'utf-8')
+  console.log(`[Arkzen Router] ✓ Components index: index.ts`)
 }
 
 // ─────────────────────────────────────────────
@@ -159,14 +172,40 @@ function generatePageFile(
   const isAuthLayout  = page.layout === 'auth'
   const isGuestLayout = page.layout === 'guest'
 
-  // guestOnly: page is public (guest layout) but should bounce logged-in users.
-  // Set via @arkzen:page:guestOnly in the tatemono, or auto-applied to
-  // login/register pages when meta.auth is true.
-  // Pure public pages (landing, about) use guest layout WITHOUT guestOnly.
   const isGuestOnly   = isGuestLayout && (
     (page as any).guestOnly === true ||
     (tatemono.meta.auth && ['login', 'register', 'forgot-password', 'reset-password'].includes(page.name))
   )
+
+  // Extract React hooks/imports from component code so we can merge them
+  const reactHooks = new Set(['useRef', 'useEffect'])
+  const componentCodeLines: string[] = []
+  let componentCode = ''
+  
+  for (const comp of tatemono.components) {
+    let raw = comp.raw.trim()
+    
+    // Extract React imports from component
+    const reactImportMatch = raw.match(/import\s+React[,\s]*\{([^}]*)\}\s+from\s+['"]react['"]/)
+    if (reactImportMatch) {
+      const hooks = reactImportMatch[1].split(',').map(h => h.trim()).filter(h => h && h !== 'React')
+      hooks.forEach(h => reactHooks.add(h))
+    }
+    
+    // Remove 'use client' directives and React imports (we'll provide them)
+    raw = raw.replace(/^['"]use client['"];?\s*\n?/gm, '')
+    raw = raw.replace(/^import\s+React[,\s]*\{[^}]*\}\s+from\s+['"]react['"]\s*;?\n?/gm, '')
+    raw = raw.replace(/^import\s+\{[^}]*React[^}]*\}\s+from\s+['"]react['"]\s*;?\n?/gm, '')
+    
+    const cleaned = raw.trim()
+    if (cleaned) componentCodeLines.push(cleaned)
+  }
+  
+  componentCode = componentCodeLines.join('\n\n')
+  
+  // Build merged React import
+  const hooksArray = Array.from(reactHooks).sort()
+  const reactImport = `import React, { ${hooksArray.join(', ')} } from 'react'`
 
   return `'use client'
 // ============================================================
@@ -176,12 +215,18 @@ function generatePageFile(
 // Generated: ${new Date().toISOString()}
 // ============================================================
 
-import React, { useRef, useEffect } from 'react'
+${reactImport}
 import { motion } from 'framer-motion'
 ${layoutImport}
 ${animImport}
-import { ${componentName} } from '${componentsImportPath}'
 
+// Utilities, types, and helper functions from @arkzen:components
+${componentCode}
+
+// Page component code (from @arkzen:page:${page.name})
+${page.raw.trim()}
+
+// Wrapper for animation + layout
 const ArkzenPage_${toPascalCase(tatemono.meta.name)}_${toPascalCase(page.name)} = () => {
   const pageRef = useRef<HTMLDivElement>(null)
 
