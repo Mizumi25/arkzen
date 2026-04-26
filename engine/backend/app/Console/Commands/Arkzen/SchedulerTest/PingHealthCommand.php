@@ -1,11 +1,11 @@
 <?php
 
 // ============================================================
-// ARKZEN GENERATED COMMAND — GenerateReportCommand
+// ARKZEN GENERATED COMMAND — PingHealthCommand
 // Tatemono: scheduler-test
-// Signature: scheduler-test:generate-report
+// Signature: scheduler-test:ping-health
 // DO NOT EDIT DIRECTLY. Edit the tatemono file instead.
-// Generated: 2026-04-26T02:50:43.877821Z
+// Generated: 2026-04-26T02:50:43.878585Z
 // ============================================================
 
 namespace App\Console\Commands\Arkzen\SchedulerTest;
@@ -13,21 +13,21 @@ namespace App\Console\Commands\Arkzen\SchedulerTest;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
-class GenerateReportCommand extends Command
+class PingHealthCommand extends Command
 {
-    protected $signature   = 'scheduler-test:generate-report';
-    protected $description = 'Generates a daily activity report';
+    protected $signature   = 'scheduler-test:ping-health';
+    protected $description = 'Pings all services and records health status';
 
     public function handle(): int
     {
         $start = microtime(true);
-            $this->info('[Arkzen:scheduler-test] Generating report...');
+            $this->info('[Arkzen:scheduler-test] Pinging services...');
         
             \App\Models\Arkzen\SchedulerTest\CommandRun::create([
-                'command_name' => 'generate-report',
-                'signature'    => 'scheduler-test:generate-report',
+                'command_name' => 'ping-health',
+                'signature'    => 'scheduler-test:ping-health',
                 'exit_code'    => 0,
-                'output'       => 'Daily report generated successfully.',
+                'output'       => 'All services healthy.',
                 'triggered_by' => 'schedule',
                 'duration_ms'  => (int) ((microtime(true) - $start) * 1000),
             ]);

@@ -88,7 +88,7 @@ const PROJ_BACK   = path.join(PROJECT_DIR, 'backend')
 
 const content     = fs.readFileSync(tatPath, 'utf-8')
 const hasRealtime = content.includes('@arkzen:realtime') || content.includes('@arkzen:notifications')
-const hasJobs     = content.includes('@arkzen:jobs')     || content.includes('@arkzen:console')
+const hasJobs     = content.includes('@arkzen:jobs')
 const tatSnake    = tatName.replace(/-/g, '_')   // ← ADDED
 
 divider()
@@ -418,7 +418,8 @@ env = env
   .replace(/#?\s*DB_USERNAME=.*/,     '# DB_USERNAME=root')
   .replace(/#?\s*DB_PASSWORD=.*/,     '# DB_PASSWORD=')
   .replace(/QUEUE_CONNECTION=.*/,     'QUEUE_CONNECTION=database')
-  .replace(/SESSION_DRIVER=.*/,       'SESSION_DRIVER=database')
+  .replace(/SESSION_DRIVER=.*/,       'SESSION_DRIVER=file')
+  .replace(/CACHE_STORE=.*/,          'CACHE_STORE=file')
   .replace(/BROADCAST_CONNECTION=.*/, hasRealtime ? 'BROADCAST_CONNECTION=reverb' : 'BROADCAST_CONNECTION=log')
 
 if (hasRealtime && !env.includes('REVERB_APP_ID=')) {

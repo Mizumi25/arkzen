@@ -79,6 +79,33 @@ function extractSectionWithPosition(content: string, marker: string): ArkzenSect
   return { raw, start, end }
 }
 
+// Finds the closing */ for an opening /* @arkzen:... comment.
+// Handles both one-line openers (`/* @arkzen:components:x */`) and
+// multiline YAML comments, while skipping inline cron fragments like `*/5`.
+function findOpeningCommentEnd(content: string, openIdx: number, searchFrom: number): number {
+  const firstLineBreak = content.indexOf('\n', openIdx)
+  let cursor = searchFrom
+
+  while (true) {
+    const candidate = content.indexOf('*/', cursor)
+    if (candidate === -1) return -1
+
+    // One-line opener: */ appears before the first newline after openIdx.
+    const isOneLineClose = firstLineBreak !== -1 && candidate < firstLineBreak
+    // Multiline opener: real closing */ is on its own line.
+    const isMultilineClose = candidate > 0 && content[candidate - 1] === '\n'
+    // Defensive: comment starts with /* right away.
+    const isImmediateClose = candidate === openIdx + 2
+
+    if (isOneLineClose || isMultilineClose || isImmediateClose) {
+      return candidate
+    }
+
+    // Skip inline `*/` fragments (e.g. cron values like "*/5 * * * *")
+    cursor = candidate + 2
+  }
+}
+
 // ─────────────────────────────────────────────
 // MULTI SECTION EXTRACTOR — YAML blocks (no identifiers)
 // For @arkzen:database and @arkzen:api (YAML comment blocks)
@@ -160,8 +187,9 @@ function extractAllNamedSections(content: string, marker: string): ArkzenSection
     // Skip :end markers
     if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
 
-    // Find end of opening comment
-    const openCommentEnd = content.indexOf('*/', openIdx)
+    // Find end of opening comment.
+    // Guard against inline cron fragments like "*/5 * * * *" in YAML.
+    const openCommentEnd = findOpeningCommentEnd(content, openIdx, openIdx + openPattern.length)
     if (openCommentEnd === -1) break
 
     // Find closing marker: /* @arkzen:marker:identifier:end */
@@ -911,8 +939,8 @@ function parseAllConsoles(content: string): ArkzenSection[] {
     const identifier = identMatch[1]
     if (identifier === 'end') { searchFrom = openIdx + openPattern.length; continue }
 
-    // Find closing */ of opening comment
-    const openCommentEnd = content.indexOf('*/', openIdx)
+    // Find closing */ of opening comment (cron-safe).
+    const openCommentEnd = findOpeningCommentEnd(content, openIdx, openIdx + openPattern.length)
     if (openCommentEnd === -1) break
 
     // YAML config lives inside the opening comment
