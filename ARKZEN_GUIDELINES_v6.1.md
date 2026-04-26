@@ -1218,6 +1218,140 @@ interface Product {
 /* @arkzen:components:shared:end */
 ```
 
+---
+
+## SECTION 16B — Component Naming Conventions (v7.1)
+
+### How Component Extraction Works
+
+During generation, the engine automatically creates **individual component files** from the `@arkzen:components` block. The naming convention determines what gets extracted as a separate file vs. what stays in the shared utilities backend.
+
+### Naming Rules (CRITICAL)
+
+```
+✓ EXTRACT as individual files:
+  - Components: PascalCase (e.g., FeatureCard, HeroSection, UserProfile)
+  - React components: const ComponentName = () => { ... }
+  - Uses React JSX, props, hooks
+
+✗ DO NOT EXTRACT (stays in _components.tsx):
+  - Types: type User = { ... } or interface User { ... }
+  - Constants: const FEATURES = [...] or const MAX_SIZE = 100
+  - Utility functions: const getIconName = () => { ... }
+  - Hooks: const useCustom = () => { ... }
+```
+
+### Examples
+
+**✓ CORRECT — This WILL be extracted to individual files:**
+```tsx
+// In @arkzen:components:shared
+
+// Gets extracted → FeatureCard.tsx
+const FeatureCard: React.FC<{ title: string }> = ({ title }) => (
+  <div className="p-4 rounded-lg border">
+    <h3>{title}</h3>
+  </div>
+)
+
+// Gets extracted → HeroSection.tsx
+const HeroSection = ({ children }) => (
+  <div className="py-16 text-center">{children}</div>
+)
+
+// Gets extracted → UserAvatar.tsx
+const UserAvatar: React.FC<{ name: string }> = ({ name }) => (
+  <div className="w-10 h-10 rounded-full bg-blue-500" title={name} />
+)
+```
+
+**✗ WRONG — These will NOT be extracted (stay in _components.tsx):**
+```tsx
+// DO NOT extract — stays in _components.tsx
+type User = {
+  id: number
+  name: string
+  email: string
+}
+
+// DO NOT extract — stays in _components.tsx
+interface Feature {
+  icon: React.ReactNode
+  title: string
+  color: 'blue' | 'red' | 'green'
+}
+
+// DO NOT extract — stays in _components.tsx
+const FEATURES: Feature[] = [
+  { icon: <Package />, title: 'Dashboard', color: 'blue' },
+  { icon: <Settings />, title: 'Settings', color: 'red' },
+]
+
+// DO NOT extract — stays in _components.tsx
+const MAX_ITEMS = 50
+const API_TIMEOUT = 5000
+
+// DO NOT extract — stays in _components.tsx
+const getColorClass = (color: string) => {
+  return color === 'blue' ? 'bg-blue-500' : 'bg-red-500'
+}
+
+// DO NOT extract — stays in _components.tsx
+const useCustomFetch = (url: string) => {
+  const [data, setData] = useState(null)
+  // ... hook logic
+  return data
+}
+```
+
+### Generated File Structure
+
+For this component block:
+```tsx
+/* @arkzen:components:shared */
+interface Feature { ... }
+const FEATURES = [ ... ]
+const FeatureCard = (props) => { ... }
+const HeroSection = (props) => { ... }
+const getIcon = () => { ... }
+/* @arkzen:components:shared:end */
+```
+
+Engine generates:
+```
+components/
+├── _components.tsx          ← Backend: Types, constants, utilities
+│   ├── interface Feature
+│   ├── const FEATURES
+│   └── const getIcon
+├── FeatureCard.tsx          ← Re-export only
+│   └── export { FeatureCard } from './_components'
+├── HeroSection.tsx          ← Re-export only
+│   └── export { HeroSection } from './_components'
+└── index.ts                 ← Re-exports everything
+    └── export * from './_components'
+```
+
+### Why This Design?
+
+1. **No duplicate imports** — React imports in one place
+2. **Single source of truth** — All utilities in `_components.tsx`
+3. **Individual access** — Can import `{ FeatureCard }` directly
+4. **Type safety** — Types used by components stay close together
+5. **No circular deps** — Components import from shared, not vice versa
+
+### Summary Table
+
+| Name Pattern | Type | Extract? | Goes To |
+|---|---|---|---|
+| `ComponentName` (PascalCase, not all-caps) | React component | ✓ Yes | `ComponentName.tsx` |
+| `User` | TypeScript type/interface | ✗ No | `_components.tsx` |
+| `CONSTANT_NAME` (all-caps) | JavaScript constant | ✗ No | `_components.tsx` |
+| `getHelper()` (camelCase) | Utility function | ✗ No | `_components.tsx` |
+| `useCustom()` (useXxx) | Custom React hook | ✗ No | `_components.tsx` |
+
+---
+
 **Available engine imports:**
 ```
 Components:
@@ -1262,8 +1396,65 @@ Icons (always):
 Each page is its own route: `/{tatemono-name}/{page-name}`
 Special case: page named `index` → `/{tatemono-name}` (no subfolder)
 
+### Routing Examples (IMPORTANT!)
+
+For tatemono named `my-app`:
+
 ```tsx
-/* @arkzen:page:dashboard */
+/* @arkzen:page:index */            → http://localhost:3000/my-app
+const IndexPage = () => { ... }
+
+/* @arkzen:page:dashboard */        → http://localhost:3000/my-app/dashboard
+const DashboardPage = () => { ... }
+
+/* @arkzen:page:about */            → http://localhost:3000/my-app/about
+const AboutPage = () => { ... }
+
+/* @arkzen:page:settings */         → http://localhost:3000/my-app/settings
+const SettingsPage = () => { ... }
+```
+
+### ⚠️ Navigation Trivia
+
+When creating navbar/links in components, **always use full paths**:
+
+```tsx
+// ✗ WRONG — These won't work
+<Link href="/index">Home</Link>
+<Link href="/about">About</Link>
+
+// ✓ CORRECT — Use full tatemono path
+<Link href="/my-app">Home</Link>
+<Link href="/my-app/about">About</Link>
+<Link href="/my-app/dashboard">Dashboard</Link>
+```
+
+**Why?** Pages are generated **inside the tatemono folder**, not at the root. The router structure:
+- **index page** → `/app/{tatemono}/page.tsx` → accessible at `/{tatemono}`
+- **other pages** → `/app/{tatemono}/{name}/page.tsx` → accessible at `/{tatemono}/{name}`
+
+So navbar/menu links must reference the full path including the tatemono name!
+
+```tsx
+/* @arkzen:page:index */
+const IndexPage = () => {
+  return (
+    <>
+      <nav>
+        <Link href="/my-app">Home</Link>                    {/* ✓ Correct */}
+        <Link href="/my-app/about">About</Link>             {/* ✓ Correct */}
+        <Link href="/my-app/dashboard">Dashboard</Link>    {/* ✓ Correct */}
+      </nav>
+      {/* page content */}
+    </>
+  )
+}
+/* @arkzen:page:index:end */
+```
+
+---
+
+**Page structure:**
 /* @arkzen:page:layout:guest */
 const DashboardPage = () => {
   return (

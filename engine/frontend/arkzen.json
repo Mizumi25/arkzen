@@ -13,7 +13,7 @@
         "dashboard"
       ],
       "registered": "2026-04-21T03:52:52.413Z",
-      "lastUpdated": "2026-04-26T13:09:44.913Z",
+      "lastUpdated": "2026-04-26T13:23:42.304Z",
       "auth": true
     },
     {
@@ -25,7 +25,7 @@
         "index"
       ],
       "registered": "2026-04-21T03:52:52.878Z",
-      "lastUpdated": "2026-04-26T13:09:45.516Z",
+      "lastUpdated": "2026-04-26T13:23:42.735Z",
       "auth": false
     },
     {
@@ -39,7 +39,7 @@
         "dashboard"
       ],
       "registered": "2026-04-21T03:52:53.457Z",
-      "lastUpdated": "2026-04-26T13:09:46.248Z",
+      "lastUpdated": "2026-04-26T13:23:43.414Z",
       "auth": true
     },
     {
@@ -53,7 +53,7 @@
         "dashboard"
       ],
       "registered": "2026-04-21T03:52:53.736Z",
-      "lastUpdated": "2026-04-26T13:09:46.479Z",
+      "lastUpdated": "2026-04-26T13:23:43.678Z",
       "auth": true
     },
     {
@@ -65,7 +65,7 @@
         "index"
       ],
       "registered": "2026-04-21T03:52:54.019Z",
-      "lastUpdated": "2026-04-26T13:09:46.730Z",
+      "lastUpdated": "2026-04-26T13:23:43.936Z",
       "auth": false
     },
     {
@@ -77,7 +77,7 @@
         "index"
       ],
       "registered": "2026-04-21T03:52:54.242Z",
-      "lastUpdated": "2026-04-26T13:09:46.946Z",
+      "lastUpdated": "2026-04-26T13:23:44.149Z",
       "auth": false
     },
     {
@@ -89,7 +89,7 @@
         "index"
       ],
       "registered": "2026-04-21T03:52:54.516Z",
-      "lastUpdated": "2026-04-26T13:09:47.183Z",
+      "lastUpdated": "2026-04-26T13:23:44.368Z",
       "auth": false
     },
     {
@@ -101,7 +101,7 @@
         "index"
       ],
       "registered": "2026-04-21T03:52:54.768Z",
-      "lastUpdated": "2026-04-26T13:09:47.414Z",
+      "lastUpdated": "2026-04-26T13:23:44.590Z",
       "auth": false
     },
     {
@@ -113,7 +113,7 @@
         "dashboard"
       ],
       "registered": "2026-04-21T03:52:54.982Z",
-      "lastUpdated": "2026-04-26T13:09:47.643Z",
+      "lastUpdated": "2026-04-26T13:23:44.810Z",
       "auth": false
     },
     {
@@ -127,7 +127,7 @@
         "dashboard"
       ],
       "registered": "2026-04-21T03:52:55.196Z",
-      "lastUpdated": "2026-04-26T13:09:47.922Z",
+      "lastUpdated": "2026-04-26T13:23:45.056Z",
       "auth": true
     },
     {
@@ -139,7 +139,7 @@
         "index"
       ],
       "registered": "2026-04-21T03:52:55.425Z",
-      "lastUpdated": "2026-04-26T13:09:48.172Z",
+      "lastUpdated": "2026-04-26T13:23:45.307Z",
       "auth": false
     },
     {
@@ -153,7 +153,7 @@
         "dashboard"
       ],
       "registered": "2026-04-21T03:52:55.633Z",
-      "lastUpdated": "2026-04-26T13:09:48.381Z",
+      "lastUpdated": "2026-04-26T13:23:45.696Z",
       "auth": true
     },
     {
@@ -167,7 +167,7 @@
         "dashboard"
       ],
       "registered": "2026-04-21T03:52:56.622Z",
-      "lastUpdated": "2026-04-26T13:09:49.514Z",
+      "lastUpdated": "2026-04-26T13:23:46.872Z",
       "auth": true
     },
     {
@@ -179,7 +179,7 @@
         "dashboard"
       ],
       "registered": "2026-04-21T03:52:56.877Z",
-      "lastUpdated": "2026-04-26T13:09:49.781Z",
+      "lastUpdated": "2026-04-26T13:23:47.149Z",
       "auth": false
     },
     {
@@ -191,7 +191,7 @@
         "dashboard"
       ],
       "registered": "2026-04-21T03:52:57.130Z",
-      "lastUpdated": "2026-04-26T13:09:50.033Z",
+      "lastUpdated": "2026-04-26T13:23:47.391Z",
       "auth": false
     },
     {
@@ -203,7 +203,21 @@
         "index"
       ],
       "registered": "2026-04-26T09:38:40.719Z",
-      "lastUpdated": "2026-04-26T13:09:48.538Z",
+      "lastUpdated": "2026-04-26T13:23:45.855Z",
+      "auth": false
+    },
+    {
+      "name": "new-updates-styles",
+      "version": "2.0.0",
+      "status": "active",
+      "filePath": "/data/data/com.termux/files/home/arkzen/tatemonos/new-updates-styles/core.tsx",
+      "pages": [
+        "index",
+        "about",
+        "features"
+      ],
+      "registered": "2026-04-26T13:23:45.478Z",
+      "lastUpdated": "2026-04-26T13:38:38.449Z",
       "auth": false
     }
   ]

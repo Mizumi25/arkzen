@@ -85,12 +85,15 @@ ${tatemono.components.map(c => c.raw.trim()).join('\n\n')}
   }
 
   // Extract PascalCase component names from components block
+  // Skip types and ALL_CAPS constants (only extract actual components)
   const extractedComponents = new Set<string>()
   for (const component of tatemono.components) {
     const componentMatches = component.raw.match(/(?:export\s+)?const\s+([A-Z][A-Za-z0-9_$]*)\s*[=:(]/g) || []
     for (const match of componentMatches) {
       const name = match.match(/const\s+([A-Z][A-Za-z0-9_$]*)/)?.[1]
-      if (name) extractedComponents.add(name)
+      if (name && !/^[A-Z_]+$/.test(name)) {  // Skip if all uppercase (constants like FEATURES, COLORS)
+        extractedComponents.add(name)
+      }
     }
   }
 
