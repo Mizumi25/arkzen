@@ -112,6 +112,7 @@ public function handle(): void
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { Cpu } from 'lucide-react'
 import { arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 /* @arkzen:components:shared:end */
@@ -171,7 +172,7 @@ const DashboardPage = () => {
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">⚙️ Job Test</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2"><Cpu size={20} /> Job Test</h1>
             <p className="text-sm text-neutral-500 mt-1">Queue: <code>php artisan queue:work</code></p>
           </div>
         </div>

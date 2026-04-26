@@ -49,6 +49,7 @@ endpoints:
     method: GET
     route: /files
     description: List all uploaded files
+    type: upload_index
     response:
       type: collection
   store:
@@ -83,6 +84,7 @@ endpoints:
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
+import { CloudUpload, FileArchive, FileText, FileVideo, Folder, ImageIcon, Upload } from 'lucide-react'
 import { arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 /* @arkzen:components:shared:end */
@@ -167,11 +169,11 @@ const DashboardPage = () => {
   }
 
   const fileIcon = (mime: string) => {
-    if (mime.startsWith('image/')) return '🖼️'
-    if (mime.includes('pdf')) return '📄'
-    if (mime.includes('zip') || mime.includes('rar')) return '🗜️'
-    if (mime.includes('video/')) return '🎬'
-    return '📁'
+    if (mime.startsWith('image/')) return <ImageIcon size={18} className="text-emerald-600" />
+    if (mime.includes('pdf')) return <FileText size={18} className="text-sky-600" />
+    if (mime.includes('zip') || mime.includes('rar')) return <FileArchive size={18} className="text-amber-600" />
+    if (mime.includes('video/')) return <FileVideo size={18} className="text-violet-600" />
+    return <Folder size={18} className="text-neutral-500" />
   }
 
   return (
@@ -179,7 +181,7 @@ const DashboardPage = () => {
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">📁 Upload Test</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2"><Upload size={20} /> Upload Test</h1>
             <p className="text-sm text-neutral-500 mt-1">Run <code>php artisan storage:link</code> to enable public URLs.</p>
           </div>
           
@@ -201,7 +203,7 @@ const DashboardPage = () => {
             className="hidden"
             onChange={e => upload(e.target.files)}
           />
-          <div className="text-3xl mb-2">☁️</div>
+          <div className="text-3xl mb-2 flex justify-center"><CloudUpload size={28} className="text-neutral-500" /></div>
           <div className="text-sm font-medium text-neutral-700">Drop files here or click to browse</div>
           <div className="text-xs text-neutral-400 mt-1">Any file type. Max 10MB each.</div>
 
@@ -260,7 +262,7 @@ const DashboardPage = () => {
 
         <div className="text-xs text-neutral-400 bg-neutral-50 rounded-xl p-4">
           <strong>Backend stores files at:</strong> <code>storage/app/public/arkzen/upload-test/</code><br/>
-          <strong>Access via:</strong> <code>http://localhost/storage/arkzen/upload-test/filename</code><br/>
+          <strong>Access via:</strong> <code>/storage/arkzen/upload-test/filename</code><br/>
           <strong>Upload progress</strong> uses XHR instead of fetch — XHR supports <code>onprogress</code>, fetch does not.
         </div>
       </div>

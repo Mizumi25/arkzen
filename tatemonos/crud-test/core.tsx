@@ -117,6 +117,7 @@ endpoints:
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
+import { Boxes } from 'lucide-react'
 import { arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 type Item = {
@@ -266,7 +267,7 @@ const remove = async (id: number) => {
 
       <div className="max-w-3xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">🔧 CRUD Test</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Boxes size={20} /> CRUD Test</h1>
           <button className="arkzen-btn text-sm" onClick={openCreate}>+ Create Item</button>
         </div>
 

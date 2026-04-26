@@ -187,6 +187,7 @@ public function handle(): int
 'use client'
 
 import React                        from 'react'
+import { Activity, BarChart3, Clock3, RefreshCw, Trash2 } from 'lucide-react'
 import { useMutation }              from '@/arkzen/core/hooks/useMutation'
 import { useQuery }                 from '@/arkzen/core/hooks/useQuery'
 import { useToast }                 from '@/arkzen/core/components/Toast'
@@ -210,10 +211,10 @@ const DashboardPage = () => {
   const { toast } = useToast()
 
   const commands = [
-    { key: 'cleanup-temp',    label: 'Cleanup Temp',    signature: 'scheduler-test:cleanup-temp',    schedule: 'Every hour',    icon: '🧹' },
-    { key: 'generate-report', label: 'Generate Report', signature: 'scheduler-test:generate-report', schedule: 'Daily at 8am', icon: '📊' },
-    { key: 'ping-health',     label: 'Ping Health',     signature: 'scheduler-test:ping-health',     schedule: 'Every 5 min',  icon: '💓' },
-    { key: 'sync-data',       label: 'Sync Data',       signature: 'scheduler-test:sync-data',       schedule: 'Every 15 min', icon: '🔄' },
+    { key: 'cleanup-temp',    label: 'Cleanup Temp',    signature: 'scheduler-test:cleanup-temp',    schedule: 'Every hour',    icon: <Trash2 size={14} className="text-amber-600" /> },
+    { key: 'generate-report', label: 'Generate Report', signature: 'scheduler-test:generate-report', schedule: 'Daily at 8am', icon: <BarChart3 size={14} className="text-violet-600" /> },
+    { key: 'ping-health',     label: 'Ping Health',     signature: 'scheduler-test:ping-health',     schedule: 'Every 5 min',  icon: <Activity size={14} className="text-red-600" /> },
+    { key: 'sync-data',       label: 'Sync Data',       signature: 'scheduler-test:sync-data',       schedule: 'Every 15 min', icon: <RefreshCw size={14} className="text-sky-600" /> },
   ]
 
   const { data: runsData, refetch } = useQuery<{ data: CommandRun[] }>('/api/scheduler-test/runs', {
@@ -249,7 +250,7 @@ const DashboardPage = () => {
       <div className="max-w-2xl mx-auto space-y-6">
 
         <div>
-          <h1 className="text-2xl font-bold">⏰ Scheduler Test</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Clock3 size={20} /> Scheduler Test</h1>
           <p className="text-sm text-neutral-500 mt-1">Run commands manually or let the scheduler fire them.</p>
         </div>
 
@@ -257,11 +258,11 @@ const DashboardPage = () => {
           {commands.map(cmd => (
             <div key={cmd.key} className="bg-white rounded-2xl border border-neutral-100 p-4">
               <div className="flex items-center gap-2 mb-1">
-                <span>{cmd.icon}</span>
+                <span className="inline-flex items-center justify-center">{cmd.icon}</span>
                 <span className="font-medium text-sm">{cmd.label}</span>
               </div>
               <code className="text-xs text-neutral-400 block mb-1">{cmd.signature}</code>
-              <div className="text-xs text-neutral-500 mb-3">🕐 {cmd.schedule}</div>
+              <div className="text-xs text-neutral-500 mb-3 flex items-center gap-1"><Clock3 size={11} /> {cmd.schedule}</div>
               <button
                 className="arkzen-btn-primary w-full text-sm"
                 onClick={() => runCommand('/api/scheduler-test/run', { command: cmd.key, triggered_by: 'manual' })}

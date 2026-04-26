@@ -21,6 +21,11 @@ use Illuminate\Support\Facades\Log;
 
 class ControllerBuilder
 {
+    private static string $validationTatSlug = '';
+    private static string $validationConnection = '';
+    /** @var string[] */
+    private static array $validationTables = [];
+
     public static function build(array $module): void
     {
         $api            = $module['api'];
@@ -30,6 +35,10 @@ class ControllerBuilder
         $modelName      = $api['model'];
         $endpoints      = $api['endpoints'];
         $useResource    = $api['resource'] ?? false;
+
+        self::$validationTatSlug    = $name;
+        self::$validationConnection = ModelBuilder::slugToConnection($name);
+        self::$validationTables     = self::extractValidationTables($module);
         
         $filePath       = app_path("Http/Controllers/Arkzen/{$slugNs}/{$controllerName}.php");
 
@@ -96,7 +105,10 @@ class {$controllerName} extends Controller
     private static function generateMethod(string $name, string $modelName, array $endpoint, string $slugNs, bool $useResource): string
     {
         return match ($name) {
-            'index'   => self::generateIndex($modelName, $endpoint, $slugNs, $useResource),
+            'index'   => match ($endpoint['type'] ?? '') {
+                'upload_index' => self::generateUploadIndex($modelName, $endpoint),
+                default        => self::generateIndex($modelName, $endpoint, $slugNs, $useResource),
+            },
             'show'    => self::generateShow($modelName, $endpoint, $slugNs, $useResource),
             'update'  => self::generateUpdate($modelName, $endpoint, $slugNs, $useResource), 
             'store' => match ($endpoint['type'] ?? '') {
@@ -348,6 +360,29 @@ class {$controllerName} extends Controller
     }
 
     // ─────────────────────────────────────────────
+    // UPLOAD INDEX — lists files with public URL appended
+    // ─────────────────────────────────────────────
+
+    private static function generateUploadIndex(string $model, array $endpoint): string
+    {
+        $description = $endpoint['description'] ?? 'List uploaded files';
+
+        return "    /**
+     * {$description}
+     */
+    public function index(Request \$request): JsonResponse
+    {
+        \$records = {$model}::latest()->get()->map(function (\$file) {
+            \$file->url = \$file->is_image
+                ? '/storage/' . ltrim(\$file->disk_path, '/')
+                : null;
+            return \$file;
+        });
+
+        return response()->json(['data' => \$records]);
+    }";
+    }
+
     // UPLOAD STORE — handles multipart file uploads
     // ─────────────────────────────────────────────
 
@@ -386,7 +421,7 @@ class {$controllerName} extends Controller
             ]);
 
             if (\$isImage) {
-                \$record->url = \Storage::url(\$storedName);
+                \$record->url = '/storage/' . ltrim(\$storedName, '/');
             }
 
             \$uploaded[] = \$record;
@@ -421,7 +456,7 @@ class {$controllerName} extends Controller
     }
 
     // ─────────────────────────────────────────────
-    // UPLOAD URL — returns public URL or download
+    // UPLOAD URL — returns file as download
     // ─────────────────────────────────────────────
 
     private static function generateUploadUrl(string $model, array $endpoint): string
@@ -432,15 +467,16 @@ class {$controllerName} extends Controller
         return "    /**
      * {$description}
      */
-    public function fileUrl({$model} \${$varName}): JsonResponse
+    public function fileUrl({$model} \${$varName}): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
     {
+        \$fullPath = \Storage::disk('public')->path(\${$varName}->disk_path);
+
         if (!\Storage::disk('public')->exists(\${$varName}->disk_path)) {
             return response()->json(['message' => 'File not found'], 404);
         }
 
-        return response()->json([
-            'url'  => \Storage::url(\${$varName}->disk_path),
-            'name' => \${$varName}->original_name,
+        return response()->download(\$fullPath, \${$varName}->original_name, [
+            'Content-Type' => \${$varName}->mime_type,
         ]);
     }
 
@@ -450,11 +486,13 @@ class {$controllerName} extends Controller
 
     private function tatemonoSlug(): string
     {
-        // Derives the tatemono slug from the controller namespace
-        // e.g. App\Http\Controllers\Arkzen\UploadTest\... → upload-test
-        \$ns    = class_basename(static::class);
-        \$parts = preg_split('/(?=[A-Z])/', \$ns, -1, PREG_SPLIT_NO_EMPTY);
-        return strtolower(implode('-', \$parts));
+        // Derives the tatemono slug from the Arkzen namespace segment
+        // e.g. App\Http\Controllers\Arkzen\UploadTest\UploadedFileController → upload-test
+        \$parts   = explode('\\\\', static::class);
+        \$idx     = array_search('Arkzen', \$parts);
+        \$segment = (\$idx !== false && isset(\$parts[\$idx + 1])) ? \$parts[\$idx + 1] : class_basename(static::class);
+        \$words   = preg_split('/(?=[A-Z])/', \$segment, -1, PREG_SPLIT_NO_EMPTY);
+        return strtolower(implode('-', \$words));
     }";
     }
 
@@ -678,17 +716,7 @@ class {$controllerName} extends Controller
     }
     
     // ─────────────────────────────────────────────
-    // ─────────────────────────────────────────────
-    // BROADCAST — stores message and dispatches the right
-    // broadcast event based on the channel_type field.
-    //
-    // channel_type  → Event class        → Channel
-    // public        → MessageSentPublic  → Channel(slug-public)
-    // private       → MessageSentPrivate → PrivateChannel(slug.userId)
-    // presence      → MessageSentPresence→ PresenceChannel(slug-presence)
-    //
-    // Falls back to MessageSentPublic when channel_type is absent
-    // so the old single-event tatemono shape still works.
+    // BROADCAST
     // ─────────────────────────────────────────────
 
     private static function generateBroadcast(string $model, string $slugNs, array $endpoint): string
@@ -696,7 +724,6 @@ class {$controllerName} extends Controller
         $description = $endpoint['description'] ?? 'Store and broadcast';
         $validation  = self::generateValidation($endpoint['validation'] ?? []);
 
-        // Base namespace for all broadcast event classes in this tatemono
         $eventNs = "\\App\\Events\\Arkzen\\{$slugNs}\\Broadcast";
 
         return "    /**
@@ -711,16 +738,12 @@ class {$controllerName} extends Controller
             \$message     = {$model}::create(\$validated);
             \$channelType = \$validated['channel_type'] ?? 'public';
 
-            // Resolve the correct broadcast event class for this channel type.
-            // Classes are generated by BroadcastBuilder from @arkzen:realtime blocks.
             \$map = [
                 'public'   => '{$eventNs}\\\\MessageSentPublic',
                 'private'  => '{$eventNs}\\\\MessageSentPrivate',
                 'presence' => '{$eventNs}\\\\MessageSentPresence',
             ];
 
-            // Dispatch to the correct event class — always unconditional.
-            // BroadcastBuilder generates these from @arkzen:realtime event blocks.
             if (\$channelType === 'private') {
                 broadcast(new {$eventNs}\\MessageSentPrivate(\$request->user('sanctum')?->id, \$message->toArray()));
             } elseif (\$channelType === 'presence') {
@@ -733,10 +756,8 @@ class {$controllerName} extends Controller
         }";
     }
     
-    
-    
     // ─────────────────────────────────────────────
-    // MAIL SEND — sends a mailable and logs the attempt
+    // MAIL SEND
     // ─────────────────────────────────────────────
     private static function generateMailSend(string $model, array $endpoint, string $slugNs): string
     {
@@ -752,10 +773,8 @@ class {$controllerName} extends Controller
 {$validation}
         ]);
 
-        // Capture authenticated user first — explicit guard avoids cache poisoning
         \$user = \$request->user('sanctum');
 
-        // Dynamically resolve the Mailable class from the mail key
         \$mailKey = \$validated['mail'];
         \$className = \\Illuminate\\Support\\Str::studly(str_replace('-', '_', \$mailKey)) . 'Mail';
         \$fullClass = \"\\\\App\\\\Mail\\\\Arkzen\\\\{$slugNs}\\\\\" . \$className;
@@ -764,10 +783,8 @@ class {$controllerName} extends Controller
             throw new \\InvalidArgumentException('Unknown mail type: ' . \$mailKey);
         }
 
-        // Send the email (queued if the mailable implements ShouldQueue)
         \\Mail::to(\$validated['to'])->send(new \$fullClass( ...array_values(\$validated['data'] ?? []) ));
 
-        // Log the attempt using the captured user
         \$mailLog = {$model}::create([
             'user_id'   => \$user?->id,
             'to_email'  => \$validated['to'],
@@ -780,11 +797,10 @@ class {$controllerName} extends Controller
     }";
     }
     
-    
     // ─────────────────────────────────────────────
-    // NOTIFICATION TRIGGER — dispatches a notification to the authenticated user
+    // NOTIFICATION TRIGGER
     // ─────────────────────────────────────────────
-         private static function generateNotificationTrigger(string $model, array $endpoint, string $slugNs): string
+    private static function generateNotificationTrigger(string $model, array $endpoint, string $slugNs): string
     {
         $description = $endpoint['description'] ?? 'Trigger a notification';
         $validation  = self::generateValidation($endpoint['validation'] ?? []);
@@ -801,7 +817,6 @@ class {$controllerName} extends Controller
             \$user = \$request->user();
             \$notificationKey = \$validated['notification'];
     
-            // Dynamically resolve the notification class
             \$className = \\Illuminate\\Support\\Str::studly(str_replace('-', '_', \$notificationKey)) . 'Notification';
             \$fullClass = \"\\\\App\\\\Notifications\\\\Arkzen\\\\{$slugNs}\\\\\" . \$className;
     
@@ -809,7 +824,6 @@ class {$controllerName} extends Controller
                 throw new \\InvalidArgumentException('Unknown notification type: ' . \$notificationKey);
             }
     
-            // Dispatch the notification with the user as the notifiable
             \$user->notify(new \$fullClass(\$user));
     
             return response()->json([
@@ -818,13 +832,9 @@ class {$controllerName} extends Controller
             ], 201);
         }";
     }
-    
 
     // ─────────────────────────────────────────────
     // NATIVE NOTIFICATION METHODS — v5.7
-    // Used when notification_trigger endpoint is present.
-    // No custom Eloquent model — all queries go through
-    // Laravel's native $user->notifications relation.
     // ─────────────────────────────────────────────
 
     private static function generateNativeNotificationMethods(array $endpoints, string $slugNs): string
@@ -892,9 +902,73 @@ class {$controllerName} extends Controller
     {
         $lines = [];
         foreach ($rules as $field => $rule) {
-            $lines[] = "            '{$field}' => '{$rule}'";
+            $normalizedRule = self::normalizeValidationRule((string) $rule);
+            $lines[] = "            '{$field}' => '{$normalizedRule}'";
         }
         return implode(",\n", $lines);
+    }
+
+    private static function normalizeValidationRule(string $rule): string
+    {
+        if ($rule === '') return $rule;
+
+        $segments = explode('|', $rule);
+        foreach ($segments as &$segment) {
+            if (!str_starts_with($segment, 'unique:') && !str_starts_with($segment, 'exists:')) {
+                continue;
+            }
+
+            [$keyword, $params] = explode(':', $segment, 2);
+            $parts = explode(',', $params);
+            $table = trim($parts[0] ?? '');
+
+            if ($table === '' || str_contains($table, '.')) {
+                continue;
+            }
+
+            $resolvedTable = self::resolveValidationTable($table);
+            if ($resolvedTable === null || self::$validationConnection === '') {
+                continue;
+            }
+
+            $parts[0] = self::$validationConnection . '.' . $resolvedTable;
+            $segment = $keyword . ':' . implode(',', $parts);
+        }
+        unset($segment);
+
+        return implode('|', $segments);
+    }
+
+    private static function resolveValidationTable(string $table): ?string
+    {
+        if ($table === '' || self::$validationTatSlug === '') return null;
+
+        if (in_array($table, self::$validationTables, true)) {
+            return $table;
+        }
+
+        $prefixed = ModelBuilder::prefixedTable(self::$validationTatSlug, $table);
+        return in_array($prefixed, self::$validationTables, true) ? $prefixed : null;
+    }
+
+    private static function extractValidationTables(array $module): array
+    {
+        $tatSlug = $module['name'] ?? '';
+        if ($tatSlug === '') return [];
+
+        $tables = [];
+
+        if (!empty($module['database']['table'])) {
+            $tables[] = ModelBuilder::prefixedTable($tatSlug, $module['database']['table']);
+        }
+
+        foreach (($module['databases'] ?? []) as $db) {
+            if (!empty($db['table'])) {
+                $tables[] = ModelBuilder::prefixedTable($tatSlug, $db['table']);
+            }
+        }
+
+        return array_values(array_unique($tables));
     }
 
     private static function generateFilterLogic(array $query): string

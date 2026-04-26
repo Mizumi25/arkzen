@@ -22,6 +22,7 @@ layout:
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { Lock, ShieldCheck } from 'lucide-react'
 import { useAuthStore, setActiveTatemono } from '@/arkzen/core/stores/authStore'
 
 // Activate the correct isolated auth context for this Tatemono
@@ -52,7 +53,7 @@ const LoginPage = () => {
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-8 w-full max-w-sm space-y-5">
         <div>
-          <h1 className="text-xl font-bold">🔐 Auth Test</h1>
+          <h1 className="text-xl font-bold flex items-center gap-2"><Lock size={18} /> Auth Test</h1>
           <p className="text-sm text-neutral-500 mt-1">
             Sign in to access the protected dashboard
           </p>
@@ -128,7 +129,7 @@ const RegisterPage = () => {
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-8 w-full max-w-sm space-y-5">
         <div>
-          <h1 className="text-xl font-bold">🔐 Auth Test</h1>
+          <h1 className="text-xl font-bold flex items-center gap-2"><Lock size={18} /> Auth Test</h1>
           <p className="text-sm text-neutral-500 mt-1">
             Create an account
           </p>
@@ -203,7 +204,7 @@ const DashboardPage = () => {
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">🔐 Auth Test — Dashboard</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2"><ShieldCheck size={20} /> Auth Test — Dashboard</h1>
             <p className="text-sm text-neutral-500 mt-1">
               You are authenticated as <span className="font-medium">{user?.email}</span>
             </p>
@@ -217,7 +218,7 @@ const DashboardPage = () => {
         </div>
 
         <div className="bg-white rounded-2xl border border-neutral-100 p-8 text-center">
-          <div className="text-4xl mb-4">✅</div>
+          <div className="text-4xl mb-4 flex justify-center"><ShieldCheck size={36} className="text-emerald-600" /></div>
           <h2 className="text-lg font-semibold mb-2">Authentication successful</h2>
           <p className="text-sm text-neutral-500">
             This page is protected by the <code>auth</code> layout.

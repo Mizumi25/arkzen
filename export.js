@@ -500,12 +500,15 @@ fs.writeFileSync(path.join(PROJ_FRONT, 'app', 'page.tsx'),
 )
 success(`app/page.tsx → redirects to /${tatName}`)
 
-// next.config.js — proxy /api/* to backend on port 8001
+// next.config.js — proxy /storage/* and /api/* to backend on port 8001
 fs.writeFileSync(path.join(PROJ_FRONT, 'next.config.js'), `/** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: { forceSwcTransforms: false },
   async rewrites() {
-    return [{ source: '/api/:path*', destination: 'http://127.0.0.1:8001/api/:path*' }]
+    return [
+      { source: '/storage/:path*', destination: 'http://127.0.0.1:8001/storage/:path*' },
+      { source: '/api/:path*', destination: 'http://127.0.0.1:8001/api/:path*' },
+    ]
   },
 }
 module.exports = nextConfig

@@ -100,6 +100,7 @@ endpoints:
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { Shield } from 'lucide-react'
 import { useAuthStore, setActiveTatemono, arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 if (typeof window !== 'undefined') {
@@ -131,7 +132,7 @@ const LoginPage = () => {
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-8 w-full max-w-sm space-y-5">
         <div>
-          <h1 className="text-xl font-bold">🛡️ Roles Test</h1>
+          <h1 className="text-xl font-bold flex items-center gap-2"><Shield size={18} /> Roles Test</h1>
           <p className="text-sm text-neutral-500 mt-1">
             Sign in to test role-based access control
           </p>
@@ -202,7 +203,7 @@ const RegisterPage = () => {
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-8 w-full max-w-sm space-y-5">
         <div>
-          <h1 className="text-xl font-bold">🛡️ Roles Test</h1>
+          <h1 className="text-xl font-bold flex items-center gap-2"><Shield size={18} /> Roles Test</h1>
           <p className="text-sm text-neutral-500 mt-1">
             Create an account — you'll start as{' '}
             <span className="font-medium text-blue-600">user</span>
@@ -334,7 +335,7 @@ const DashboardPage = () => {
 
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">🛡️ Roles Test</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Shield size={20} /> Roles Test</h1>
           <button
             className="text-xs text-neutral-400 hover:text-neutral-700"
             onClick={handleLogout}

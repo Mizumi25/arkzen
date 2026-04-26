@@ -105,6 +105,7 @@ type: presence
 
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { useRouter } from 'next/navigation'
+import { Radio } from 'lucide-react'
 import { useAuthStore, setActiveTatemono, arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 if (typeof window !== 'undefined') {
@@ -222,7 +223,7 @@ const LoginPage = () => {
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-8 w-full max-w-sm space-y-5">
         <div>
-          <h1 className="text-xl font-bold">📡 Broadcast Test</h1>
+          <h1 className="text-xl font-bold flex items-center gap-2"><Radio size={18} /> Broadcast Test</h1>
           <p className="text-sm text-neutral-500 mt-1">Sign in to test all channel types</p>
         </div>
         {error && (
@@ -266,7 +267,7 @@ const RegisterPage = () => {
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-8 w-full max-w-sm space-y-5">
         <div>
-          <h1 className="text-xl font-bold">📡 Broadcast Test</h1>
+          <h1 className="text-xl font-bold flex items-center gap-2"><Radio size={18} /> Broadcast Test</h1>
           <p className="text-sm text-neutral-500 mt-1">Create an account to test private + presence channels</p>
         </div>
         {error && (
@@ -499,7 +500,7 @@ const DashboardPage = () => {
 
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">📡 Broadcast Test</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2"><Radio size={20} /> Broadcast Test</h1>
             <p className="text-sm text-neutral-500 mt-1">
               Signed in as <span className="font-medium">{user?.name}</span>
             </p>
@@ -560,9 +561,9 @@ const DashboardPage = () => {
 
         <div className="text-xs text-neutral-400 bg-neutral-50 rounded-xl p-4 space-y-1">
           <p><strong>How each type works:</strong></p>
-          <p>🔵 <strong>Public</strong> — open channel, any WebSocket client subscribes freely, no auth handshake.</p>
-          <p>🟣 <strong>Private</strong> — channel name is scoped to your user ID. Reverb verifies ownership via HMAC before subscribing.</p>
-          <p>🟢 <strong>Presence</strong> — like private but Reverb also tracks a live member roster, firing member_added / member_removed events.</p>
+          <p><strong>Public</strong> — open channel, any WebSocket client subscribes freely, no auth handshake.</p>
+          <p><strong>Private</strong> — channel name is scoped to your user ID. Reverb verifies ownership via HMAC before subscribing.</p>
+          <p><strong>Presence</strong> — like private but Reverb also tracks a live member roster, firing member_added / member_removed events.</p>
           <p className="pt-1 text-neutral-300">Run <code>php artisan reverb:start</code> + <code>php artisan queue:work</code> for full functionality.</p>
         </div>
 

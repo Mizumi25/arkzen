@@ -94,6 +94,7 @@ listeners: [LogExportActivity, CleanupTempFiles]
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { Flame, Zap } from 'lucide-react'
 import { arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 interface EventLogEntry {
@@ -187,7 +188,7 @@ const IndexPage = () => {
     <div className="min-h-screen p-8">
       <div className="max-w-2xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl font-bold">⚡ Events Test</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Zap size={20} /> Events Test</h1>
           <p className="text-sm text-neutral-500 mt-1">Each event fires its listeners as queued jobs.</p>
         </div>
 
@@ -239,8 +240,8 @@ const IndexPage = () => {
             <div className="divide-y divide-neutral-100">
               {Object.entries(grouped).map(([groupKey, entries]) => (
                 <div key={groupKey} className="px-5 py-3">
-                  <div className="text-xs font-medium text-neutral-500 mb-2">
-                    🔥 {entries[0].event_name} — {entries[0].created_at?.slice(11, 19)}
+                  <div className="text-xs font-medium text-neutral-500 mb-2 flex items-center gap-1">
+                    <Flame size={13} className="text-amber-500" /> {entries[0].event_name} — {entries[0].created_at?.slice(11, 19)}
                   </div>
                   <div className="space-y-1.5 pl-3 border-l-2 border-neutral-100">
                     {entries.map((e, i) => (

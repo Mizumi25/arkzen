@@ -64,6 +64,7 @@ return $next($request);
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { ShieldCheck } from 'lucide-react'
 
 /* @arkzen:components:shared:end */
 
@@ -128,7 +129,7 @@ const IndexPage = () => {
 
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold">🔧 Middleware Test</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2"><ShieldCheck size={20} /> Middleware Test</h1>
           <p className="text-sm text-neutral-500 mt-1">
             Tests <code>MiddlewareBuilder</code> v7.0 body injection + alias fix.
           </p>

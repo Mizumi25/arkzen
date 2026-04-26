@@ -97,6 +97,7 @@ subject: "All Channels Test"
 
 import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { Bell, BellRing, Database, Globe, Mail, Radio } from 'lucide-react'
 import { useAuthStore, setActiveTatemono, arkzenFetch } from '@/arkzen/core/stores/authStore'
 
 if (typeof window !== 'undefined') {
@@ -134,7 +135,7 @@ const LoginPage = () => {
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-8 w-full max-w-sm space-y-5">
         <div>
-          <h1 className="text-xl font-bold">🔔 Notification Test</h1>
+          <h1 className="text-xl font-bold flex items-center gap-2"><Bell size={18} /> Notification Test</h1>
           <p className="text-sm text-neutral-500 mt-1">
             Sign in to test notifications
           </p>
@@ -203,7 +204,7 @@ const RegisterPage = () => {
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-8 w-full max-w-sm space-y-5">
         <div>
-          <h1 className="text-xl font-bold">🔔 Notification Test</h1>
+          <h1 className="text-xl font-bold flex items-center gap-2"><Bell size={18} /> Notification Test</h1>
           <p className="text-sm text-neutral-500 mt-1">
             Create an account to test notifications
           </p>
@@ -277,11 +278,11 @@ const DashboardPage = () => {
   const mountedRef = useRef(true)
 
   const notifTypes = [
-    { key: 'database-ping',        label: 'Database',              channels: ['database'],                       color: 'bg-blue-500',   icon: '🗄️' },
-    { key: 'mail-ping',            label: 'Mail',                  channels: ['mail'],                           color: 'bg-green-500',  icon: '✉️' },
-    { key: 'broadcast-ping',       label: 'Broadcast (private)',   channels: ['broadcast', 'database'],          color: 'bg-purple-500', icon: '📡' },
-    { key: 'broadcast-ping-public',label: 'Broadcast (public)',    channels: ['broadcast', 'database'],          color: 'bg-sky-500',    icon: '🌐' },
-    { key: 'all-channels',         label: 'All Channels',          channels: ['database', 'mail', 'broadcast'],  color: 'bg-orange-500', icon: '🔔' },
+    { key: 'database-ping',         label: 'Database',            channels: ['database'],                      color: 'bg-blue-500',   icon: <Database size={14} className="text-blue-600" /> },
+    { key: 'mail-ping',             label: 'Mail',                channels: ['mail'],                          color: 'bg-green-500',  icon: <Mail size={14} className="text-green-600" /> },
+    { key: 'broadcast-ping',        label: 'Broadcast (private)', channels: ['broadcast', 'database'],         color: 'bg-purple-500', icon: <Radio size={14} className="text-purple-600" /> },
+    { key: 'broadcast-ping-public', label: 'Broadcast (public)',  channels: ['broadcast', 'database'],         color: 'bg-sky-500',    icon: <Globe size={14} className="text-sky-600" /> },
+    { key: 'all-channels',          label: 'All Channels',        channels: ['database', 'mail', 'broadcast'], color: 'bg-orange-500', icon: <BellRing size={14} className="text-orange-600" /> },
   ]
 
   const loadInbox = async () => {
@@ -463,14 +464,14 @@ const DashboardPage = () => {
     <div className="min-h-screen p-8">
       {popup && (
         <div className="fixed top-5 right-5 z-50 bg-neutral-900 text-white text-sm rounded-2xl px-5 py-3 shadow-xl flex items-center gap-2 animate-fade-in">
-          <span>🔔</span> {popup}
+           <Bell size={16} /> {popup}
         </div>
       )}
 
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">🔔 Notification Test</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2"><Bell size={20} /> Notification Test</h1>
             <p className="text-sm text-neutral-500 mt-1">
               Signed in as <span className="font-medium">{user?.email}</span>
             </p>
@@ -580,10 +581,10 @@ const DashboardPage = () => {
 
         <div className="text-xs text-neutral-400 bg-neutral-50 rounded-xl p-4">
           <strong>Channels tested:</strong><br/>
-          🗄️ <strong>database</strong> — stored in native notifications table, shown in inbox above<br/>
-          ✉️ <strong>mail</strong> — sent to {user?.email} (check Mailtrap)<br/>
-          📡 <strong>broadcast (private)</strong> — fires on <code>private-notification-test.{'{'}userId{'}'}</code> — only you receive it<br/>
-          🌐 <strong>broadcast (public)</strong> — fires on <code>notification-test.notifications</code> — anyone subscribed receives it<br/>
+          <strong>database</strong> — stored in native notifications table, shown in inbox above<br/>
+          <strong>mail</strong> — sent to {user?.email} (check Mailtrap)<br/>
+          <strong>broadcast (private)</strong> — fires on <code>private-notification-test.{'{'}userId{'}'}</code> — only you receive it<br/>
+          <strong>broadcast (public)</strong> — fires on <code>notification-test.notifications</code> — anyone subscribed receives it<br/>
           Run <code>php artisan reverb:start</code> for broadcast + <code>php artisan queue:work</code> for mail.
         </div>
       </div>
